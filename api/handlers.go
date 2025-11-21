@@ -49,6 +49,35 @@ func NewHandler(
 	}
 }
 
+// --- AUTH ENDPOINTS ---
+
+// GetCurrentUser returns the authenticated user's profile
+func (h *Handler) GetCurrentUser(c *gin.Context) {
+	// Get user ID from AuthMiddleware
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Unauthorized", Message: "User not authenticated"})
+		return
+	}
+
+	// Query user_profiles table
+	var profile UserProfile
+	query := `
+		SELECT id, email, full_name, role, is_active, created_at, updated_at
+		FROM user_profiles
+		WHERE id = $1
+	`
+
+	err := h.db.Get(&profile, query, userID)
+	if err != nil {
+		h.logger.Error().Err(err).Str("user_id", userID.(string)).Msg("Failed to fetch user profile")
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "User profile not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, UserProfileResponse{User: profile})
+}
+
 // --- PUBLIC ENDPOINTS ---
 
 // CreateSubmission starts the workflow

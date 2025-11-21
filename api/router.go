@@ -30,6 +30,13 @@ func SetupRouter(handler *Handler, logger zerolog.Logger, jwtSecret string, allo
 		publicAPI.POST("/submit", handler.CreateSubmission)
 	}
 
+	// Auth routes (protected)
+	authAPI := router.Group("/api/v1/auth")
+	authAPI.Use(AuthMiddleware(jwtSecret))
+	{
+		authAPI.GET("/me", handler.GetCurrentUser)
+	}
+
 	// Protected User Routes (v1)
 	protectedAPI := router.Group("/api/v1")
 	protectedAPI.Use(AuthMiddleware(jwtSecret))

@@ -81,3 +81,19 @@ type AnalyticsResponse struct {
 	CompletedSubmissions int     `json:"completedSubmissions"`
 	Revenue              float64 `json:"revenue"`
 }
+
+// UserProfileResponse returns user profile data
+type UserProfileResponse struct {
+	User UserProfile `json:"user"`
+}
+
+// UserProfile represents a user's profile from user_profiles table
+type UserProfile struct {
+	ID        string    `json:"id" db:"id"`
+	Email     string    `json:"email" db:"email"`
+	FullName  *string   `json:"fullName" db:"full_name"`
+	Role      string    `json:"role" db:"role"`
+	IsActive  bool      `json:"isActive" db:"is_active"`
+	CreatedAt time.Time `json:"createdAt" db:"created_at"`
+	UpdatedAt time.Time `json:"updatedAt" db:"updated_at"`
+}
