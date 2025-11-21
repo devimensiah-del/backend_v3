@@ -107,12 +107,12 @@
             <div class="company-name-header">{{ .CompanyName }}</div>
         </div>
 
-        <h1 class="page-title">SWOT Analysis</h1>
-        <div class="page-subtitle">Strategic Positioning</div>
+        <h1 class="page-title">Análise SWOT</h1>
+        <div class="page-subtitle">Posicionamento Estratégico</div>
 
         <div class="swot-grid">
             <div class="swot-box swot-strengths">
-                <div class="swot-title">Strengths</div>
+                <div class="swot-title">Forças</div>
                 <ul class="swot-list">
                     {{ range .SWOT.Strengths }}
                     <li class="swot-item">{{ . }}</li>
@@ -121,7 +121,7 @@
             </div>
 
             <div class="swot-box swot-weaknesses">
-                <div class="swot-title">Weaknesses</div>
+                <div class="swot-title">Fraquezas</div>
                 <ul class="swot-list">
                     {{ range .SWOT.Weaknesses }}
                     <li class="swot-item">{{ . }}</li>
@@ -130,7 +130,7 @@
             </div>
 
             <div class="swot-box swot-opportunities">
-                <div class="swot-title">Opportunities</div>
+                <div class="swot-title">Oportunidades</div>
                 <ul class="swot-list">
                     {{ range .SWOT.Opportunities }}
                     <li class="swot-item">{{ . }}</li>
@@ -139,7 +139,7 @@
             </div>
 
             <div class="swot-box swot-threats">
-                <div class="swot-title">Threats</div>
+                <div class="swot-title">Ameaças</div>
                 <ul class="swot-list">
                     {{ range .SWOT.Threats }}
                     <li class="swot-item">{{ . }}</li>
@@ -149,7 +149,7 @@
         </div>
 
         <div class="footer">
-            <div>IMENSIAH — Strategic Intelligence Report</div>
+            <div>IMENSIAH — Relatório de Inteligência Estratégica</div>
             <div>{{ .Date }}</div>
         </div>
     </div>

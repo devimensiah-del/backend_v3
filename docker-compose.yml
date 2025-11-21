@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  # 1. Your Go Backend
+  api:
+    build: .
+    container_name: imensiah_backend
+    ports:
+      - "8080:8080"
+    environment:
+      - ENV=production
+      - SERVER_PORT=8080
+      - ALLOWED_ORIGINS=http://localhost:3000
+
+      # Infrastructure Networking (Service Names)
+      - REDIS_ADDR=redis:6379
+      - GOTENBERG_URL=http://gotenberg:3000
+
+      # Database (Connects to your Supabase Cloud DB)
+      # NOTE: Replace with your REAL credentials from .env
+      - DATABASE_URL=${DATABASE_URL}
+
+      # API Keys
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_JWT_SECRET=${SUPABASE_JWT_SECRET}
+
+      # Worker Config
+      - WORKER_ENABLED=true
+      - ASYNQ_CONCURRENCY=10
+    depends_on:
+      - redis
+      - gotenberg
+    restart: always
+
+  # 2. The Job Queue (Redis)
+  redis:
+    image: redis:7-alpine
+    container_name: imensiah_redis
+    ports:
+      - "6379:6379"
+    restart: always
+
+  # 3. The PDF Generator (Gotenberg)
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    container_name: imensiah_pdf
+    ports:
+      - "3000:3000"
+    restart: always

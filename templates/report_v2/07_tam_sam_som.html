@@ -110,31 +110,31 @@
             <div class="company-name-header">{{ .CompanyName }}</div>
         </div>
 
-        <h1 class="page-title">Market Sizing</h1>
-        <div class="page-subtitle">TAM-SAM-SOM Analysis</div>
+        <h1 class="page-title">Dimensionamento de Mercado</h1>
+        <div class="page-subtitle">Análise TAM-SAM-SOM</div>
 
         <div class="market-funnel">
             <div class="market-level market-level-tam">
-                <div class="market-label">Total Addressable Market</div>
+                <div class="market-label">Mercado Total Endereçável</div>
                 <div class="market-name">TAM</div>
                 <div class="market-value">{{ .TamSamSom.TAM }}</div>
             </div>
 
             <div class="market-level market-level-sam">
-                <div class="market-label">Serviceable Addressable Market</div>
+                <div class="market-label">Mercado Endereçável Disponível</div>
                 <div class="market-name">SAM</div>
                 <div class="market-value">{{ .TamSamSom.SAM }}</div>
             </div>
 
             <div class="market-level market-level-som">
-                <div class="market-label">Serviceable Obtainable Market</div>
+                <div class="market-label">Mercado Obtível no Curto Prazo</div>
                 <div class="market-name">SOM</div>
                 <div class="market-value">{{ .TamSamSom.SOM }}</div>
             </div>
         </div>
 
         <div class="assumptions-box">
-            <div class="assumptions-title">Key Assumptions & CAGR</div>
+            <div class="assumptions-title">Premissas Principais & CAGR</div>
             <div class="assumptions-text">
                 {{ if .TamSamSom.CAGR }}CAGR: {{ .TamSamSom.CAGR }}. {{ end }}
                 {{ range .TamSamSom.Assumptions }}{{ . }} {{ end }}
@@ -142,7 +142,7 @@
         </div>
 
         <div class="footer">
-            <div>IMENSIAH — Strategic Intelligence Report</div>
+            <div>IMENSIAH — Relatório de Inteligência Estratégica</div>
             <div>{{ .Date }}</div>
         </div>
     </div>

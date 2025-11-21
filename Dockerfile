@@ -27,6 +27,10 @@ WORKDIR /root/
 # Copy binary from builder
 COPY --from=builder /app/backend .
 
+# CRITICAL FIX: Copy the Templates folder
+# The application expects to find "templates/report/..." at runtime
+COPY --from=builder /app/templates ./templates
+
 # Expose port
 EXPOSE 8080
 

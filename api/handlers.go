@@ -30,7 +30,8 @@ type Handler struct {
 	redisClient       *redis.Client
 	logger            zerolog.Logger
 	supabaseURL       string
-	supabaseJWTSecret string
+	supabaseAnonKey   string // For Auth API calls
+	supabaseJWTSecret string // For JWT validation
 }
 
 func NewHandler(
@@ -43,6 +44,7 @@ func NewHandler(
 	redisClient *redis.Client,
 	logger zerolog.Logger,
 	supabaseURL string,
+	supabaseAnonKey string,
 	supabaseJWTSecret string,
 ) *Handler {
 	return &Handler{
@@ -55,6 +57,7 @@ func NewHandler(
 		redisClient:       redisClient,
 		logger:            logger.With().Str("component", "api").Logger(),
 		supabaseURL:       supabaseURL,
+		supabaseAnonKey:   supabaseAnonKey,
 		supabaseJWTSecret: supabaseJWTSecret,
 	}
 }
@@ -162,7 +165,7 @@ func (h *Handler) Logout(c *gin.Context) {
 
 	// Call Supabase with the user's token
 	req, _ := http.NewRequest("POST", authURL, nil)
-	req.Header.Set("apikey", h.supabaseJWTSecret)
+	req.Header.Set("apikey", h.supabaseAnonKey)
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 
 	client := &http.Client{}
@@ -265,7 +268,7 @@ func (h *Handler) UpdatePassword(c *gin.Context) {
 	payloadBytes, _ := json.Marshal(payload)
 
 	httpReq, _ := http.NewRequest("PUT", authURL, bytes.NewBuffer(payloadBytes))
-	httpReq.Header.Set("apikey", h.supabaseJWTSecret)
+	httpReq.Header.Set("apikey", h.supabaseAnonKey)
 	httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 	httpReq.Header.Set("Content-Type", "application/json")
 
@@ -293,6 +296,7 @@ func (h *Handler) UpdatePassword(c *gin.Context) {
 }
 
 // callSupabaseAuth is a helper function to make authenticated requests to Supabase Auth API
+// AUTH FIX: Now uses the correct Supabase Anon Key instead of JWT Secret
 func (h *Handler) callSupabaseAuth(method, url string, payload interface{}) (map[string]interface{}, error) {
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
@@ -304,7 +308,7 @@ func (h *Handler) callSupabaseAuth(method, url string, payload interface{}) (map
 		return nil, err
 	}
 
-	req.Header.Set("apikey", h.supabaseJWTSecret)
+	req.Header.Set("apikey", h.supabaseAnonKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}

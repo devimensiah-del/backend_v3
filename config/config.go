@@ -40,7 +40,8 @@ type Config struct {
 	// External Services
 	GotenbergURL      string
 	SupabaseURL       string
-	SupabaseJWTSecret string // Critical for AuthMiddleware
+	SupabaseAnonKey   string // Public key for Supabase Auth API calls
+	SupabaseJWTSecret string // Secret for validating JWT tokens (AuthMiddleware)
 
 	// Storage & Frontend
 	StorageBasePath string
@@ -69,13 +70,14 @@ func Load() (*Config, error) {
 		// Parse Redis connection from REDIS_URL (Railway) or fall back to REDIS_ADDR (local)
 		RedisURL:          "",
 		RedisPassword:     "",
-		WorkerEnabled:     true,
+		WorkerEnabled:     getEnvBool("WORKER_ENABLED", true),
 		WorkerConcurrency: getEnvInt("ASYNQ_CONCURRENCY", 10),
 		WorkerQueues:      "critical:6,default:3,low:1",
 
 		// External Services
 		GotenbergURL:      getEnv("GOTENBERG_URL", "http://localhost:3000"),
 		SupabaseURL:       getEnv("SUPABASE_URL", ""),
+		SupabaseAnonKey:   getEnv("SUPABASE_ANON_KEY", ""),
 		SupabaseJWTSecret: getEnv("SUPABASE_JWT_SECRET", ""),
 
 		// Storage
@@ -141,7 +143,10 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("OPENAI_API_KEY is required")
 	}
 	if c.SupabaseJWTSecret == "" {
-		return fmt.Errorf("SUPABASE_JWT_SECRET is required for authentication")
+		return fmt.Errorf("SUPABASE_JWT_SECRET is required for JWT validation")
+	}
+	if c.SupabaseAnonKey == "" {
+		return fmt.Errorf("SUPABASE_ANON_KEY is required for auth API calls")
 	}
 	return nil
 }
@@ -159,6 +164,13 @@ func getEnvInt(key string, fallback int) int {
 		if i, err := strconv.Atoi(value); err == nil {
 			return i
 		}
+	}
+	return fallback
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	if value, ok := os.LookupEnv(key); ok {
+		return value == "true" || value == "1"
 	}
 	return fallback
 }

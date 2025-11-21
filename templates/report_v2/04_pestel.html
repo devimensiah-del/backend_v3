@@ -99,12 +99,12 @@
             <div class="company-name-header">{{ .CompanyName }}</div>
         </div>
 
-        <h1 class="page-title">PESTEL Analysis</h1>
-        <div class="page-subtitle">Environmental Factors</div>
+        <h1 class="page-title">Análise PESTEL</h1>
+        <div class="page-subtitle">Fatores Ambientais</div>
 
         <div class="factors-grid">
             <div class="factor-box">
-                <div class="factor-title">Political</div>
+                <div class="factor-title">Político</div>
                 <ul class="factor-list">
                     {{ range .PESTEL.Political }}
                     <li class="factor-item">{{ . }}</li>
@@ -113,7 +113,7 @@
             </div>
 
             <div class="factor-box">
-                <div class="factor-title">Economic</div>
+                <div class="factor-title">Econômico</div>
                 <ul class="factor-list">
                     {{ range .PESTEL.Economic }}
                     <li class="factor-item">{{ . }}</li>
@@ -131,7 +131,7 @@
             </div>
 
             <div class="factor-box">
-                <div class="factor-title">Technological</div>
+                <div class="factor-title">Tecnológico</div>
                 <ul class="factor-list">
                     {{ range .PESTEL.Technological }}
                     <li class="factor-item">{{ . }}</li>
@@ -140,7 +140,7 @@
             </div>
 
             <div class="factor-box">
-                <div class="factor-title">Environmental</div>
+                <div class="factor-title">Ambiental</div>
                 <ul class="factor-list">
                     {{ range .PESTEL.Environmental }}
                     <li class="factor-item">{{ . }}</li>
@@ -159,7 +159,7 @@
         </div>
 
         <div class="footer">
-            <div>IMENSIAH — Strategic Intelligence Report</div>
+            <div>IMENSIAH — Relatório de Inteligência Estratégica</div>
             <div>{{ .Date }}</div>
         </div>
     </div>

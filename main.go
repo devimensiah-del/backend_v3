@@ -138,14 +138,19 @@ func main() {
 	)
 
 	// Start Worker in a separate goroutine
+	// STABILITY FIX: Graceful degradation - if worker fails, API stays alive
 	if cfg.WorkerEnabled {
 		go func() {
 			log.Info().Msg("Starting Background Worker")
 			if err := worker.Start(); err != nil {
-				log.Fatal().Err(err).Msg("Failed to start worker")
+				log.Error().Err(err).Msg("Worker failed to start - background jobs disabled. Check Redis connection.")
+				// API continues running, but background processing won't work
+				// Admin must use retry endpoints to manually trigger jobs
 			}
 		}()
 		defer worker.Stop()
+	} else {
+		log.Warn().Msg("Background worker disabled (WORKER_ENABLED=false). Jobs must be triggered manually.")
 	}
 
 	// 9. HTTP API
@@ -159,7 +164,8 @@ func main() {
 		nil, // redisClient (nil for now)
 		log.Logger,
 		cfg.SupabaseURL,
-		cfg.SupabaseJWTSecret,
+		cfg.SupabaseAnonKey,   // For auth API calls
+		cfg.SupabaseJWTSecret, // For JWT validation
 	)
 
 	// CRITICAL: Pass Config values to Router

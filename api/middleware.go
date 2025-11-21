@@ -29,9 +29,14 @@ func CORSMiddleware(allowedOrigins string) gin.HandlerFunc {
 			}
 		}
 
-		// If no match found and wildcard not used, allow the first origin as fallback
-		if !originAllowed && len(origins) > 0 {
-			c.Writer.Header().Set("Access-Control-Allow-Origin", strings.TrimSpace(origins[0]))
+		// SECURITY FIX: Reject unauthorized origins explicitly
+		// No fallback to prevent CORS misconfigurations in production
+		if !originAllowed {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"error":   "Forbidden",
+				"message": "Origin not allowed by CORS policy",
+			})
+			return
 		}
 
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
