@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Blue Ocean Strategy</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        @page { size: A4 portrait; margin: 0; }
+
+        body {
+            width: 595px;
+            height: 842px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            color: #0A101D;
+            background: #FFFFFF;
+        }
+
+        .page { width: 595px; height: 842px; padding: 40px; }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 24px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #E5E0D6;
+        }
+
+        .page-number { font-size: 10px; font-weight: 600; color: #B89E68; }
+        .company-name-header { font-size: 10px; color: #71717A; }
+
+        .page-title { font-size: 24px; font-weight: 300; color: #0A101D; margin-bottom: 4px; }
+        .page-subtitle { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.15em; color: #B89E68; margin-bottom: 24px; }
+
+        .errc-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        .errc-box {
+            border: 1px solid #E5E0D6;
+            padding: 16px;
+            height: 240px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .errc-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: #FFFFFF;
+            padding: 8px 12px;
+            margin: -16px -16px 12px -16px;
+        }
+
+        .errc-eliminate .errc-title { background: #ef4444; }
+        .errc-reduce .errc-title { background: #f59e0b; }
+        .errc-raise .errc-title { background: #10b981; }
+        .errc-create .errc-title { background: #3b82f6; }
+
+        .errc-list {
+            list-style: none;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .errc-item {
+            font-size: 9.5px;
+            line-height: 1.4;
+            color: #111827;
+            margin-bottom: 8px;
+            padding-left: 12px;
+            position: relative;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .errc-item::before {
+            content: '•';
+            position: absolute;
+            left: 0;
+            font-weight: 700;
+        }
+
+        .errc-eliminate .errc-item::before { color: #ef4444; }
+        .errc-reduce .errc-item::before { color: #f59e0b; }
+        .errc-raise .errc-item::before { color: #10b981; }
+        .errc-create .errc-item::before { color: #3b82f6; }
+
+        .value-curve {
+            background: #F7F6F4;
+            padding: 16px;
+            border-left: 4px solid #B89E68;
+            margin-top: 16px;
+        }
+
+        .value-label {
+            font-size: 9px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #71717A;
+            margin-bottom: 8px;
+        }
+
+        .value-text {
+            font-size: 10px;
+            line-height: 1.5;
+            color: #111827;
+        }
+
+        .footer {
+            display: flex;
+            justify-content: space-between;
+            padding-top: 12px;
+            border-top: 1px solid #E5E0D6;
+            font-size: 8px;
+            color: #71717A;
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <div class="header">
+            <div class="page-number">08</div>
+            <div class="company-name-header">{{ .CompanyName }}</div>
+        </div>
+
+        <h1 class="page-title">Blue Ocean Strategy</h1>
+        <div class="page-subtitle">Value Innovation Framework</div>
+
+        <div class="errc-grid">
+            <div class="errc-box errc-eliminate">
+                <div class="errc-title">Eliminate</div>
+                <ul class="errc-list">
+                    {{ range .BlueOcean.Eliminate }}
+                    <li class="errc-item">{{ . }}</li>
+                    {{ end }}
+                </ul>
+            </div>
+
+            <div class="errc-box errc-reduce">
+                <div class="errc-title">Reduce</div>
+                <ul class="errc-list">
+                    {{ range .BlueOcean.Reduce }}
+                    <li class="errc-item">{{ . }}</li>
+                    {{ end }}
+                </ul>
+            </div>
+
+            <div class="errc-box errc-raise">
+                <div class="errc-title">Raise</div>
+                <ul class="errc-list">
+                    {{ range .BlueOcean.Raise }}
+                    <li class="errc-item">{{ . }}</li>
+                    {{ end }}
+                </ul>
+            </div>
+
+            <div class="errc-box errc-create">
+                <div class="errc-title">Create</div>
+                <ul class="errc-list">
+                    {{ range .BlueOcean.Create }}
+                    <li class="errc-item">{{ . }}</li>
+                    {{ end }}
+                </ul>
+            </div>
+        </div>
+
+        <div class="value-curve">
+            <div class="value-label">New Value Curve</div>
+            <div class="value-text">{{ .BlueOcean.NewValueCurve }}</div>
+        </div>
+
+        <div class="footer">
+            <div>IMENSIAH — Strategic Intelligence Report</div>
+            <div>{{ .Date }}</div>
+        </div>
+    </div>
+</body>
+</html>

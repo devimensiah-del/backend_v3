@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Financial Projections</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        @page { size: A4 portrait; margin: 0; }
+
+        body {
+            width: 595px;
+            height: 842px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            color: #0A101D;
+            background: #FFFFFF;
+        }
+
+        .page { width: 595px; height: 842px; padding: 40px; display: flex; flex-direction: column; }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 24px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #E5E0D6;
+        }
+
+        .page-number { font-size: 10px; font-weight: 600; color: #B89E68; }
+        .company-name-header { font-size: 10px; color: #71717A; }
+
+        .page-title { font-size: 24px; font-weight: 300; color: #0A101D; margin-bottom: 4px; }
+        .page-subtitle { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.15em; color: #B89E68; margin-bottom: 24px; }
+
+        .scenario {
+            margin-bottom: 20px;
+            border: 1px solid #E5E0D6;
+            overflow: hidden;
+        }
+
+        .scenario-header {
+            padding: 10px 16px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #FFFFFF;
+        }
+
+        .scenario-optimistic .scenario-header { background: #10b981; }
+        .scenario-realist .scenario-header { background: #B89E68; }
+        .scenario-pessimistic .scenario-header { background: #ef4444; }
+
+        .scenario-content {
+            padding: 16px;
+            font-size: 10px;
+            line-height: 1.5;
+            color: #111827;
+        }
+
+        .signals-box {
+            background: #F7F6F4;
+            padding: 16px;
+            border-left: 4px solid #ef4444;
+            margin-top: 20px;
+        }
+
+        .signals-title {
+            font-size: 9px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #ef4444;
+            margin-bottom: 12px;
+        }
+
+        .signals-list {
+            list-style: none;
+        }
+
+        .signal-item {
+            font-size: 9.5px;
+            line-height: 1.4;
+            color: #111827;
+            margin-bottom: 6px;
+            padding-left: 12px;
+            position: relative;
+        }
+
+        .signal-item::before {
+            content: '⚠';
+            position: absolute;
+            left: 0;
+            color: #ef4444;
+        }
+
+        .footer {
+            display: flex;
+            justify-content: space-between;
+            padding-top: 12px;
+            border-top: 1px solid #E5E0D6;
+            font-size: 8px;
+            color: #71717A;
+            margin-top: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <div class="header">
+            <div class="page-number">12</div>
+            <div class="company-name-header">{{ .CompanyName }}</div>
+        </div>
+
+        <h1 class="page-title">Financial Projections</h1>
+        <div class="page-subtitle">Scenario Planning</div>
+
+        <div class="scenario scenario-optimistic">
+            <div class="scenario-header">Optimistic Scenario</div>
+            <div class="scenario-content">{{ .Scenarios.ScenarioOptimistic }}</div>
+        </div>
+
+        <div class="scenario scenario-realist">
+            <div class="scenario-header">Realist Scenario</div>
+            <div class="scenario-content">{{ .Scenarios.ScenarioRealist }}</div>
+        </div>
+
+        <div class="scenario scenario-pessimistic">
+            <div class="scenario-header">Pessimistic Scenario</div>
+            <div class="scenario-content">{{ .Scenarios.ScenarioPessimistic }}</div>
+        </div>
+
+        <div class="signals-box">
+            <div class="signals-title">Early Warning Signals</div>
+            <ul class="signals-list">
+                {{ range .Scenarios.EarlyWarningSignals }}
+                <li class="signal-item">{{ . }}</li>
+                {{ end }}
+            </ul>
+        </div>
+
+        <div class="footer">
+            <div>IMENSIAH — Strategic Intelligence Report</div>
+            <div>{{ .Date }}</div>
+        </div>
+    </div>
+</body>
+</html>

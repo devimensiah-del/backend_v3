@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Strategic Roadmap</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        @page { size: A4 portrait; margin: 0; }
+
+        body {
+            width: 595px;
+            height: 842px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            color: #0A101D;
+            background: #FFFFFF;
+        }
+
+        .page { width: 595px; height: 842px; padding: 40px; display: flex; flex-direction: column; }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 24px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #E5E0D6;
+        }
+
+        .page-number { font-size: 10px; font-weight: 600; color: #B89E68; }
+        .company-name-header { font-size: 10px; color: #71717A; }
+
+        .page-title { font-size: 24px; font-weight: 300; color: #0A101D; margin-bottom: 4px; }
+        .page-subtitle { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.15em; color: #B89E68; margin-bottom: 32px; }
+
+        .section {
+            margin-bottom: 24px;
+        }
+
+        .section-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: #0A101D;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #B89E68;
+        }
+
+        .item-list {
+            list-style: none;
+        }
+
+        .item {
+            font-size: 10px;
+            line-height: 1.5;
+            color: #111827;
+            margin-bottom: 10px;
+            padding-left: 16px;
+            position: relative;
+        }
+
+        .item::before {
+            content: '→';
+            position: absolute;
+            left: 0;
+            color: #B89E68;
+            font-weight: 700;
+        }
+
+        .recommendation-box {
+            background: linear-gradient(135deg, #0A101D 0%, #162032 100%);
+            padding: 24px;
+            border-left: 6px solid #B89E68;
+            margin-top: 32px;
+        }
+
+        .recommendation-label {
+            font-size: 9px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            color: #B89E68;
+            margin-bottom: 12px;
+        }
+
+        .recommendation-text {
+            font-size: 12px;
+            line-height: 1.6;
+            color: #FFFFFF;
+        }
+
+        .footer {
+            display: flex;
+            justify-content: space-between;
+            padding-top: 12px;
+            border-top: 1px solid #E5E0D6;
+            font-size: 8px;
+            color: #71717A;
+            margin-top: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <div class="header">
+            <div class="page-number">15</div>
+            <div class="company-name-header">{{ .CompanyName }}</div>
+        </div>
+
+        <h1 class="page-title">Strategic Roadmap</h1>
+        <div class="page-subtitle">Decision Matrix & Recommendations</div>
+
+        <div class="section">
+            <div class="section-title">Strategic Alternatives</div>
+            <ul class="item-list">
+                {{ range .DecisionMatrix.Alternatives }}
+                <li class="item">{{ . }}</li>
+                {{ end }}
+            </ul>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Decision Criteria</div>
+            <ul class="item-list">
+                {{ range .DecisionMatrix.Criteria }}
+                <li class="item">{{ . }}</li>
+                {{ end }}
+            </ul>
+        </div>
+
+        <div class="recommendation-box">
+            <div class="recommendation-label">Final Recommendation</div>
+            <div class="recommendation-text">{{ .DecisionMatrix.FinalRecommendation }}</div>
+        </div>
+
+        <div class="footer">
+            <div>IMENSIAH — Strategic Intelligence Report</div>
+            <div>{{ .Date }}</div>
+        </div>
+    </div>
+</body>
+</html>

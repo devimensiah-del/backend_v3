@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>TAM-SAM-SOM</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        @page { size: A4 portrait; margin: 0; }
+
+        body {
+            width: 595px;
+            height: 842px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            color: #0A101D;
+            background: #FFFFFF;
+        }
+
+        .page { width: 595px; height: 842px; padding: 40px; display: flex; flex-direction: column; }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 24px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #E5E0D6;
+        }
+
+        .page-number { font-size: 10px; font-weight: 600; color: #B89E68; }
+        .company-name-header { font-size: 10px; color: #71717A; }
+
+        .page-title { font-size: 24px; font-weight: 300; color: #0A101D; margin-bottom: 4px; }
+        .page-subtitle { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.15em; color: #B89E68; margin-bottom: 32px; }
+
+        .market-funnel {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            margin-bottom: 32px;
+            flex: 1;
+        }
+
+        .market-level {
+            background: #FFFFFF;
+            border: 2px solid #E5E0D6;
+            padding: 24px;
+            position: relative;
+        }
+
+        .market-level-tam { border-color: #B89E68; background: linear-gradient(135deg, #FFF9F0 0%, #FFFFFF 100%); }
+        .market-level-sam { border-color: #0A101D; width: 90%; margin-left: 5%; }
+        .market-level-som { border-color: #10b981; width: 80%; margin-left: 10%; }
+
+        .market-label {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            color: #71717A;
+            margin-bottom: 8px;
+        }
+
+        .market-name {
+            font-size: 16px;
+            font-weight: 600;
+            color: #0A101D;
+            margin-bottom: 8px;
+        }
+
+        .market-value {
+            font-size: 11px;
+            line-height: 1.5;
+            color: #111827;
+        }
+
+        .assumptions-box {
+            background: #F7F6F4;
+            padding: 16px;
+            border-left: 4px solid #B89E68;
+        }
+
+        .assumptions-title {
+            font-size: 9px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #71717A;
+            margin-bottom: 8px;
+        }
+
+        .assumptions-text {
+            font-size: 10px;
+            line-height: 1.5;
+            color: #111827;
+        }
+
+        .footer {
+            display: flex;
+            justify-content: space-between;
+            padding-top: 12px;
+            border-top: 1px solid #E5E0D6;
+            font-size: 8px;
+            color: #71717A;
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <div class="header">
+            <div class="page-number">07</div>
+            <div class="company-name-header">{{ .CompanyName }}</div>
+        </div>
+
+        <h1 class="page-title">Market Sizing</h1>
+        <div class="page-subtitle">TAM-SAM-SOM Analysis</div>
+
+        <div class="market-funnel">
+            <div class="market-level market-level-tam">
+                <div class="market-label">Total Addressable Market</div>
+                <div class="market-name">TAM</div>
+                <div class="market-value">{{ .TamSamSom.TAM }}</div>
+            </div>
+
+            <div class="market-level market-level-sam">
+                <div class="market-label">Serviceable Addressable Market</div>
+                <div class="market-name">SAM</div>
+                <div class="market-value">{{ .TamSamSom.SAM }}</div>
+            </div>
+
+            <div class="market-level market-level-som">
+                <div class="market-label">Serviceable Obtainable Market</div>
+                <div class="market-name">SOM</div>
+                <div class="market-value">{{ .TamSamSom.SOM }}</div>
+            </div>
+        </div>
+
+        <div class="assumptions-box">
+            <div class="assumptions-title">Key Assumptions & CAGR</div>
+            <div class="assumptions-text">
+                {{ if .TamSamSom.CAGR }}CAGR: {{ .TamSamSom.CAGR }}. {{ end }}
+                {{ range .TamSamSom.Assumptions }}{{ . }} {{ end }}
+            </div>
+        </div>
+
+        <div class="footer">
+            <div>IMENSIAH — Strategic Intelligence Report</div>
+            <div>{{ .Date }}</div>
+        </div>
+    </div>
+</body>
+</html>
