@@ -34,12 +34,12 @@ func (r *PostgresRepository) Create(ctx context.Context, analysis *Analysis) err
 	query := `
 		INSERT INTO analyses (
 			id, submission_id, enrichment_id,
-			swot, pestel, porter, okrs, bcg_matrix, value_proposition, business_model,
+			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
 			synthesis, status, error_message, processing_time_ms,
 			created_at, updated_at, completed_at
 		) VALUES (
 			:id, :submission_id, :enrichment_id,
-			:swot, :pestel, :porter, :okrs, :bcg_matrix, :value_proposition, :business_model,
+			:swot, :pestel, :porter, :okrs, :tam_sam_som, :benchmarking, :blue_ocean, :growth_hacking, :scenarios, :bsc, :decision_matrix,
 			:synthesis, :status, :error_message, :processing_time_ms,
 			:created_at, :updated_at, :completed_at
 		)
@@ -61,9 +61,13 @@ func (r *PostgresRepository) Update(ctx context.Context, analysis *Analysis) err
 			pestel = :pestel,
 			porter = :porter,
 			okrs = :okrs,
-			bcg_matrix = :bcg_matrix,
-			value_proposition = :value_proposition,
-			business_model = :business_model,
+			tam_sam_som = :tam_sam_som,
+			benchmarking = :benchmarking,
+			blue_ocean = :blue_ocean,
+			growth_hacking = :growth_hacking,
+			scenarios = :scenarios,
+			bsc = :bsc,
+			decision_matrix = :decision_matrix,
 			synthesis = :synthesis,
 			status = :status,
 			error_message = :error_message,
@@ -95,7 +99,7 @@ func (r *PostgresRepository) GetByID(ctx context.Context, id string) (*Analysis,
 	query := `
 		SELECT
 			id, submission_id, enrichment_id,
-			swot, pestel, porter, okrs, bcg_matrix, value_proposition, business_model,
+			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
 			synthesis, status, error_message, processing_time_ms,
 			created_at, updated_at, completed_at
 		FROM analyses
@@ -119,7 +123,7 @@ func (r *PostgresRepository) GetBySubmissionID(ctx context.Context, submissionID
 	query := `
 		SELECT
 			id, submission_id, enrichment_id,
-			swot, pestel, porter, okrs, bcg_matrix, value_proposition, business_model,
+			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
 			synthesis, status, error_message, processing_time_ms,
 			created_at, updated_at, completed_at
 		FROM analyses
@@ -146,7 +150,7 @@ func (r *PostgresRepository) List(ctx context.Context, limit, offset int) ([]*An
 	query := `
 		SELECT
 			id, submission_id, enrichment_id,
-			swot, pestel, porter, okrs, bcg_matrix, value_proposition, business_model,
+			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
 			synthesis, status, error_message, processing_time_ms,
 			created_at, updated_at, completed_at
 		FROM analyses

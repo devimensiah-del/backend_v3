@@ -180,8 +180,8 @@ func (s *Service) Publish(ctx context.Context, submissionID, analysisID string) 
 
 	now := time.Now()
 
-	// 4. Save Record in DB
-	// We check if a report entry exists, if not create one, else update.
+	// 4. Save Record in DB with ALL generated HTML pages
+	// CRITICAL FIX: Assign all generated HTML to the Report struct before saving
 	report := &Report{
 		ID:                  uuid.New().String(),
 		SubmissionID:        submissionID,
@@ -190,6 +190,28 @@ func (s *Service) Publish(ctx context.Context, submissionID, analysisID string) 
 		PDFURL:              pdfURL,
 		PDFGeneratedAt:      &now,
 		PDFGenerationStatus: "completed",
+		TotalPages:          16,
+		CreatedAt:           now,
+		UpdatedAt:           now,
+		CompletedAt:         &now,
+
+		// Assign all 16 generated HTML pages (in order from templateOrder)
+		CoverPage:                htmlPages[0],  // 01_cover.html
+		ExecutiveSummary:         htmlPages[1],  // 02_exec_summary.html
+		TableOfContents:          htmlPages[2],  // 03_toc.html
+		PESTELPage:              htmlPages[3],  // 04_pestel.html
+		PorterPage:              htmlPages[4],  // 05_porter.html
+		SWOTPage:                htmlPages[5],  // 06_swot.html
+		TamSamSomPage:           htmlPages[6],  // 07_tam_sam_som.html (NEW)
+		BlueOceanPage:           htmlPages[7],  // 08_ocean.html (NEW)
+		OKRPage:                 htmlPages[8],  // 09_okrs.html
+		BSCPage:                 htmlPages[9],  // 10_business_model.html → BSC (RENAMED)
+		BenchmarkingPage:        htmlPages[10], // 11_competitive_analysis.html (NEW)
+		FinancialProjectionsPage: htmlPages[11], // 12_financial_projections.html (NEW)
+		GrowthHackingPage:       htmlPages[12], // 13_gtm_strategy.html (NEW)
+		RiskAssessmentPage:      htmlPages[13], // 14_risk_assessment.html (NEW)
+		DecisionMatrixPage:      htmlPages[14], // 15_roadmap.html (NEW)
+		AppendixPage:            htmlPages[15], // 16_appendix.html
 	}
 
 	// Ideally use Upsert logic here
