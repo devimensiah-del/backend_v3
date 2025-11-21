@@ -27,11 +27,6 @@ WORKDIR /root/
 # Copy binary from builder
 COPY --from=builder /app/backend .
 
-# Copy templates directory if it exists (for email templates, reports, etc.)
-# Note: This may fail if templates directory doesn't exist, which is fine
-RUN mkdir -p ./templates
-COPY --from=builder /app/templates ./templates/ 2>&1 || echo "No templates directory found, skipping..."
-
 # Expose port
 EXPOSE 8080
 
