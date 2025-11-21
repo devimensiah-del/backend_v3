@@ -21,15 +21,15 @@ import (
 )
 
 type Handler struct {
-	submissionSvc   *submission.Service
-	enrichmentSvc   *enrichment.Service
-	analysisSvc     *analysis.Service
-	reportSvc       *report.Service
-	asynqClient     *asynq.Client
-	db              *sqlx.DB
-	redisClient     *redis.Client
-	logger          zerolog.Logger
-	supabaseURL     string
+	submissionSvc     *submission.Service
+	enrichmentSvc     *enrichment.Service
+	analysisSvc       *analysis.Service
+	reportSvc         *report.Service
+	asynqClient       *asynq.Client
+	db                *sqlx.DB
+	redisClient       *redis.Client
+	logger            zerolog.Logger
+	supabaseURL       string
 	supabaseJWTSecret string
 }
 
@@ -46,15 +46,15 @@ func NewHandler(
 	supabaseJWTSecret string,
 ) *Handler {
 	return &Handler{
-		submissionSvc:   submissionSvc,
-		enrichmentSvc:   enrichmentSvc,
-		analysisSvc:     analysisSvc,
-		reportSvc:       reportSvc,
-		asynqClient:     asynqClient,
-		db:              db,
-		redisClient:     redisClient,
-		logger:          logger.With().Str("component", "api").Logger(),
-		supabaseURL:     supabaseURL,
+		submissionSvc:     submissionSvc,
+		enrichmentSvc:     enrichmentSvc,
+		analysisSvc:       analysisSvc,
+		reportSvc:         reportSvc,
+		asynqClient:       asynqClient,
+		db:                db,
+		redisClient:       redisClient,
+		logger:            logger.With().Str("component", "api").Logger(),
+		supabaseURL:       supabaseURL,
 		supabaseJWTSecret: supabaseJWTSecret,
 	}
 }
