@@ -223,6 +223,30 @@ func (h *Handler) RetryAnalysis(c *gin.Context) {
 	})
 }
 
+// GetAnalytics handles GET /api/v1/admin/analytics
+func (h *Handler) GetAnalytics(c *gin.Context) {
+	// Get analytics data from service
+	analytics, err := h.submissionSvc.GetAnalytics(c.Request.Context())
+	if err != nil {
+		h.logger.Error().Err(err).Msg("Failed to get analytics")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Failed to retrieve analytics",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	// Map to response type
+	response := AnalyticsResponse{
+		TotalSubmissions:     analytics.TotalSubmissions,
+		ActiveSubmissions:    analytics.ActiveSubmissions,
+		CompletedSubmissions: analytics.CompletedSubmissions,
+		Revenue:              analytics.Revenue,
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
 // HealthCheck handles GET /health
 func (h *Handler) HealthCheck(c *gin.Context) {
 	health := gin.H{

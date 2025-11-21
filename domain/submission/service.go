@@ -109,6 +109,80 @@ func (s *Service) Delete(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
+// ==================== ANALYTICS ====================
+
+// AnalyticsData holds the metrics for admin analytics dashboard
+type AnalyticsData struct {
+	TotalSubmissions     int
+	ActiveSubmissions    int
+	CompletedSubmissions int
+	Revenue              float64
+}
+
+// GetAnalytics retrieves analytics data for the admin dashboard
+func (s *Service) GetAnalytics(ctx context.Context) (*AnalyticsData, error) {
+	// Get counts in parallel using goroutines for better performance
+	totalChan := make(chan int, 1)
+	activeChan := make(chan int, 1)
+	completedChan := make(chan int, 1)
+	errChan := make(chan error, 3)
+
+	// Get total count
+	go func() {
+		count, err := s.repo.GetTotalCount(ctx)
+		if err != nil {
+			errChan <- err
+			return
+		}
+		totalChan <- count
+	}()
+
+	// Get active count
+	go func() {
+		count, err := s.repo.GetActiveCount(ctx)
+		if err != nil {
+			errChan <- err
+			return
+		}
+		activeChan <- count
+	}()
+
+	// Get completed count
+	go func() {
+		count, err := s.repo.GetCompletedCount(ctx)
+		if err != nil {
+			errChan <- err
+			return
+		}
+		completedChan <- count
+	}()
+
+	// Wait for all results
+	var total, active, completed int
+	for i := 0; i < 3; i++ {
+		select {
+		case total = <-totalChan:
+		case active = <-activeChan:
+		case completed = <-completedChan:
+		case err := <-errChan:
+			return nil, fmt.Errorf("failed to get analytics: %w", err)
+		}
+	}
+
+	// Calculate revenue
+	// TODO: Once payment tracking is implemented, fetch from payment/revenue table
+	// For now, we'll use a placeholder calculation: $500 per completed submission
+	const revenuePerSubmission = 500.0
+	revenue := float64(completed) * revenuePerSubmission
+
+	return &AnalyticsData{
+		TotalSubmissions:     total,
+		ActiveSubmissions:    active,
+		CompletedSubmissions: completed,
+		Revenue:              revenue,
+	}, nil
+}
+
 // =================================================================================
 // DATA STRUCTURES (Request Inputs)
 // =================================================================================

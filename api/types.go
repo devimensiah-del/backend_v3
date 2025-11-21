@@ -73,3 +73,11 @@ type SubmissionListResponse struct {
 	Limit       int         `json:"limit"`
 	Total       int         `json:"total"`
 }
+
+// AnalyticsResponse returns admin analytics/metrics
+type AnalyticsResponse struct {
+	TotalSubmissions     int     `json:"totalSubmissions"`
+	ActiveSubmissions    int     `json:"activeSubmissions"`
+	CompletedSubmissions int     `json:"completedSubmissions"`
+	Revenue              float64 `json:"revenue"`
+}

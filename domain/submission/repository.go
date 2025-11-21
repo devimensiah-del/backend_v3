@@ -20,6 +20,11 @@ type Repository interface {
 	List(ctx context.Context, opts *ListOptions) ([]*Submission, int, error)
 	Update(ctx context.Context, s *Submission) error
 	Delete(ctx context.Context, id uuid.UUID) error
+
+	// Analytics methods
+	GetTotalCount(ctx context.Context) (int, error)
+	GetActiveCount(ctx context.Context) (int, error)
+	GetCompletedCount(ctx context.Context) (int, error)
 }
 
 // PostgresRepository implements Repository using PostgreSQL
@@ -244,4 +249,54 @@ func (r *PostgresRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	}
 
 	return nil
+}
+
+// ==================== ANALYTICS METHODS ====================
+
+// GetTotalCount returns the total number of non-deleted submissions
+func (r *PostgresRepository) GetTotalCount(ctx context.Context) (int, error) {
+	query := `
+		SELECT COUNT(*) FROM submissions
+		WHERE deleted_at IS NULL
+	`
+
+	var count int
+	if err := r.db.GetContext(ctx, &count, query); err != nil {
+		return 0, fmt.Errorf("failed to get total submission count: %w", err)
+	}
+
+	return count, nil
+}
+
+// GetActiveCount returns the count of submissions that are in progress
+// Active = not pending and not completed (enriching, enriched, analyzing, etc.)
+func (r *PostgresRepository) GetActiveCount(ctx context.Context) (int, error) {
+	query := `
+		SELECT COUNT(*) FROM submissions
+		WHERE deleted_at IS NULL
+		AND status NOT IN ('pending', 'completed', 'failed', 'enrichment_failed', 'analysis_failed', 'report_failed')
+	`
+
+	var count int
+	if err := r.db.GetContext(ctx, &count, query); err != nil {
+		return 0, fmt.Errorf("failed to get active submission count: %w", err)
+	}
+
+	return count, nil
+}
+
+// GetCompletedCount returns the count of completed submissions
+func (r *PostgresRepository) GetCompletedCount(ctx context.Context) (int, error) {
+	query := `
+		SELECT COUNT(*) FROM submissions
+		WHERE deleted_at IS NULL
+		AND status = 'completed'
+	`
+
+	var count int
+	if err := r.db.GetContext(ctx, &count, query); err != nil {
+		return 0, fmt.Errorf("failed to get completed submission count: %w", err)
+	}
+
+	return count, nil
 }

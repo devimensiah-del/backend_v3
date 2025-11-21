@@ -47,6 +47,7 @@ func SetupRouter(handler *Handler, logger zerolog.Logger, jwtSecret string, allo
 		adminAPI.GET("/submissions", handler.ListSubmissions)
 		adminAPI.POST("/submissions/:id/retry-enrichment", handler.RetryEnrichment)
 		adminAPI.POST("/submissions/:id/retry-analysis", handler.RetryAnalysis)
+		adminAPI.GET("/analytics", handler.GetAnalytics)
 	}
 
 	return router
