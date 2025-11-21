@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Índice - IMENSIAH</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet"/>
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet"/>
+
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            font-family: 'Montserrat', sans-serif;
+        }
+
+        .slide-container {
+            width: 1280px;
+            min-height: 720px;
+            max-height: 720px;
+            overflow-y: auto;
+            box-sizing: border-box;
+            background-color: #f8fafc;
+            position: relative;
+        }
+
+        .accent-bar {
+            width: 6px;
+            height: 60px;
+            background-color: {{.Theme.AccentColor}};
+            margin-right: 20px;
+        }
+
+        
+        .toc-section {
+            margin-bottom: 24px;
+        }
+        .toc-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: {{.Theme.PrimaryColor}};
+            margin-bottom: 8px;
+        }
+        .toc-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+    </style>
+</head>
+<body>
+    <div class="slide-container flex flex-col">
+        <div class="px-24 pt-8 pb-3">
+            <div class="flex items-center">
+                <div class="accent-bar"></div>
+                <div>
+                    <p class="text-sm font-semibold uppercase tracking-wider mb-1" style="color: {{.Theme.PrimaryColor}};">
+                        {{.CompanyName}} | {{.ReportDate}}
+                    </p>
+                    <p class="text-4xl font-bold text-gray-800">Índice</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex-1 px-14 py-1">
+            
+            <div class="grid grid-cols-2 gap-8">
+                <div>
+                    <div class="toc-section">
+                        <div class="toc-title">PARTE I: Análise Ambiental</div>
+                        <div class="toc-item"><span>PESTEL</span><span>04</span></div>
+                        <div class="toc-item"><span>Porter 5 Forças</span><span>05</span></div>
+                        <div class="toc-item"><span>SWOT</span><span>06</span></div>
+                    </div>
+
+                    <div class="toc-section">
+                        <div class="toc-title">PARTE II: Posicionamento</div>
+                        <div class="toc-item"><span>TAM/SAM/SOM</span><span>07</span></div>
+                        <div class="toc-item"><span>Oceano Azul</span><span>08</span></div>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="toc-section">
+                        <div class="toc-title">PARTE III: Estratégia</div>
+                        <div class="toc-item"><span>OKRs</span><span>09</span></div>
+                        <div class="toc-item"><span>Modelo de Negócio</span><span>10</span></div>
+                        <div class="toc-item"><span>Análise Competitiva</span><span>11</span></div>
+                    </div>
+
+                    <div class="toc-section">
+                        <div class="toc-title">PARTE IV: Execução</div>
+                        <div class="toc-item"><span>Projeções Financeiras</span><span>12</span></div>
+                        <div class="toc-item"><span>GTM Strategy</span><span>13</span></div>
+                        <div class="toc-item"><span>Riscos</span><span>14</span></div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="px-24 pb-3">
+            <div class="border-t border-gray-200 pt-4 flex justify-between items-center">
+                <p class="text-sm text-gray-500">
+                    <i class="fas fa-shield-alt mr-1" style="color: {{.Theme.AccentColor}};"></i>
+                    Confidencial - IMENSIAH {{.Year}}
+                </p>
+                <p class="text-sm font-medium" style="color: {{.Theme.PrimaryColor}};">
+                    Página 3 de 16
+                </p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

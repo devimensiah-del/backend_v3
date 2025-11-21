@@ -1,0 +1,53 @@
+package api
+
+import (
+	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog"
+)
+
+// SetupRouter configures all API routes
+// Now accepts allowedOrigins for CORS configuration
+func SetupRouter(handler *Handler, logger zerolog.Logger, jwtSecret string, allowedOrigins string, isProd bool) *gin.Engine {
+	if isProd {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
+	router := gin.New()
+
+	// Global middleware
+	// FIX: Passed allowedOrigins to the middleware
+	router.Use(CORSMiddleware(allowedOrigins))
+	router.Use(RequestIDMiddleware())
+	router.Use(LoggingMiddleware(logger))
+	router.Use(RecoveryMiddleware(logger))
+	router.Use(RateLimitMiddleware(100))
+
+	router.GET("/health", handler.HealthCheck)
+
+	// Public API routes (v1)
+	publicAPI := router.Group("/api/v1")
+	{
+		publicAPI.POST("/submit", handler.CreateSubmission)
+	}
+
+	// Protected User Routes (v1)
+	protectedAPI := router.Group("/api/v1")
+	protectedAPI.Use(AuthMiddleware(jwtSecret))
+	{
+		protectedAPI.GET("/submissions/:id", handler.GetSubmission)
+		protectedAPI.GET("/submissions/:id/report/preview", handler.PreviewReport)
+		protectedAPI.POST("/submissions/:id/report/publish", handler.PublishReport)
+	}
+
+	// Admin API routes (v1)
+	adminAPI := router.Group("/api/v1/admin")
+	adminAPI.Use(AuthMiddleware(jwtSecret))
+	adminAPI.Use(AdminAuthMiddleware())
+	{
+		adminAPI.GET("/submissions", handler.ListSubmissions)
+		adminAPI.POST("/submissions/:id/retry-enrichment", handler.RetryEnrichment)
+		adminAPI.POST("/submissions/:id/retry-analysis", handler.RetryAnalysis)
+	}
+
+	return router
+}

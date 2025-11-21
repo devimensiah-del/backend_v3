@@ -1,0 +1,4 @@
+# backend_v3/tests
+tests\workflow_test.go:12:2: package backend_v3/infrastructure/repo/memory is not in std (C:\Program Files\Go\src\backend_v3\infrastructure\repo\memory)
+FAIL	backend_v3/tests [setup failed]
+FAIL

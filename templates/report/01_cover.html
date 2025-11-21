@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.ReportTitle}} - IMENSIAH</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet"/>
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet"/>
+
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            font-family: 'Montserrat', sans-serif;
+        }
+
+        .slide-container {
+            width: 1280px;
+            min-height: 720px;
+            max-height: 720px;
+            overflow-y: auto;
+            box-sizing: border-box;
+            background-color: #f8fafc;
+            position: relative;
+        }
+
+        .accent-bar {
+            width: 6px;
+            height: 60px;
+            background-color: {{.Theme.AccentColor}};
+            margin-right: 20px;
+        }
+
+        .info-box {
+            border-left: 3px solid {{.Theme.PrimaryColor}};
+            padding-left: 15px;
+        }
+
+        .note-box {
+            background-color: #f0f4f8;
+            border-left: 3px solid {{.Theme.AccentColor}};
+        }
+    </style>
+</head>
+<body>
+    <div class="slide-container flex flex-col">
+        <!-- Header -->
+        <div class="px-24 pt-8 pb-3">
+            <div class="flex items-center">
+                <div class="accent-bar"></div>
+                <div>
+                    <p class="text-sm font-semibold uppercase tracking-wider mb-1" style="color: {{.Theme.PrimaryColor}};">
+                        Documento Confidencial
+                    </p>
+                    <p class="text-5xl font-bold text-gray-800">Relatório Estratégico</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="flex-1 px-24 py-1">
+            <div class="flex flex-col h-full justify-start">
+                <p class="text-6xl font-bold text-gray-900 mb-3">{{.CompanyName}}</p>
+                <p class="text-xl text-gray-600 mb-16" style="font-family: 'Roboto', sans-serif; font-weight: 300;">
+                    Análise e Direcionamento Estratégico 2025+
+                </p>
+
+                <div class="info-box mt-auto mb-16">
+                    <div class="mb-6">
+                        <p class="text-sm font-medium text-gray-500">Indústria</p>
+                        <p class="text-lg font-medium text-gray-800">{{.Industry}}</p>
+                    </div>
+                    <div class="mb-6">
+                        <p class="text-sm font-medium text-gray-500">Mercado</p>
+                        <p class="text-lg font-medium text-gray-800">{{.Market}}</p>
+                    </div>
+                    <div>
+                        <p class="text-sm font-medium text-gray-500">Data de Geração</p>
+                        <p class="text-lg font-medium text-gray-800">{{.ReportDate}}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="px-24 pb-3">
+            <div class="note-box p-4 rounded-md mb-6">
+                <p class="text-sm text-gray-600">
+                    <i class="fas fa-info-circle mr-2" style="color: {{.Theme.AccentColor}};"></i>
+                    Nota: Esta análise foi baseada em dados de mercado e benchmarking. Certas conclusões são qualitativas e requerem validação com dados primários adicionais.
+                </p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
