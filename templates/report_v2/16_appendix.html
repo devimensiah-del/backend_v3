@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Appendix</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        @page { size: A4 portrait; margin: 0; }
+
+        body {
+            width: 595px;
+            height: 842px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            color: #0A101D;
+            background: #FFFFFF;
+        }
+
+        .page { width: 595px; height: 842px; padding: 40px; display: flex; flex-direction: column; }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 24px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #E5E0D6;
+        }
+
+        .page-number { font-size: 10px; font-weight: 600; color: #B89E68; }
+        .company-name-header { font-size: 10px; color: #71717A; }
+
+        .page-title { font-size: 24px; font-weight: 300; color: #0A101D; margin-bottom: 4px; }
+        .page-subtitle { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.15em; color: #B89E68; margin-bottom: 24px; }
+
+        .section {
+            margin-bottom: 20px;
+        }
+
+        .section-title {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #0A101D;
+            margin-bottom: 10px;
+            padding: 8px 12px;
+            background: #F7F6F4;
+        }
+
+        .section-content {
+            font-size: 9.5px;
+            line-height: 1.6;
+            color: #111827;
+            padding-left: 12px;
+        }
+
+        .frameworks-list {
+            list-style: none;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            padding-left: 12px;
+        }
+
+        .framework-item {
+            font-size: 9px;
+            color: #111827;
+            padding-left: 12px;
+            position: relative;
+        }
+
+        .framework-item::before {
+            content: '✓';
+            position: absolute;
+            left: 0;
+            color: #10b981;
+            font-weight: 700;
+        }
+
+        .disclaimer {
+            background: #F7F6F4;
+            padding: 16px;
+            border-left: 4px solid #B89E68;
+            margin-top: auto;
+        }
+
+        .disclaimer-text {
+            font-size: 8px;
+            line-height: 1.6;
+            color: #71717A;
+        }
+
+        .footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-top: 12px;
+            border-top: 1px solid #E5E0D6;
+            font-size: 8px;
+            color: #71717A;
+            margin-top: 16px;
+        }
+
+        .imensiah-brand {
+            font-weight: 700;
+            color: #B89E68;
+            font-size: 10px;
+            letter-spacing: 0.1em;
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <div class="header">
+            <div class="page-number">16</div>
+            <div class="company-name-header">{{ .CompanyName }}</div>
+        </div>
+
+        <h1 class="page-title">Appendix</h1>
+        <div class="page-subtitle">Methodology & References</div>
+
+        <div class="section">
+            <div class="section-title">Analytical Methodology</div>
+            <div class="section-content">
+                This report was generated using IMENSIAH's proprietary hybrid intelligence methodology, combining artificial intelligence for data processing and pattern recognition with human expertise for strategic validation and contextual analysis.
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Frameworks Applied</div>
+            <ul class="frameworks-list">
+                <li class="framework-item">PESTEL Analysis</li>
+                <li class="framework-item">Porter's Five Forces</li>
+                <li class="framework-item">SWOT Analysis</li>
+                <li class="framework-item">Blue Ocean Strategy</li>
+                <li class="framework-item">TAM-SAM-SOM</li>
+                <li class="framework-item">OKRs</li>
+                <li class="framework-item">Balanced Scorecard</li>
+                <li class="framework-item">Benchmarking</li>
+                <li class="framework-item">Scenario Planning</li>
+                <li class="framework-item">Growth Hacking</li>
+                <li class="framework-item">Decision Matrix</li>
+            </ul>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Data Sources</div>
+            <div class="section-content">
+                Analysis based on: Company-provided information, publicly available market data, industry reports, competitive intelligence, economic indicators, and regulatory documentation. All sources current as of {{ .Date }}.
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Report Version</div>
+            <div class="section-content">
+                Version {{ .Version }} | Generated: {{ .Date }} | Market: {{ .Market }}
+            </div>
+        </div>
+
+        <div class="disclaimer">
+            <div class="disclaimer-text">
+                <strong>Disclaimer:</strong> This strategic analysis report is provided for informational and advisory purposes only. While IMENSIAH employs rigorous analytical methodologies combining AI and human expertise, all strategic recommendations should be evaluated in context with your organization's specific circumstances, risk tolerance, and objectives. Forward-looking statements and projections are based on current information and assumptions that may change. IMENSIAH does not guarantee specific outcomes from implementing any recommendations herein.
+            </div>
+        </div>
+
+        <div class="footer">
+            <div class="imensiah-brand">IMENSIAH</div>
+            <div>Inteligência Artificial + Inteligência Humana</div>
+        </div>
+    </div>
+</body>
+</html>

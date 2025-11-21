@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Competitive Benchmarking</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        @page { size: A4 portrait; margin: 0; }
+
+        body {
+            width: 595px;
+            height: 842px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            color: #0A101D;
+            background: #FFFFFF;
+        }
+
+        .page { width: 595px; height: 842px; padding: 40px; display: flex; flex-direction: column; }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 24px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #E5E0D6;
+        }
+
+        .page-number { font-size: 10px; font-weight: 600; color: #B89E68; }
+        .company-name-header { font-size: 10px; color: #71717A; }
+
+        .page-title { font-size: 24px; font-weight: 300; color: #0A101D; margin-bottom: 4px; }
+        .page-subtitle { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.15em; color: #B89E68; margin-bottom: 24px; }
+
+        .section {
+            margin-bottom: 24px;
+        }
+
+        .section-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: #0A101D;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #B89E68;
+        }
+
+        .item-list {
+            list-style: none;
+        }
+
+        .item {
+            font-size: 10px;
+            line-height: 1.5;
+            color: #111827;
+            margin-bottom: 10px;
+            padding-left: 16px;
+            position: relative;
+        }
+
+        .item::before {
+            content: '•';
+            position: absolute;
+            left: 0;
+            color: #B89E68;
+            font-weight: 700;
+        }
+
+        .best-practices {
+            background: #F7F6F4;
+            padding: 16px;
+            border-left: 4px solid #10b981;
+        }
+
+        .best-practices .section-title {
+            border-bottom-color: #10b981;
+        }
+
+        .best-practices .item::before {
+            color: #10b981;
+        }
+
+        .footer {
+            display: flex;
+            justify-content: space-between;
+            padding-top: 12px;
+            border-top: 1px solid #E5E0D6;
+            font-size: 8px;
+            color: #71717A;
+            margin-top: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <div class="header">
+            <div class="page-number">11</div>
+            <div class="company-name-header">{{ .CompanyName }}</div>
+        </div>
+
+        <h1 class="page-title">Competitive Benchmarking</h1>
+        <div class="page-subtitle">Market Position Analysis</div>
+
+        <div class="section">
+            <div class="section-title">Competitors Analyzed</div>
+            <ul class="item-list">
+                {{ range .Benchmarking.CompetitorsAnalyzed }}
+                <li class="item">{{ . }}</li>
+                {{ end }}
+            </ul>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Performance Gaps</div>
+            <ul class="item-list">
+                {{ range .Benchmarking.PerformanceGaps }}
+                <li class="item">{{ . }}</li>
+                {{ end }}
+            </ul>
+        </div>
+
+        <div class="section best-practices">
+            <div class="section-title">Best Practices</div>
+            <ul class="item-list">
+                {{ range .Benchmarking.BestPractices }}
+                <li class="item">{{ . }}</li>
+                {{ end }}
+            </ul>
+        </div>
+
+        <div class="footer">
+            <div>IMENSIAH — Strategic Intelligence Report</div>
+            <div>{{ .Date }}</div>
+        </div>
+    </div>
+</body>
+</html>

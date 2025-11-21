@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Table of Contents</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        @page { size: A4 portrait; margin: 0; }
+
+        body {
+            width: 595px;
+            height: 842px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            color: #0A101D;
+            background: #FFFFFF;
+        }
+
+        .page {
+            width: 595px;
+            height: 842px;
+            padding: 40px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 32px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #E5E0D6;
+        }
+
+        .page-number {
+            font-size: 10px;
+            font-weight: 600;
+            color: #B89E68;
+            letter-spacing: 0.1em;
+        }
+
+        .company-name-header {
+            font-size: 10px;
+            font-weight: 500;
+            color: #71717A;
+            letter-spacing: 0.05em;
+        }
+
+        .page-title {
+            font-size: 28px;
+            font-weight: 300;
+            color: #0A101D;
+            margin-bottom: 8px;
+            letter-spacing: -0.01em;
+        }
+
+        .page-subtitle {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            color: #B89E68;
+            margin-bottom: 40px;
+        }
+
+        /* TOC Sections */
+        .toc-section {
+            margin-bottom: 32px;
+        }
+
+        .section-heading {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            color: #B89E68;
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #B89E68;
+        }
+
+        .toc-list {
+            list-style: none;
+        }
+
+        .toc-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            padding: 10px 0;
+            border-bottom: 1px dotted #E5E0D6;
+            font-size: 11px;
+        }
+
+        .toc-item-name {
+            color: #111827;
+            font-weight: 400;
+        }
+
+        .toc-item-page {
+            color: #71717A;
+            font-weight: 600;
+            font-size: 10px;
+        }
+
+        .footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-top: 16px;
+            border-top: 1px solid #E5E0D6;
+            font-size: 8px;
+            color: #71717A;
+            margin-top: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <div class="header">
+            <div class="page-number">03</div>
+            <div class="company-name-header">{{ .CompanyName }}</div>
+        </div>
+
+        <h1 class="page-title">Table of Contents</h1>
+        <div class="page-subtitle">Report Structure</div>
+
+        <!-- Executive Overview -->
+        <div class="toc-section">
+            <div class="section-heading">Executive Overview</div>
+            <ul class="toc-list">
+                <li class="toc-item">
+                    <span class="toc-item-name">Executive Summary</span>
+                    <span class="toc-item-page">02</span>
+                </li>
+            </ul>
+        </div>
+
+        <!-- Strategic Analysis -->
+        <div class="toc-section">
+            <div class="section-heading">Strategic Analysis</div>
+            <ul class="toc-list">
+                <li class="toc-item">
+                    <span class="toc-item-name">PESTEL Analysis</span>
+                    <span class="toc-item-page">04</span>
+                </li>
+                <li class="toc-item">
+                    <span class="toc-item-name">Porter's Five Forces</span>
+                    <span class="toc-item-page">05</span>
+                </li>
+                <li class="toc-item">
+                    <span class="toc-item-name">SWOT Analysis</span>
+                    <span class="toc-item-page">06</span>
+                </li>
+                <li class="toc-item">
+                    <span class="toc-item-name">TAM-SAM-SOM Market Sizing</span>
+                    <span class="toc-item-page">07</span>
+                </li>
+                <li class="toc-item">
+                    <span class="toc-item-name">Blue Ocean Strategy</span>
+                    <span class="toc-item-page">08</span>
+                </li>
+            </ul>
+        </div>
+
+        <!-- Execution Framework -->
+        <div class="toc-section">
+            <div class="section-heading">Execution Framework</div>
+            <ul class="toc-list">
+                <li class="toc-item">
+                    <span class="toc-item-name">OKRs & Goals</span>
+                    <span class="toc-item-page">09</span>
+                </li>
+                <li class="toc-item">
+                    <span class="toc-item-name">Balanced Scorecard</span>
+                    <span class="toc-item-page">10</span>
+                </li>
+                <li class="toc-item">
+                    <span class="toc-item-name">Competitive Benchmarking</span>
+                    <span class="toc-item-page">11</span>
+                </li>
+                <li class="toc-item">
+                    <span class="toc-item-name">Financial Projections</span>
+                    <span class="toc-item-page">12</span>
+                </li>
+                <li class="toc-item">
+                    <span class="toc-item-name">Growth Strategy</span>
+                    <span class="toc-item-page">13</span>
+                </li>
+                <li class="toc-item">
+                    <span class="toc-item-name">Risk Assessment</span>
+                    <span class="toc-item-page">14</span>
+                </li>
+            </ul>
+        </div>
+
+        <!-- Recommendations -->
+        <div class="toc-section">
+            <div class="section-heading">Recommendations</div>
+            <ul class="toc-list">
+                <li class="toc-item">
+                    <span class="toc-item-name">Strategic Roadmap</span>
+                    <span class="toc-item-page">15</span>
+                </li>
+                <li class="toc-item">
+                    <span class="toc-item-name">Appendix</span>
+                    <span class="toc-item-page">16</span>
+                </li>
+            </ul>
+        </div>
+
+        <div class="footer">
+            <div>IMENSIAH — Strategic Intelligence Report</div>
+            <div>{{ .Date }}</div>
+        </div>
+    </div>
+</body>
+</html>
