@@ -2,8 +2,10 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/joho/godotenv"
 	"github.com/rs/zerolog"
@@ -64,8 +66,9 @@ func Load() (*Config, error) {
 		SynthesisModel:   getEnv("AI_SYNTHESIS_MODEL", "anthropic/claude-3.5-sonnet"),
 
 		// Redis & Worker
-		RedisURL:          getEnv("REDIS_ADDR", "localhost:6379"),
-		RedisPassword:     getEnv("REDIS_PASSWORD", ""),
+		// Parse Redis connection from REDIS_URL (Railway) or fall back to REDIS_ADDR (local)
+		RedisURL:          "",
+		RedisPassword:     "",
 		WorkerEnabled:     true,
 		WorkerConcurrency: getEnvInt("ASYNQ_CONCURRENCY", 10),
 		WorkerQueues:      "critical:6,default:3,low:1",
@@ -81,10 +84,53 @@ func Load() (*Config, error) {
 		FrontendURL:     "http://localhost:3000",
 	}
 
+	// Parse Redis configuration
+	cfg.RedisURL, cfg.RedisPassword = parseRedisConfig()
+
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// parseRedisConfig parses Redis connection from REDIS_URL (Railway format)
+// or falls back to REDIS_ADDR (local development)
+func parseRedisConfig() (addr string, password string) {
+	// Try Railway's REDIS_URL first (format: redis://default:password@host:port)
+	if redisURL := os.Getenv("REDIS_URL"); redisURL != "" {
+		parsed, err := url.Parse(redisURL)
+		if err == nil {
+			// Extract host:port
+			addr = parsed.Host
+
+			// Extract password from URL
+			if parsed.User != nil {
+				password, _ = parsed.User.Password()
+			}
+
+			log.Info().Str("addr", addr).Bool("has_password", password != "").Msg("Using REDIS_URL")
+			return addr, password
+		}
+		log.Warn().Err(err).Str("url", redisURL).Msg("Failed to parse REDIS_URL, falling back to REDIS_ADDR")
+	}
+
+	// Fall back to REDIS_ADDR (local development)
+	addr = getEnv("REDIS_ADDR", "localhost:6379")
+	password = getEnv("REDIS_PASSWORD", "")
+
+	// Handle REDIS_ADDR that might include protocol
+	if strings.HasPrefix(addr, "redis://") {
+		parsed, err := url.Parse(addr)
+		if err == nil {
+			addr = parsed.Host
+			if parsed.User != nil {
+				password, _ = parsed.User.Password()
+			}
+		}
+	}
+
+	log.Info().Str("addr", addr).Bool("has_password", password != "").Msg("Using REDIS_ADDR")
+	return addr, password
 }
 
 func (c *Config) Validate() error {

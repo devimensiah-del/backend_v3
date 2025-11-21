@@ -129,6 +129,7 @@ func main() {
 	// 8. BACKGROUND WORKER
 	worker := jobs.NewWorker(
 		cfg.RedisURL,
+		cfg.RedisPassword,
 		subSvc,
 		enrichSvc,
 		analysisSvc,

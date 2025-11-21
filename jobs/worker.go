@@ -38,19 +38,25 @@ type Worker struct {
 	analysisService   *analysis.Service
 	reportService     *report.Service // Kept just in case, but unused in background jobs
 	logger            zerolog.Logger
-	redisAddr         string // Added to fix the enqueue bug
+	redisOpt          asynq.RedisClientOpt // Store full Redis options including password
 }
 
 func NewWorker(
 	redisAddr string,
+	redisPassword string,
 	submissionSvc *submission.Service,
 	enrichmentSvc *enrichment.Service,
 	analysisSvc *analysis.Service,
 	reportSvc *report.Service,
 	logger zerolog.Logger,
 ) *Worker {
+	redisOpt := asynq.RedisClientOpt{
+		Addr:     redisAddr,
+		Password: redisPassword,
+	}
+
 	srv := asynq.NewServer(
-		asynq.RedisClientOpt{Addr: redisAddr},
+		redisOpt,
 		asynq.Config{
 			Concurrency: 10,
 			Queues:      map[string]int{"critical": 6, "default": 3, "low": 1},
@@ -66,7 +72,7 @@ func NewWorker(
 		analysisService:   analysisSvc,
 		reportService:     reportSvc,
 		logger:            logger.With().Str("component", "worker").Logger(),
-		redisAddr:         redisAddr,
+		redisOpt:          redisOpt,
 	}
 
 	mux.HandleFunc(TypeEnrichment, w.HandleEnrichmentJob)
@@ -142,8 +148,8 @@ func (w *Worker) enqueueJob(typeName string, payload interface{}) error {
 		return err
 	}
 
-	// Use w.redisAddr
-	client := asynq.NewClient(asynq.RedisClientOpt{Addr: w.redisAddr})
+	// Use w.redisOpt with both address and password
+	client := asynq.NewClient(w.redisOpt)
 	defer client.Close()
 
 	_, err = client.Enqueue(asynq.NewTask(typeName, data))
