@@ -14,10 +14,33 @@ import (
 
 // CORSMiddleware handles Cross-Origin Resource Sharing
 // Supports multiple origins separated by commas
-func CORSMiddleware(allowedOrigins string) gin.HandlerFunc {
+func CORSMiddleware(allowedOrigins string, logger zerolog.Logger) gin.HandlerFunc {
 	origins := strings.Split(allowedOrigins, ",")
 	return func(c *gin.Context) {
 		requestOrigin := c.Request.Header.Get("Origin")
+		path := c.Request.URL.Path
+
+		// CRITICAL FIX: Allow health checks and monitoring endpoints to bypass CORS
+		// Railway, Docker, Kubernetes health checkers don't send Origin headers
+		if path == "/health" || path == "/metrics" || path == "/ready" || path == "/live" {
+			logger.Debug().
+				Str("path", path).
+				Str("method", c.Request.Method).
+				Str("user_agent", c.Request.UserAgent()).
+				Msg("Health/monitoring endpoint - skipping CORS")
+			c.Next()
+			return
+		}
+
+		// For browser requests without Origin header (like direct URL access), allow through
+		if requestOrigin == "" {
+			logger.Debug().
+				Str("path", path).
+				Str("method", c.Request.Method).
+				Msg("No Origin header - allowing request")
+			c.Next()
+			return
+		}
 
 		// Check if the request origin is in the allowed list
 		originAllowed := false
@@ -30,9 +53,13 @@ func CORSMiddleware(allowedOrigins string) gin.HandlerFunc {
 			}
 		}
 
-		// SECURITY FIX: Reject unauthorized origins explicitly
-		// No fallback to prevent CORS misconfigurations in production
+		// SECURITY: Reject unauthorized origins explicitly
 		if !originAllowed {
+			logger.Warn().
+				Str("origin", requestOrigin).
+				Str("path", path).
+				Str("allowed_origins", allowedOrigins).
+				Msg("CORS: Origin not allowed")
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
 				"error":   "Forbidden",
 				"message": "Origin not allowed by CORS policy",
@@ -45,6 +72,7 @@ func CORSMiddleware(allowedOrigins string) gin.HandlerFunc {
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE, PATCH")
 
 		if c.Request.Method == "OPTIONS" {
+			logger.Debug().Str("origin", requestOrigin).Msg("CORS preflight request")
 			c.AbortWithStatus(http.StatusNoContent)
 			return
 		}
@@ -132,33 +160,63 @@ func AdminAuthMiddleware() gin.HandlerFunc {
 	}
 }
 
-// LoggingMiddleware logs all HTTP requests
+// LoggingMiddleware logs all HTTP requests with detailed context
 func LoggingMiddleware(logger zerolog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		path := c.Request.URL.Path
 		query := c.Request.URL.RawQuery
+		method := c.Request.Method
+		userAgent := c.Request.UserAgent()
+		origin := c.Request.Header.Get("Origin")
+
+		// Log request START (especially for health checks)
+		logger.Info().
+			Str("method", method).
+			Str("path", path).
+			Str("query", query).
+			Str("ip", c.ClientIP()).
+			Str("user_agent", userAgent).
+			Str("origin", origin).
+			Msg("→ HTTP request started")
+
 		c.Next()
+
 		latency := time.Since(start)
 		statusCode := c.Writer.Status()
 
-		logger.Info().
-			Str("method", c.Request.Method).
+		// Log request completion with status
+		logEvent := logger.Info()
+		if statusCode >= 500 {
+			logEvent = logger.Error()
+		} else if statusCode >= 400 {
+			logEvent = logger.Warn()
+		}
+
+		logEvent.
+			Str("method", method).
 			Str("path", path).
 			Str("query", query).
 			Int("status", statusCode).
 			Dur("latency", latency).
 			Str("ip", c.ClientIP()).
-			Msg("HTTP request")
+			Str("user_agent", userAgent).
+			Int("response_size", c.Writer.Size()).
+			Msg("← HTTP request completed")
 	}
 }
 
-// RecoveryMiddleware recovers from panics
+// RecoveryMiddleware recovers from panics with detailed logging
 func RecoveryMiddleware(logger zerolog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		defer func() {
 			if err := recover(); err != nil {
-				logger.Error().Interface("error", err).Msg("Panic recovered")
+				logger.Error().
+					Interface("panic", err).
+					Str("path", c.Request.URL.Path).
+					Str("method", c.Request.Method).
+					Str("ip", c.ClientIP()).
+					Msg("PANIC recovered in HTTP handler")
 				c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Internal server error", Message: "Unexpected error"})
 				c.Abort()
 			}

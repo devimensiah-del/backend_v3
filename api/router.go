@@ -14,13 +14,14 @@ func SetupRouter(handler *Handler, logger zerolog.Logger, jwtSecret string, allo
 
 	router := gin.New()
 
-	// Global middleware
-	router.Use(CORSMiddleware(allowedOrigins))
+	// Global middleware (CORS now includes health check bypass)
+	router.Use(CORSMiddleware(allowedOrigins, logger))
 	router.Use(RequestIDMiddleware())
 	router.Use(LoggingMiddleware(logger))
 	router.Use(RecoveryMiddleware(logger))
 	router.Use(RateLimitMiddleware(100))
 
+	// Health check endpoint (will bypass CORS)
 	router.GET("/health", handler.HealthCheck)
 
 	// Public API routes (v1)
