@@ -92,6 +92,7 @@ func (w *Worker) HandleEnrichmentJob(ctx context.Context, task *asynq.Task) erro
 		SubmissionID string `json:"submission_id"`
 	}
 	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
+		w.logger.Error().Err(err).Msg("Failed to unmarshal enrichment job payload")
 		return err
 	}
 
@@ -100,15 +101,32 @@ func (w *Worker) HandleEnrichmentJob(ctx context.Context, task *asynq.Task) erro
 	// 1. Run Agent
 	enrichmentData, err := w.enrichmentService.EnrichSubmission(ctx, uuid.MustParse(payload.SubmissionID))
 	if err != nil {
+		w.logger.Error().
+			Err(err).
+			Str("sub_id", payload.SubmissionID).
+			Msg("ENRICHMENT JOB FAILED - EnrichSubmission returned error")
 		return err
 	}
+
+	w.logger.Info().
+		Str("sub_id", payload.SubmissionID).
+		Str("enrichment_id", enrichmentData.ID.String()).
+		Msg("Enrichment completed successfully, chaining to analysis")
 
 	// 2. Chain Analysis Job
 	nextPayload := map[string]string{
 		"submission_id": payload.SubmissionID,
 		"enrichment_id": enrichmentData.ID.String(),
 	}
-	return w.enqueueJob(TypeAnalysis, nextPayload)
+	if err := w.enqueueJob(TypeAnalysis, nextPayload); err != nil {
+		w.logger.Error().
+			Err(err).
+			Str("sub_id", payload.SubmissionID).
+			Msg("Failed to enqueue analysis job after enrichment")
+		return err
+	}
+
+	return nil
 }
 
 func (w *Worker) HandleAnalysisJob(ctx context.Context, task *asynq.Task) error {
@@ -117,6 +135,7 @@ func (w *Worker) HandleAnalysisJob(ctx context.Context, task *asynq.Task) error 
 		EnrichmentID string `json:"enrichment_id"`
 	}
 	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
+		w.logger.Error().Err(err).Msg("Failed to unmarshal analysis job payload")
 		return err
 	}
 
