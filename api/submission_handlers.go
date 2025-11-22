@@ -78,38 +78,40 @@ func (h *Handler) CreateSubmission(c *gin.Context) {
 		}
 	}
 
-	// Transform frontend format to domain model
-	sub, err := h.submissionSvc.Create(c.Request.Context(), &submission.Submission{
-		// Company Information from main request
+	// Transform frontend format to domain model and trigger enrichment workflow
+	submitReq := &submission.SubmitRequest{
+		// Company Information
 		CompanyName:     req.CompanyName,
 		CNPJ:            stringToPtr(req.CNPJ),
 		CompanyIndustry: stringToPtr(req.Industry),
 		CompanySize:     stringToPtr(req.CompanySize),
 		CompanyWebsite:  req.Website,
 
-		// Contact Information from additionalInfo
+		// Contact Information
 		ContactName:     additionalInfo.ContactName,
 		ContactEmail:    additionalInfo.ContactEmail,
 		ContactPhone:    stringToPtr(additionalInfo.ContactPhone),
 		ContactPosition: stringToPtr(additionalInfo.ContactPosition),
 
-		// Business Context from both main request and additionalInfo
+		// Business Context
 		CompanyLocation:  stringToPtr(additionalInfo.CompanyLocation),
 		TargetMarket:     stringToPtr(additionalInfo.TargetMarket),
 		AnnualRevenueMin: additionalInfo.AnnualRevenueMin,
 		AnnualRevenueMax: additionalInfo.AnnualRevenueMax,
 		FundingStage:     stringToPtr(additionalInfo.FundingStage),
 
-		// Strategic information from main request
+		// Strategic information
 		BusinessChallenge: fmt.Sprintf("%s | %s | %s", req.StrategicGoal, req.CurrentChallenges, req.CompetitivePosition),
 		AdditionalNotes:   stringToPtr(additionalInfo.AdditionalNotes),
 		LinkedInURL:       stringToPtr(additionalInfo.LinkedInURL),
 		TwitterHandle:     stringToPtr(additionalInfo.TwitterHandle),
 
-		// Metadata
+		// User association
 		UserID: userID,
-		Status: submission.StatusPending,
-	})
+	}
+
+	// Use SubmitForm which saves to DB AND triggers enrichment workflow
+	sub, err := h.submissionSvc.SubmitForm(c.Request.Context(), submitReq)
 
 	if err != nil {
 		h.logger.Error().Err(err).Msg("Failed to create submission")
