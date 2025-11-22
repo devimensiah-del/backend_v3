@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -168,27 +169,52 @@ func RecoveryMiddleware(logger zerolog.Logger) gin.HandlerFunc {
 
 // RateLimitMiddleware limits requests per IP
 func RateLimitMiddleware(requestsPerMinute int) gin.HandlerFunc {
-	// Simple in-memory implementation for MVP
+	// Simple in-memory implementation for MVP with thread-safety
 	type rateLimiter struct {
 		count     int
 		resetTime time.Time
+		mu        sync.Mutex
 	}
+
 	limiters := make(map[string]*rateLimiter)
+	var mapMu sync.RWMutex
 
 	return func(c *gin.Context) {
 		ip := c.ClientIP()
 		now := time.Now()
+
+		// Get or create limiter for this IP
+		mapMu.RLock()
 		limiter, exists := limiters[ip]
-		if !exists || now.After(limiter.resetTime) {
-			limiters[ip] = &rateLimiter{count: 1, resetTime: now.Add(1 * time.Minute)}
-			c.Next()
-			return
+		mapMu.RUnlock()
+
+		if !exists {
+			mapMu.Lock()
+			// Double-check after acquiring write lock
+			if limiter, exists = limiters[ip]; !exists {
+				limiter = &rateLimiter{count: 0, resetTime: now.Add(1 * time.Minute)}
+				limiters[ip] = limiter
+			}
+			mapMu.Unlock()
 		}
+
+		// Lock the specific IP's limiter
+		limiter.mu.Lock()
+		defer limiter.mu.Unlock()
+
+		// Reset if time window expired
+		if now.After(limiter.resetTime) {
+			limiter.count = 0
+			limiter.resetTime = now.Add(1 * time.Minute)
+		}
+
+		// Check rate limit
 		if limiter.count >= requestsPerMinute {
 			c.JSON(http.StatusTooManyRequests, ErrorResponse{Error: "Rate limit exceeded", Message: "Too many requests"})
 			c.Abort()
 			return
 		}
+
 		limiter.count++
 		c.Next()
 	}

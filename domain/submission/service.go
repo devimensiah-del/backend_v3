@@ -189,6 +189,7 @@ func (s *Service) GetAnalytics(ctx context.Context) (*AnalyticsData, error) {
 
 type SubmitRequest struct {
 	CompanyName     string  `json:"companyName"`
+	CNPJ            *string `json:"cnpj,omitempty"`
 	CompanyWebsite  *string `json:"companyWebsite,omitempty"`
 	CompanyIndustry *string `json:"companyIndustry,omitempty"`
 	CompanySize     *string `json:"companySize,omitempty"`

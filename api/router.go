@@ -27,6 +27,8 @@ func SetupRouter(handler *Handler, logger zerolog.Logger, jwtSecret string, allo
 	publicAPI := router.Group("/api/v1")
 	{
 		publicAPI.POST("/submit", handler.CreateSubmission)
+		// Frontend expects /submissions endpoint
+		publicAPI.POST("/submissions", handler.CreateSubmission)
 	}
 
 	// Public Auth routes (no auth required)
@@ -47,10 +49,19 @@ func SetupRouter(handler *Handler, logger zerolog.Logger, jwtSecret string, allo
 		authAPI.PUT("/update-password", handler.UpdatePassword)
 	}
 
+	// User profile alias (frontend expects /user/profile)
+	userAPI := router.Group("/api/v1/user")
+	userAPI.Use(AuthMiddleware(jwtSecret))
+	{
+		userAPI.GET("/profile", handler.GetCurrentUser)
+	}
+
 	// Protected User Routes (v1)
 	protectedAPI := router.Group("/api/v1")
 	protectedAPI.Use(AuthMiddleware(jwtSecret))
 	{
+		// List user's own submissions
+		protectedAPI.GET("/submissions", handler.ListUserSubmissions)
 		protectedAPI.GET("/submissions/:id", handler.GetSubmission)
 		protectedAPI.GET("/submissions/:id/report/preview", handler.PreviewReport)
 		protectedAPI.POST("/submissions/:id/report/publish", handler.PublishReport)

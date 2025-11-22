@@ -33,16 +33,37 @@ type UpdatePasswordRequest struct {
 
 // ==================== SUBMISSION REQUEST TYPES ====================
 
+// CreateSubmissionRequest matches the frontend SubmissionFormData structure
+// Frontend sends: companyName, cnpj, industry, companySize, website, strategicGoal, currentChallenges, competitivePosition, additionalInfo (JSON string)
 type CreateSubmissionRequest struct {
-	CompanyName   string   `json:"company_name" binding:"required"`
-	IndustryName  string   `json:"industry_name" binding:"required"`
-	WebsiteURL    string   `json:"website_url"`
-	AnnualRevenue *float64 `json:"annual_revenue"` // Pointer to allow null/0 distinction
-	EmployeeCount *int     `json:"employee_count"`
-	Location      string   `json:"location"`
-	Description   string   `json:"description"`
-	Email         string   `json:"email" binding:"required,email"`
-	PhoneNumber   string   `json:"phone_number"`
+	// Required fields from frontend
+	CompanyName         string `json:"companyName" binding:"required"`
+	CNPJ                string `json:"cnpj" binding:"required"`
+	Industry            string `json:"industry" binding:"required"`
+	CompanySize         string `json:"companySize" binding:"required"`
+	StrategicGoal       string `json:"strategicGoal" binding:"required"`
+	CurrentChallenges   string `json:"currentChallenges" binding:"required"`
+	CompetitivePosition string `json:"competitivePosition" binding:"required"`
+
+	// Optional fields
+	Website        *string `json:"website,omitempty"`
+	AdditionalInfo *string `json:"additionalInfo,omitempty"` // JSON string containing contact and other fields
+}
+
+// AdditionalInfoData represents the parsed additionalInfo JSON string from frontend
+type AdditionalInfoData struct {
+	ContactName      string   `json:"contactName"`
+	ContactEmail     string   `json:"contactEmail"`
+	ContactPhone     string   `json:"contactPhone"`
+	ContactPosition  string   `json:"contactPosition"`
+	CompanyLocation  string   `json:"companyLocation"`
+	TargetMarket     string   `json:"targetMarket"`
+	AnnualRevenueMin *float64 `json:"annualRevenueMin"`
+	AnnualRevenueMax *float64 `json:"annualRevenueMax"`
+	FundingStage     string   `json:"fundingStage"`
+	AdditionalNotes  string   `json:"additionalNotes"`
+	LinkedInURL      string   `json:"linkedinUrl"`
+	TwitterHandle    string   `json:"twitterHandle"`
 }
 
 // ==================== ADMIN REQUEST TYPES ====================
@@ -79,26 +100,66 @@ type PasswordResetResponse struct {
 	Message string `json:"message"`
 }
 
+// SubmissionResponse is the basic response for submission creation
 type SubmissionResponse struct {
 	ID            string    `json:"id"`
-	CompanyName   string    `json:"company_name"`
-	IndustryName  string    `json:"industry_name"`
+	CompanyName   string    `json:"companyName"`
+	CNPJ          string    `json:"cnpj,omitempty"`
+	Industry      string    `json:"industry,omitempty"`
 	Status        string    `json:"status"`
-	StatusMessage string    `json:"status_message"`
-	CreatedAt     time.Time `json:"created_at"`
+	StatusMessage string    `json:"status_message,omitempty"`
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
 }
 
+// SubmissionDetailResponse contains full submission data matching frontend Submission interface
 type SubmissionDetailResponse struct {
-	ID          string    `json:"id"`
-	CompanyName string    `json:"company_name"`
-	Status      string    `json:"status"` // pending, enriching, enriched, analyzing, ready_for_review, completed
-	CreatedAt   time.Time `json:"created_at"`
+	// IDs
+	ID     string  `json:"id"`
+	UserID *string `json:"userId,omitempty"`
 
-	// Linking IDs for frontend navigation
-	EnrichmentID string `json:"enrichment_id,omitempty"`
-	AnalysisID   string `json:"analysis_id,omitempty"`
-	ReportID     string `json:"report_id,omitempty"` // Only present if PUBLISHED
-	PDFURL       string `json:"pdf_url,omitempty"`   // Only present if PUBLISHED
+	// Company Information
+	CompanyName string  `json:"companyName"`
+	CNPJ        *string `json:"cnpj,omitempty"`
+	Website     *string `json:"website,omitempty"`
+	Email       *string `json:"email,omitempty"`
+	Industry    *string `json:"industry,omitempty"`
+	CompanySize *string `json:"companySize,omitempty"`
+
+	// Strategic Context
+	StrategicGoal       *string `json:"strategicGoal,omitempty"`
+	CurrentChallenges   *string `json:"currentChallenges,omitempty"`
+	CompetitivePosition *string `json:"competitivePosition,omitempty"`
+	AdditionalInfo      *string `json:"additionalInfo,omitempty"`
+
+	// Legacy fields (for backward compatibility)
+	ContactName      *string  `json:"contactName,omitempty"`
+	ContactEmail     *string  `json:"contactEmail,omitempty"`
+	ContactPhone     *string  `json:"contactPhone,omitempty"`
+	ContactPosition  *string  `json:"contactPosition,omitempty"`
+	TargetMarket     *string  `json:"targetMarket,omitempty"`
+	AnnualRevenueMin *float64 `json:"annualRevenueMin,omitempty"`
+	AnnualRevenueMax *float64 `json:"annualRevenueMax,omitempty"`
+	FundingStage     *string  `json:"fundingStage,omitempty"`
+	BusinessChallenge *string `json:"businessChallenge,omitempty"`
+	AdditionalNotes  *string  `json:"additionalNotes,omitempty"`
+	LinkedInURL      *string  `json:"linkedinUrl,omitempty"`
+	TwitterHandle    *string  `json:"twitterHandle,omitempty"`
+	Location         *string  `json:"location,omitempty"`
+
+	// Metadata
+	Status        string  `json:"status"`
+	PaymentStatus *string `json:"paymentStatus,omitempty"`
+	CreatedAt     string  `json:"createdAt"`
+	UpdatedAt     string  `json:"updatedAt"`
+
+	// Relationships
+	EnrichmentID *string `json:"enrichmentId,omitempty"`
+	AnalysisID   *string `json:"analysisId,omitempty"`
+	ReportID     *string `json:"reportId,omitempty"`
+
+	// PDF URL (Only present if status === 'completed')
+	PDFURL *string `json:"pdfUrl,omitempty"`
 }
 
 // ReportPreviewResponse returns the HTML for the Admin UI

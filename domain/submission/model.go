@@ -13,8 +13,9 @@ type Submission struct {
 	// Primary key
 	ID uuid.UUID `json:"id" db:"id"`
 
-	// Company Information (5 fields)
+	// Company Information (6 fields)
 	CompanyName     string  `json:"companyName" db:"company_name"`
+	CNPJ            *string `json:"cnpj,omitempty" db:"cnpj"`
 	CompanyWebsite  *string `json:"companyWebsite,omitempty" db:"company_website"`
 	CompanyIndustry *string `json:"companyIndustry,omitempty" db:"company_industry"`
 	CompanySize     *string `json:"companySize,omitempty" db:"company_size"`
@@ -52,19 +53,22 @@ type Submission struct {
 type Status string
 
 const (
+	// Workflow States (matches frontend SubmissionStatus)
 	StatusPending          Status = "pending"
-	StatusEnriching        Status = "enriching"
-	StatusEnriched         Status = "enriched"
-	StatusAnalyzing        Status = "analyzing"
-	StatusAnalyzed         Status = "analyzed"
-	StatusGeneratingReport Status = "generating_report"
-	StatusCompleted        Status = "completed"
+	StatusProcessing       Status = "processing"        // Generic processing state
+	StatusEnriching        Status = "enriching"         // Worker 1 Active
+	StatusEnriched         Status = "enriched"          // Worker 1 Done
+	StatusAnalyzing        Status = "analyzing"         // Worker 2 Active
+	StatusAnalyzed         Status = "analyzed"          // Worker 2 Done (Internal)
+	StatusReadyForReview   Status = "ready_for_review"  // Waiting for Admin Publish
+	StatusGeneratingReport Status = "generating_report" // PDF generation in progress
+	StatusCompleted        Status = "completed"         // PDF Generated & Email Sent
 
 	// Failure States (Must match DB constraints)
 	StatusEnrichmentFailed Status = "enrichment_failed"
 	StatusAnalysisFailed   Status = "analysis_failed"
 	StatusReportFailed     Status = "report_failed"
-	StatusFailed           Status = "failed"
+	StatusFailed           Status = "failed" // Generic Failure
 )
 
 // NewSubmission creates a new submission with default values
