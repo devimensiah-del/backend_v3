@@ -60,13 +60,18 @@ ADD CONSTRAINT valid_analysis_status CHECK (status IN (
     'failed'
 ));
 
--- ==================== 5. UPDATE EXISTING DATA FOR VERSIONING ====================
+-- ==================== 5. ADD SOFT DELETE COLUMN ====================
+-- Add soft delete support BEFORE creating indexes that use it
+ALTER TABLE analyses
+ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE;
+
+-- ==================== 6. UPDATE EXISTING DATA FOR VERSIONING ====================
 -- Mark all existing analyses as version 1 and latest
 UPDATE analyses
 SET version = 1, is_latest = TRUE
 WHERE version IS NULL OR version = 0;
 
--- ==================== 6. CREATE VERSIONING CONSTRAINTS ====================
+-- ==================== 7. CREATE VERSIONING CONSTRAINTS ====================
 -- Ensure only one analysis per submission can be marked as latest
 CREATE UNIQUE INDEX IF NOT EXISTS idx_analyses_latest_per_submission
 ON analyses(submission_id)
@@ -178,17 +183,13 @@ CREATE TRIGGER trigger_update_analysis_status_timestamps
     FOR EACH ROW
     EXECUTE FUNCTION update_analysis_status_timestamps();
 
--- ==================== 9. ADD SOFT DELETE COLUMN ====================
--- Add soft delete support to match other tables
-ALTER TABLE analyses
-ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE;
-
+-- ==================== 9. CREATE PERFORMANCE INDICES ====================
 -- Index for non-deleted analyses
 CREATE INDEX IF NOT EXISTS idx_analyses_not_deleted
 ON analyses(submission_id, created_at DESC)
 WHERE deleted_at IS NULL;
 
--- ==================== 10. CREATE PERFORMANCE INDICES ====================
+-- ==================== 10. CREATE ADDITIONAL PERFORMANCE INDICES ====================
 -- Index for version queries
 CREATE INDEX IF NOT EXISTS idx_analyses_version
 ON analyses(submission_id, version DESC, created_at DESC);
