@@ -15,7 +15,7 @@ type Service struct {
 	repo           Repository
 	submissionRepo submission.Repository
 	llmClient      *llm.Client
-	model          string                // DEPRECATED: kept for backward compatibility
+	model          string                 // DEPRECATED: kept for backward compatibility
 	enrichmentCfg  config.FrameworkConfig // NEW: Framework-specific config
 }
 

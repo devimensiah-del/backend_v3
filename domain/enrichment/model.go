@@ -32,44 +32,144 @@ func (m *JSONMap) Scan(value interface{}) error {
 }
 
 // =================================================================
-// NEW: Agentic Data Structures
-// These are not DB tables, but structs to enforce the AI's JSON output
+// NEW: 3-Layer Progressive Data Collection Structure
+// Layer 1: Immediate (<2s) - Basic metadata
+// Layer 2: Structured (3-6s) - Legal/business data
+// Layer 3: AI Inference (6-10s) - Strategic intelligence
 // =================================================================
 
+// Layer1Data - Immediate data collection (<2s)
+type Layer1Data struct {
+	DomainMetadata DomainMetadata `json:"domainMetadata"`
+	IPLocation     IPLocation     `json:"ipLocation"`
+	BasicInfo      BasicInfo      `json:"basicInfo"`
+	CollectedAt    string         `json:"collectedAt"`
+	Sources        []string       `json:"sources"` // whois, metadata scraper, ip-api
+}
+
+type DomainMetadata struct {
+	Domain      string   `json:"domain"`
+	Registrar   string   `json:"registrar,omitempty"`
+	CreatedDate string   `json:"createdDate,omitempty"`
+	ExpiresDate string   `json:"expiresDate,omitempty"`
+	DomainAge   int      `json:"domainAge,omitempty"` // in years
+	NameServers []string `json:"nameServers,omitempty"`
+}
+
+type IPLocation struct {
+	IP       string `json:"ip,omitempty"`
+	Country  string `json:"country"`
+	Region   string `json:"region,omitempty"`
+	City     string `json:"city,omitempty"`
+	ISP      string `json:"isp,omitempty"`
+	Timezone string `json:"timezone,omitempty"`
+}
+
+type BasicInfo struct {
+	Title       string   `json:"title,omitempty"`       // From meta tags
+	Description string   `json:"description,omitempty"` // From meta tags
+	Keywords    []string `json:"keywords,omitempty"`    // From meta tags
+	Language    string   `json:"language,omitempty"`
+}
+
+// Layer2Data - Structured business data (3-6s)
+type Layer2Data struct {
+	LegalInfo    LegalInfo    `json:"legalInfo"`
+	BusinessInfo BusinessInfo `json:"businessInfo"`
+	LocationInfo LocationInfo `json:"locationInfo"`
+	CollectedAt  string       `json:"collectedAt"`
+	Sources      []string     `json:"sources"` // ReceitaWS, OpenCNPJ, Google Places
+}
+
+type LegalInfo struct {
+	LegalName    string `json:"legalName"`
+	CNPJ         string `json:"cnpj,omitempty"`
+	TradeName    string `json:"tradeName,omitempty"`
+	LegalStatus  string `json:"legalStatus,omitempty"`  // Active, Inactive, etc.
+	LegalNature  string `json:"legalNature,omitempty"`  // SA, LTDA, etc.
+	Founded      string `json:"founded,omitempty"`
+	TaxSituation string `json:"taxSituation,omitempty"`
+}
+
+type BusinessInfo struct {
+	Sector           string   `json:"sector"`                     // Primary CNAE
+	SecondarySectors []string `json:"secondarySectors,omitempty"` // Secondary CNAEs
+	EmployeeCount    string   `json:"employeeCount,omitempty"`    // Range or exact
+	RevenueRange     string   `json:"revenueRange,omitempty"`     // Estimated
+	CompanySize      string   `json:"companySize,omitempty"`      // MEI, ME, EPP, etc.
+}
+
+type LocationInfo struct {
+	Address     string  `json:"address"`
+	City        string  `json:"city"`
+	State       string  `json:"state"`
+	ZipCode     string  `json:"zipCode,omitempty"`
+	Phone       string  `json:"phone,omitempty"`
+	Email       string  `json:"email,omitempty"`
+	Coordinates *LatLng `json:"coordinates,omitempty"`
+}
+
+type LatLng struct {
+	Lat float64 `json:"lat"`
+	Lng float64 `json:"lng"`
+}
+
+// Layer3Data - AI-powered strategic inference (6-10s)
+type Layer3Data struct {
+	BusinessSummary  BusinessSummary  `json:"businessSummary"`
+	DigitalMaturity  DigitalMaturity  `json:"digitalMaturity"`
+	CompetitiveIntel CompetitiveIntel `json:"competitiveIntel"`
+	StrategicGaps    StrategicGaps    `json:"strategicGaps"`
+	CollectedAt      string           `json:"collectedAt"`
+	Sources          []string         `json:"sources"` // LLM analysis sources
+}
+
+type BusinessSummary struct {
+	Description      string   `json:"description"`             // AI-generated business description
+	ValueProposition string   `json:"valueProposition"`        // Core value prop
+	TargetMarket     string   `json:"targetMarket"`            // Primary customer segment
+	KeyProducts      []string `json:"keyProducts,omitempty"`   // Main offerings
+	BrandTone        string   `json:"brandTone"`               // Professional, innovative, etc.
+	UniqueFactors    []string `json:"uniqueFactors,omitempty"` // Differentiators
+}
+
+type DigitalMaturity struct {
+	OverallScore       int      `json:"overallScore"`              // 1-10
+	WebsiteQuality     int      `json:"websiteQuality"`            // 1-10
+	SEOPresence        int      `json:"seoPresence"`               // 1-10
+	SocialMedia        int      `json:"socialMedia"`               // 1-10
+	OnlineReviews      int      `json:"onlineReviews"`             // 1-10
+	EcommerceCapability int      `json:"ecommerceCapability"`       // 1-10
+	Observations       []string `json:"observations,omitempty"`    // Key findings
+}
+
+type CompetitiveIntel struct {
+	Industry       string   `json:"industry"`               // Detailed industry classification
+	Competitors    []string `json:"competitors"`            // 3-5 main competitors
+	MarketPosition string   `json:"marketPosition"`         // Leader, challenger, niche
+	Differentiator string   `json:"keyDifferentiator"`      // Main competitive advantage
+	ThreatLevel    string   `json:"threatLevel,omitempty"`  // High, medium, low
+}
+
+type StrategicGaps struct {
+	OperationalGaps []string `json:"operationalGaps"`  // Process/capability gaps
+	TechnologyGaps  []string `json:"technologyGaps"`   // Tech stack gaps
+	MarketingGaps   []string `json:"marketingGaps"`    // Marketing/brand gaps
+	TalentGaps      []string `json:"talentGaps,omitempty"` // HR/skill gaps
+	Opportunities   []string `json:"opportunities"`    // Quick win opportunities
+	PriorityActions []string `json:"priorityActions"`  // Recommended actions
+}
+
+// StrategicProfile - Combined view of all 3 layers
 type StrategicProfile struct {
-	Overview CompanyOverview    `json:"overview"`
-	Strategy StrategicInference `json:"strategicInference"`
-	Market   MarketPosition     `json:"marketPosition"`
-	Digital  DigitalPresence    `json:"digitalPresence"`
-}
+	Layer1 Layer1Data `json:"layer1"` // Immediate data
+	Layer2 Layer2Data `json:"layer2"` // Structured data
+	Layer3 Layer3Data `json:"layer3"` // AI inference
 
-type CompanyOverview struct {
-	Description   string   `json:"description"`
-	Founded       string   `json:"founded,omitempty"`
-	Headquarters  string   `json:"headquarters,omitempty"`
-	EmployeeCount string   `json:"employeeCount,omitempty"`
-	RevenueEst    string   `json:"revenueEstimation,omitempty"`
-	Sources       []string `json:"sources"`
-}
-
-type StrategicInference struct {
-	ValueArchetype  string   `json:"valuePropositionArchetype"` // e.g. "High Touch/Premium"
-	TargetSegment   string   `json:"targetCustomerSegment"`     // e.g. "B2B Enterprise"
-	BrandTone       string   `json:"brandTone"`                 // e.g. "Formal"
-	DigitalMaturity int      `json:"digitalMaturityScore"`      // 1-10
-	Weaknesses      []string `json:"observedWeaknesses"`        // Inferred operational gaps
-}
-
-type MarketPosition struct {
-	Industry       string   `json:"industry"`
-	Competitors    []string `json:"competitors"`
-	Differentiator string   `json:"keyDifferentiator"`
-}
-
-type DigitalPresence struct {
-	WebsiteURL  string   `json:"websiteUrl"`
-	LinkedInURL string   `json:"linkedinUrl,omitempty"`
-	RecentNews  []string `json:"recentNews"`
+	// Metadata
+	ProfileVersion  string `json:"profileVersion"`  // e.g., "3.0"
+	TotalDuration   int    `json:"totalDuration"`   // milliseconds
+	CompletedLayers int    `json:"completedLayers"` // 1, 2, or 3
 }
 
 // =================================================================
@@ -105,8 +205,9 @@ type Status string
 const (
 	StatusPending    Status = "pending"
 	StatusProcessing Status = "processing"
-	StatusCompleted  Status = "completed"
+	StatusFinished   Status = "finished"
 	StatusFailed     Status = "failed"
+	StatusApproved   Status = "approved"
 )
 
 // Constructors and Methods (Start, UpdateProgress, etc.) remain identical...
@@ -134,11 +235,28 @@ func (e *Enrichment) Start() {
 	e.StartedAt = &n
 	e.UpdatedAt = n
 }
-func (e *Enrichment) Complete() {
-	e.Status = StatusCompleted
+
+func (e *Enrichment) Finish() {
+	e.Status = StatusFinished
 	n := time.Now()
 	e.CompletedAt = &n
 	e.Progress = 100
+	e.UpdatedAt = n
 }
-func (e *Enrichment) Fail(err error)                      { e.Status = StatusFailed; e.ErrorMessage = err.Error() }
-func (e *Enrichment) UpdateProgress(step string, pct int) { e.CurrentStep = step; e.Progress = pct }
+
+func (e *Enrichment) Approve() {
+	e.Status = StatusApproved
+	e.UpdatedAt = time.Now()
+}
+
+func (e *Enrichment) Fail(err error) {
+	e.Status = StatusFailed
+	e.ErrorMessage = err.Error()
+	e.UpdatedAt = time.Now()
+}
+
+func (e *Enrichment) UpdateProgress(step string, pct int) {
+	e.CurrentStep = step
+	e.Progress = pct
+	e.UpdatedAt = time.Now()
+}

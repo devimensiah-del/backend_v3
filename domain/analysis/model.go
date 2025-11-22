@@ -4,6 +4,18 @@ import (
 	"time"
 )
 
+// Status constants for Analysis
+type Status string
+
+const (
+	StatusPending    Status = "pending"
+	StatusProcessing Status = "processing"
+	StatusCompleted  Status = "completed"
+	StatusFailed     Status = "failed"
+	StatusApproved   Status = "approved"
+	StatusSent       Status = "sent"
+)
+
 type Analysis struct {
 	ID               string     `db:"id" json:"id"`
 	SubmissionID     string     `db:"submission_id" json:"submission_id"`
@@ -13,6 +25,10 @@ type Analysis struct {
 	CreatedAt        time.Time  `db:"created_at" json:"created_at"`
 	UpdatedAt        time.Time  `db:"updated_at" json:"updated_at"`
 	CompletedAt      *time.Time `db:"completed_at" json:"completed_at"`
+
+	// Versioning fields
+	Version          int     `db:"version" json:"version"`
+	ParentAnalysisID *string `db:"parent_analysis_id" json:"parent_analysis_id,omitempty"`
 
 	// The 11 Frameworks (JSONB in Postgres)
 	PESTEL         PESTELAnalysis            `db:"pestel" json:"pestel"`
@@ -150,4 +166,68 @@ type ContextContainer struct {
 	OKRs           *OKRAnalysis
 	BSC            *BalancedScorecardAnalysis
 	DecisionMatrix *DecisionMatrixAnalysis
+}
+
+// Status management methods for Analysis
+
+func (a *Analysis) Start() {
+	a.Status = string(StatusProcessing)
+	a.UpdatedAt = time.Now()
+}
+
+func (a *Analysis) Complete() {
+	a.Status = string(StatusCompleted)
+	n := time.Now()
+	a.CompletedAt = &n
+	a.UpdatedAt = n
+}
+
+func (a *Analysis) Approve() {
+	a.Status = string(StatusApproved)
+	a.UpdatedAt = time.Now()
+}
+
+func (a *Analysis) Send() {
+	a.Status = string(StatusSent)
+	a.UpdatedAt = time.Now()
+}
+
+func (a *Analysis) Fail() {
+	a.Status = string(StatusFailed)
+	a.UpdatedAt = time.Now()
+}
+
+// CreateNewVersion creates a new version of this analysis
+// Returns a new Analysis with incremented version and parent reference
+func (a *Analysis) CreateNewVersion() *Analysis {
+	newAnalysis := &Analysis{
+		// Copy basic info
+		SubmissionID:     a.SubmissionID,
+		EnrichmentID:     a.EnrichmentID,
+		Status:           string(StatusPending),
+		ProcessingTimeMs: 0,
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
+		CompletedAt:      nil,
+
+		// Versioning
+		Version:          a.Version + 1,
+		ParentAnalysisID: &a.ID,
+
+		// Copy all framework data
+		PESTEL:         a.PESTEL,
+		Porter:         a.Porter,
+		TamSamSom:      a.TamSamSom,
+		SWOT:           a.SWOT,
+		Benchmarking:   a.Benchmarking,
+		BlueOcean:      a.BlueOcean,
+		GrowthHacking:  a.GrowthHacking,
+		Scenarios:      a.Scenarios,
+		OKRs:           a.OKRs,
+		BSC:            a.BSC,
+		DecisionMatrix: a.DecisionMatrix,
+		Synthesis:      a.Synthesis,
+	}
+
+	return newAnalysis
 }

@@ -5,7 +5,93 @@ package llm
 // OPTIMIZED FOR: PDF Layout Constraints (16 Pages, No Scroll) & Strategic Density.
 
 const (
-	// StrategicEnrichmentPrompt (Agentic Discovery)
+	// Layer3InferencePrompt - AI-powered strategic intelligence (Layer 3)
+	Layer3InferencePrompt = `Você é um Analista de Inteligência Estratégica Sênior.
+Seu objetivo é gerar insights estratégicos profundos com base em dados coletados.
+
+Empresa Alvo: {{COMPANY_NAME}}
+
+{{CONTEXT_DATA}}
+
+**MISSÃO: ANÁLISE ESTRATÉGICA EM 3 DIMENSÕES**
+
+**1. BUSINESS SUMMARY (Resumo do Negócio)**
+- Descrição clara e concisa do negócio (2-3 frases)
+- Proposta de valor central
+- Mercado-alvo primário
+- Principais produtos/serviços (3-5)
+- Tom de marca (profissional, inovador, tradicional, etc.)
+- Fatores únicos de diferenciação
+
+**2. DIGITAL MATURITY (Maturidade Digital)**
+Avalie de 1-10 cada dimensão:
+- Qualidade do Website (design, UX, conteúdo)
+- Presença SEO (visibilidade em buscas)
+- Redes Sociais (engajamento e alcance)
+- Avaliações Online (reviews, reputação)
+- Capacidade de E-commerce (se aplicável)
+- Score Geral de Maturidade Digital
+- Observações principais sobre a presença digital
+
+**3. COMPETITIVE INTELLIGENCE (Inteligência Competitiva)**
+- Classificação detalhada da indústria
+- 3-5 principais concorrentes
+- Posição de mercado (líder, desafiador, nicho)
+- Principal diferenciador competitivo
+- Nível de ameaça competitiva (alto, médio, baixo)
+
+**4. STRATEGIC GAPS (Lacunas Estratégicas)**
+Identifique lacunas e oportunidades:
+- Gaps Operacionais (processos, capacidades)
+- Gaps Tecnológicos (infraestrutura, ferramentas)
+- Gaps de Marketing (branding, posicionamento)
+- Gaps de Talento (habilidades, equipe) - se relevante
+- Oportunidades de Vitória Rápida (quick wins)
+- Ações Prioritárias (top 3-5 recomendações)
+
+**IMPORTANTE:**
+- Use dados fornecidos das Layer 1 e Layer 2 como base
+- Infira de forma inteligente quando dados faltarem
+- Seja específico e acionável nas recomendações
+- Foque em insights que gerem valor estratégico
+
+Retorne um JSON válido no seguinte formato:
+{
+  "businessSummary": {
+    "description": "Descrição do negócio em 2-3 frases",
+    "valueProposition": "Proposta de valor central",
+    "targetMarket": "Segmento de clientes primário",
+    "keyProducts": ["Produto/Serviço 1", "Produto/Serviço 2", "Produto/Serviço 3"],
+    "brandTone": "profissional/inovador/tradicional",
+    "uniqueFactors": ["Diferenciador 1", "Diferenciador 2"]
+  },
+  "digitalMaturity": {
+    "overallScore": 6,
+    "websiteQuality": 7,
+    "seoPresence": 5,
+    "socialMedia": 6,
+    "onlineReviews": 5,
+    "ecommerceCapability": 4,
+    "observations": ["Observação 1", "Observação 2", "Observação 3"]
+  },
+  "competitiveIntel": {
+    "industry": "Classificação detalhada da indústria",
+    "competitors": ["Concorrente 1", "Concorrente 2", "Concorrente 3"],
+    "marketPosition": "líder/desafiador/nicho",
+    "keyDifferentiator": "Principal vantagem competitiva",
+    "threatLevel": "alto/médio/baixo"
+  },
+  "strategicGaps": {
+    "operationalGaps": ["Gap operacional 1", "Gap 2"],
+    "technologyGaps": ["Gap tecnológico 1", "Gap 2"],
+    "marketingGaps": ["Gap marketing 1", "Gap 2"],
+    "talentGaps": ["Gap talento 1"],
+    "opportunities": ["Oportunidade 1", "Oportunidade 2", "Oportunidade 3"],
+    "priorityActions": ["Ação prioritária 1", "Ação 2", "Ação 3"]
+  }
+}`
+
+	// StrategicEnrichmentPrompt (Legacy - kept for backward compatibility)
 	StrategicEnrichmentPrompt = `Você é um Consultor de Estratégia Sênior.
 Seu objetivo é construir um perfil estratégico profundo de uma empresa com base em sua pegada digital.
 Empresa Alvo: {{COMPANY_NAME}}

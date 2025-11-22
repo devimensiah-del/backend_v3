@@ -98,7 +98,7 @@ func (w *Worker) HandleEnrichmentJob(ctx context.Context, task *asynq.Task) erro
 
 	w.logger.Info().Str("sub_id", payload.SubmissionID).Msg("Job Started: Enrichment Agent")
 
-	// 1. Run Agent
+	// 1. Run Agent - Status transitions: pending → processing → finished
 	enrichmentData, err := w.enrichmentService.EnrichSubmission(ctx, uuid.MustParse(payload.SubmissionID))
 	if err != nil {
 		w.logger.Error().
@@ -111,7 +111,7 @@ func (w *Worker) HandleEnrichmentJob(ctx context.Context, task *asynq.Task) erro
 	w.logger.Info().
 		Str("sub_id", payload.SubmissionID).
 		Str("enrichment_id", enrichmentData.ID.String()).
-		Msg("Enrichment completed successfully, chaining to analysis")
+		Msg("Enrichment finished successfully (status: finished), chaining to analysis")
 
 	// 2. Chain Analysis Job
 	nextPayload := map[string]string{
@@ -147,17 +147,18 @@ func (w *Worker) HandleAnalysisJob(ctx context.Context, task *asynq.Task) error 
 		return err
 	}
 
-	// 2. Run Cascade
+	// 2. Run Cascade - Status transitions: pending → processing → completed
 	_, err = w.analysisService.RunAnalysis(ctx, payload.SubmissionID, payload.EnrichmentID, enrichmentRecord.EnrichedData)
 	if err != nil {
 		w.submissionService.UpdateStatus(ctx, uuid.MustParse(payload.SubmissionID), "analysis_failed")
 		return err
 	}
 
-	// 3. STOP. Status is now "completed" (or "ready_for_review").
-	// We do NOT queue a report job. The admin must trigger that manually.
+	// 3. STOP. Analysis status is now "completed" (NOT approved yet).
+	// Admin must review and approve before report generation.
+	// Workflow: completed → approved (by admin) → sent (after report generated)
 	w.submissionService.UpdateStatus(ctx, uuid.MustParse(payload.SubmissionID), "ready_for_review")
-	w.logger.Info().Msg("Workflow Paused. Waiting for Admin Review.")
+	w.logger.Info().Msg("Analysis completed. Workflow paused for admin review and approval.")
 	return nil
 }
 

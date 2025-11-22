@@ -15,6 +15,8 @@ type Repository interface {
 	Update(ctx context.Context, analysis *Analysis) error
 	GetByID(ctx context.Context, id string) (*Analysis, error)
 	GetBySubmissionID(ctx context.Context, submissionID string) (*Analysis, error)
+	GetLatestVersionBySubmissionID(ctx context.Context, submissionID string) (*Analysis, error)
+	GetAllVersionsBySubmissionID(ctx context.Context, submissionID string) ([]*Analysis, error)
 	List(ctx context.Context, limit, offset int) ([]*Analysis, error)
 	Delete(ctx context.Context, id string) error
 }
@@ -36,11 +38,13 @@ func (r *PostgresRepository) Create(ctx context.Context, analysis *Analysis) err
 			id, submission_id, enrichment_id,
 			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
 			synthesis, status, error_message, processing_time_ms,
+			version, parent_analysis_id,
 			created_at, updated_at, completed_at
 		) VALUES (
 			:id, :submission_id, :enrichment_id,
 			:swot, :pestel, :porter, :okrs, :tam_sam_som, :benchmarking, :blue_ocean, :growth_hacking, :scenarios, :bsc, :decision_matrix,
 			:synthesis, :status, :error_message, :processing_time_ms,
+			:version, :parent_analysis_id,
 			:created_at, :updated_at, :completed_at
 		)
 	`
@@ -72,6 +76,8 @@ func (r *PostgresRepository) Update(ctx context.Context, analysis *Analysis) err
 			status = :status,
 			error_message = :error_message,
 			processing_time_ms = :processing_time_ms,
+			version = :version,
+			parent_analysis_id = :parent_analysis_id,
 			updated_at = :updated_at,
 			completed_at = :completed_at
 		WHERE id = :id
@@ -101,6 +107,7 @@ func (r *PostgresRepository) GetByID(ctx context.Context, id string) (*Analysis,
 			id, submission_id, enrichment_id,
 			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
 			synthesis, status, error_message, processing_time_ms,
+			version, parent_analysis_id,
 			created_at, updated_at, completed_at
 		FROM analyses
 		WHERE id = $1
@@ -119,16 +126,23 @@ func (r *PostgresRepository) GetByID(ctx context.Context, id string) (*Analysis,
 }
 
 // GetBySubmissionID retrieves an analysis by submission ID
+// Deprecated: Use GetLatestVersionBySubmissionID instead
 func (r *PostgresRepository) GetBySubmissionID(ctx context.Context, submissionID string) (*Analysis, error) {
+	return r.GetLatestVersionBySubmissionID(ctx, submissionID)
+}
+
+// GetLatestVersionBySubmissionID retrieves the latest version of an analysis by submission ID
+func (r *PostgresRepository) GetLatestVersionBySubmissionID(ctx context.Context, submissionID string) (*Analysis, error) {
 	query := `
 		SELECT
 			id, submission_id, enrichment_id,
 			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
 			synthesis, status, error_message, processing_time_ms,
+			version, parent_analysis_id,
 			created_at, updated_at, completed_at
 		FROM analyses
 		WHERE submission_id = $1
-		ORDER BY created_at DESC
+		ORDER BY version DESC, created_at DESC
 		LIMIT 1
 	`
 
@@ -144,6 +158,29 @@ func (r *PostgresRepository) GetBySubmissionID(ctx context.Context, submissionID
 	return &analysis, nil
 }
 
+// GetAllVersionsBySubmissionID retrieves all versions of analyses for a submission
+func (r *PostgresRepository) GetAllVersionsBySubmissionID(ctx context.Context, submissionID string) ([]*Analysis, error) {
+	query := `
+		SELECT
+			id, submission_id, enrichment_id,
+			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
+			synthesis, status, error_message, processing_time_ms,
+			version, parent_analysis_id,
+			created_at, updated_at, completed_at
+		FROM analyses
+		WHERE submission_id = $1
+		ORDER BY version DESC, created_at DESC
+	`
+
+	var analyses []*Analysis
+	err := r.db.SelectContext(ctx, &analyses, query, submissionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get all versions: %w", err)
+	}
+
+	return analyses, nil
+}
+
 // List retrieves all analyses with pagination
 // Frontend developers: Use this for admin dashboard listing
 func (r *PostgresRepository) List(ctx context.Context, limit, offset int) ([]*Analysis, error) {
@@ -152,9 +189,10 @@ func (r *PostgresRepository) List(ctx context.Context, limit, offset int) ([]*An
 			id, submission_id, enrichment_id,
 			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
 			synthesis, status, error_message, processing_time_ms,
+			version, parent_analysis_id,
 			created_at, updated_at, completed_at
 		FROM analyses
-		ORDER BY created_at DESC
+		ORDER BY version DESC, created_at DESC
 		LIMIT $1 OFFSET $2
 	`
 
