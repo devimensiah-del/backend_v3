@@ -202,91 +202,101 @@ func getEnvFloat(key string, fallback float64) float64 {
 func loadFrameworkConfigs() map[string]FrameworkConfig {
 	configs := make(map[string]FrameworkConfig)
 
+	log.Info().Msg("Loading framework-specific AI model configurations")
+
 	// Enrichment Layer (Layer 0)
-	configs["enrichment"] = FrameworkConfig{
-		Model:       getEnv("AI_ENRICHMENT_MODEL", "google/gemini-2.0-flash-001"),
-		Temperature: getEnvFloat("AI_ENRICHMENT_TEMP", 0.5),
-		MaxTokens:   getEnvInt("AI_ENRICHMENT_MAX_TOKENS", 8000),
-	}
+	configs["enrichment"] = loadFrameworkConfig("enrichment", "AI_ENRICHMENT_MODEL", "AI_ENRICHMENT_TEMP", "AI_ENRICHMENT_MAX_TOKENS",
+		"google/gemini-2.0-flash-001", 0.5, 8000)
 
 	// Layer 1: Environment Scanning
-	configs["pestel"] = FrameworkConfig{
-		Model:       getEnv("AI_PESTEL_MODEL", "openai/o3-mini"),
-		Temperature: getEnvFloat("AI_PESTEL_TEMP", 0.2),
-		MaxTokens:   getEnvInt("AI_PESTEL_MAX_TOKENS", 300),
-	}
+	configs["pestel"] = loadFrameworkConfig("pestel", "AI_PESTEL_MODEL", "AI_PESTEL_TEMP", "AI_PESTEL_MAX_TOKENS",
+		"openai/o3-mini", 0.2, 1500)
 
-	configs["porter"] = FrameworkConfig{
-		Model:       getEnv("AI_PORTER_MODEL", "anthropic/claude-3.5-sonnet"),
-		Temperature: getEnvFloat("AI_PORTER_TEMP", 0.3),
-		MaxTokens:   getEnvInt("AI_PORTER_MAX_TOKENS", 250),
-	}
+	configs["porter"] = loadFrameworkConfig("porter", "AI_PORTER_MODEL", "AI_PORTER_TEMP", "AI_PORTER_MAX_TOKENS",
+		"openai/gpt-4o", 0.3, 1500)
 
-	configs["tam_sam_som"] = FrameworkConfig{
-		Model:       getEnv("AI_TAM_MODEL", "openai/o3-mini"),
-		Temperature: getEnvFloat("AI_TAM_TEMP", 0.1),
-		MaxTokens:   getEnvInt("AI_TAM_MAX_TOKENS", 350),
-	}
+	configs["tam_sam_som"] = loadFrameworkConfig("tam_sam_som", "AI_TAM_MODEL", "AI_TAM_TEMP", "AI_TAM_MAX_TOKENS",
+		"openai/o3-mini", 0.1, 1200)
 
 	// Layer 2: Positioning
-	configs["swot"] = FrameworkConfig{
-		Model:       getEnv("AI_SWOT_MODEL", "google/gemini-2.0-pro-exp-02-05"),
-		Temperature: getEnvFloat("AI_SWOT_TEMP", 0.4),
-		MaxTokens:   getEnvInt("AI_SWOT_MAX_TOKENS", 200),
-	}
+	configs["swot"] = loadFrameworkConfig("swot", "AI_SWOT_MODEL", "AI_SWOT_TEMP", "AI_SWOT_MAX_TOKENS",
+		"openai/gpt-4o-mini", 0.4, 1500)
 
-	configs["benchmarking"] = FrameworkConfig{
-		Model:       getEnv("AI_BENCHMARKING_MODEL", "google/gemini-2.0-pro-exp-02-05"),
-		Temperature: getEnvFloat("AI_BENCHMARKING_TEMP", 0.35),
-		MaxTokens:   getEnvInt("AI_BENCHMARKING_MAX_TOKENS", 220),
-	}
+	configs["benchmarking"] = loadFrameworkConfig("benchmarking", "AI_BENCHMARKING_MODEL", "AI_BENCHMARKING_TEMP", "AI_BENCHMARKING_MAX_TOKENS",
+		"openai/gpt-4o-mini", 0.35, 1500)
 
 	// Layer 3: Strategy
-	configs["blue_ocean"] = FrameworkConfig{
-		Model:       getEnv("AI_BLUE_OCEAN_MODEL", "anthropic/claude-3.5-sonnet"),
-		Temperature: getEnvFloat("AI_BLUE_OCEAN_TEMP", 0.7),
-		MaxTokens:   getEnvInt("AI_BLUE_OCEAN_MAX_TOKENS", 300),
-	}
+	configs["blue_ocean"] = loadFrameworkConfig("blue_ocean", "AI_BLUE_OCEAN_MODEL", "AI_BLUE_OCEAN_TEMP", "AI_BLUE_OCEAN_MAX_TOKENS",
+		"openai/gpt-4o", 0.7, 1500)
 
-	configs["growth_hacking"] = FrameworkConfig{
-		Model:       getEnv("AI_GROWTH_HACKING_MODEL", "anthropic/claude-3.5-sonnet"),
-		Temperature: getEnvFloat("AI_GROWTH_HACKING_TEMP", 0.6),
-		MaxTokens:   getEnvInt("AI_GROWTH_HACKING_MAX_TOKENS", 250),
-	}
+	configs["growth_hacking"] = loadFrameworkConfig("growth_hacking", "AI_GROWTH_HACKING_MODEL", "AI_GROWTH_HACKING_TEMP", "AI_GROWTH_HACKING_MAX_TOKENS",
+		"openai/gpt-4o-mini", 0.6, 1500)
 
-	configs["scenarios"] = FrameworkConfig{
-		Model:       getEnv("AI_SCENARIOS_MODEL", "google/gemini-3.0-pro"),
-		Temperature: getEnvFloat("AI_SCENARIOS_TEMP", 0.6),
-		MaxTokens:   getEnvInt("AI_SCENARIOS_MAX_TOKENS", 400),
-	}
+	configs["scenarios"] = loadFrameworkConfig("scenarios", "AI_SCENARIOS_MODEL", "AI_SCENARIOS_TEMP", "AI_SCENARIOS_MAX_TOKENS",
+		"openai/gpt-4o", 0.6, 1800)
 
 	// Layer 4: Execution
-	configs["okrs"] = FrameworkConfig{
-		Model:       getEnv("AI_OKRS_MODEL", "openai/o3-mini"),
-		Temperature: getEnvFloat("AI_OKRS_TEMP", 0.25),
-		MaxTokens:   getEnvInt("AI_OKRS_MAX_TOKENS", 200),
-	}
+	configs["okrs"] = loadFrameworkConfig("okrs", "AI_OKRS_MODEL", "AI_OKRS_TEMP", "AI_OKRS_MAX_TOKENS",
+		"openai/o3-mini", 0.25, 1500)
 
-	configs["bsc"] = FrameworkConfig{
-		Model:       getEnv("AI_BSC_MODEL", "anthropic/claude-3.5-sonnet"),
-		Temperature: getEnvFloat("AI_BSC_TEMP", 0.35),
-		MaxTokens:   getEnvInt("AI_BSC_MAX_TOKENS", 220),
-	}
+	configs["bsc"] = loadFrameworkConfig("bsc", "AI_BSC_MODEL", "AI_BSC_TEMP", "AI_BSC_MAX_TOKENS",
+		"openai/gpt-4o-mini", 0.35, 1500)
 
-	configs["decision_matrix"] = FrameworkConfig{
-		Model:       getEnv("AI_DECISION_MATRIX_MODEL", "openai/o3-mini"),
-		Temperature: getEnvFloat("AI_DECISION_MATRIX_TEMP", 0.2),
-		MaxTokens:   getEnvInt("AI_DECISION_MATRIX_MAX_TOKENS", 300),
-	}
+	configs["decision_matrix"] = loadFrameworkConfig("decision_matrix", "AI_DECISION_MATRIX_MODEL", "AI_DECISION_MATRIX_TEMP", "AI_DECISION_MATRIX_MAX_TOKENS",
+		"openai/o3-mini", 0.2, 1500)
 
 	// Synthesis Layer
-	configs["synthesis"] = FrameworkConfig{
-		Model:       getEnv("AI_SYNTHESIS_MODEL", "anthropic/claude-3.5-sonnet"),
-		Temperature: getEnvFloat("AI_SYNTHESIS_TEMP", 0.4),
-		MaxTokens:   getEnvInt("AI_SYNTHESIS_MAX_TOKENS", 3000),
+	configs["synthesis"] = loadFrameworkConfig("synthesis", "AI_SYNTHESIS_MODEL", "AI_SYNTHESIS_TEMP", "AI_SYNTHESIS_MAX_TOKENS",
+		"openai/gpt-4o", 0.4, 3000)
+
+	log.Info().Int("frameworks_loaded", len(configs)).Msg("Framework configurations loaded successfully")
+	return configs
+}
+
+// loadFrameworkConfig loads a single framework configuration with logging for missing env vars
+func loadFrameworkConfig(frameworkName, modelEnv, tempEnv, tokensEnv, defaultModel string, defaultTemp float64, defaultTokens int) FrameworkConfig {
+	model := getEnv(modelEnv, defaultModel)
+	temp := getEnvFloat(tempEnv, defaultTemp)
+	tokens := getEnvInt(tokensEnv, defaultTokens)
+
+	// Log when using defaults (indicates missing environment variable)
+	if _, exists := os.LookupEnv(modelEnv); !exists {
+		log.Warn().
+			Str("framework", frameworkName).
+			Str("env_var", modelEnv).
+			Str("default", defaultModel).
+			Msg("Using default AI model (env var not set)")
 	}
 
-	return configs
+	if _, exists := os.LookupEnv(tempEnv); !exists {
+		log.Debug().
+			Str("framework", frameworkName).
+			Str("env_var", tempEnv).
+			Float64("default", defaultTemp).
+			Msg("Using default temperature (env var not set)")
+	}
+
+	if _, exists := os.LookupEnv(tokensEnv); !exists {
+		log.Debug().
+			Str("framework", frameworkName).
+			Str("env_var", tokensEnv).
+			Int("default", defaultTokens).
+			Msg("Using default max_tokens (env var not set)")
+	}
+
+	// Log the final configuration
+	log.Info().
+		Str("framework", frameworkName).
+		Str("model", model).
+		Float64("temperature", temp).
+		Int("max_tokens", tokens).
+		Msg("Framework AI configuration")
+
+	return FrameworkConfig{
+		Model:       model,
+		Temperature: temp,
+		MaxTokens:   tokens,
+	}
 }
 
 func setupLogger() {
