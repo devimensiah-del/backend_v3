@@ -97,11 +97,11 @@
             <div class="company-name-header">{{ .CompanyName }}</div>
         </div>
 
-        <h1 class="page-title">Competitive Benchmarking</h1>
-        <div class="page-subtitle">Market Position Analysis</div>
+        <h1 class="page-title">Benchmarking Competitivo</h1>
+        <div class="page-subtitle">Análise de Posicionamento de Mercado</div>
 
         <div class="section">
-            <div class="section-title">Competitors Analyzed</div>
+            <div class="section-title">Concorrentes Analisados</div>
             <ul class="item-list">
                 {{ range .Benchmarking.CompetitorsAnalyzed }}
                 <li class="item">{{ . }}</li>
@@ -110,7 +110,7 @@
         </div>
 
         <div class="section">
-            <div class="section-title">Performance Gaps</div>
+            <div class="section-title">Lacunas de Desempenho</div>
             <ul class="item-list">
                 {{ range .Benchmarking.PerformanceGaps }}
                 <li class="item">{{ . }}</li>
@@ -119,7 +119,7 @@
         </div>
 
         <div class="section best-practices">
-            <div class="section-title">Best Practices</div>
+            <div class="section-title">Melhores Práticas</div>
             <ul class="item-list">
                 {{ range .Benchmarking.BestPractices }}
                 <li class="item">{{ . }}</li>
@@ -128,7 +128,7 @@
         </div>
 
         <div class="footer">
-            <div>IMENSIAH — Strategic Intelligence Report</div>
+            <div>IMENSIAH — Relatório de Inteligência Estratégica</div>
             <div>{{ .Date }}</div>
         </div>
     </div>

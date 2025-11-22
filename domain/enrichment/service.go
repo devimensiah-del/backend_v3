@@ -3,6 +3,7 @@ package enrichment
 import (
 	"context"
 
+	"backend_v3/config"
 	"backend_v3/domain/submission"
 	"backend_v3/llm"
 
@@ -14,7 +15,8 @@ type Service struct {
 	repo           Repository
 	submissionRepo submission.Repository
 	llmClient      *llm.Client
-	model          string // Stored configuration
+	model          string                // DEPRECATED: kept for backward compatibility
+	enrichmentCfg  config.FrameworkConfig // NEW: Framework-specific config
 }
 
 // NewService creates a new enrichment service
@@ -24,7 +26,13 @@ func NewService(repo Repository, submissionRepo submission.Repository, llmClient
 		submissionRepo: submissionRepo,
 		llmClient:      llmClient,
 		model:          model,
+		enrichmentCfg:  config.FrameworkConfig{}, // Will be set by main.go
 	}
+}
+
+// SetEnrichmentConfig updates the enrichment configuration (called by main.go)
+func (s *Service) SetEnrichmentConfig(cfg config.FrameworkConfig) {
+	s.enrichmentCfg = cfg
 }
 
 // GetByID retrieves enrichment by its own ID

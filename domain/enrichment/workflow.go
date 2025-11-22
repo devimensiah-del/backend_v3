@@ -27,11 +27,26 @@ func (s *Service) EnrichSubmission(ctx context.Context, submissionID uuid.UUID) 
 	} // Locked by user
 
 	// 2. DEFINIÇÃO DO AGENTE
-	// FIX: Use the model injected in NewService (s.model)
+	// NEW: Use framework-specific enrichment config
+	// Fallback to s.model if enrichmentCfg not set (backward compatibility)
+	model := s.enrichmentCfg.Model
+	if model == "" {
+		model = s.model
+	}
+	temperature := s.enrichmentCfg.Temperature
+	if temperature == 0 {
+		temperature = 0.5 // Default fallback
+	}
+	maxTokens := s.enrichmentCfg.MaxTokens
+	if maxTokens == 0 {
+		maxTokens = 8000
+	}
+
 	agent := AgentProfile{
 		Role:        "Strategic Data Enrichment Agent",
-		Model:       s.model,
-		Temperature: 0.4,
+		Model:       model,
+		Temperature: temperature,
+		MaxTokens:   maxTokens,
 		Tools:       []string{"search", "url_context"},
 	}
 
@@ -62,6 +77,7 @@ type AgentProfile struct {
 	Role        string
 	Model       string
 	Temperature float64
+	MaxTokens   int
 	Tools       []string
 }
 
@@ -101,7 +117,7 @@ func (s *Service) deployAgent(ctx context.Context, profile AgentProfile, promptT
 		Tools:        profile.Tools,
 		MaxURLs:      10,
 		Temperature:  profile.Temperature,
-		MaxTokens:    8000,
+		MaxTokens:    profile.MaxTokens,
 	}
 	return s.llmClient.Call(ctx, req)
 }

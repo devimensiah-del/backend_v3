@@ -111,26 +111,26 @@
             <div class="company-name-header">{{ .CompanyName }}</div>
         </div>
 
-        <h1 class="page-title">Financial Projections</h1>
-        <div class="page-subtitle">Scenario Planning</div>
+        <h1 class="page-title">Projeções Financeiras</h1>
+        <div class="page-subtitle">Planejamento de Cenários</div>
 
         <div class="scenario scenario-optimistic">
-            <div class="scenario-header">Optimistic Scenario</div>
+            <div class="scenario-header">Cenário Otimista</div>
             <div class="scenario-content">{{ .Scenarios.ScenarioOptimistic }}</div>
         </div>
 
         <div class="scenario scenario-realist">
-            <div class="scenario-header">Realist Scenario</div>
+            <div class="scenario-header">Cenário Realista</div>
             <div class="scenario-content">{{ .Scenarios.ScenarioRealist }}</div>
         </div>
 
         <div class="scenario scenario-pessimistic">
-            <div class="scenario-header">Pessimistic Scenario</div>
+            <div class="scenario-header">Cenário Pessimista</div>
             <div class="scenario-content">{{ .Scenarios.ScenarioPessimistic }}</div>
         </div>
 
         <div class="signals-box">
-            <div class="signals-title">Early Warning Signals</div>
+            <div class="signals-title">Sinais de Alerta Antecipado</div>
             <ul class="signals-list">
                 {{ range .Scenarios.EarlyWarningSignals }}
                 <li class="signal-item">{{ . }}</li>
@@ -139,7 +139,7 @@
         </div>
 
         <div class="footer">
-            <div>IMENSIAH — Strategic Intelligence Report</div>
+            <div>IMENSIAH — Relatório de Inteligência Estratégica</div>
             <div>{{ .Date }}</div>
         </div>
     </div>

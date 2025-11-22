@@ -191,26 +191,29 @@ func (s *Service) markAsComplete(ctx context.Context, a *Analysis, startTime tim
 }
 
 // --- Context-Aware Runners ---
-// Uses s.analystModel for all frameworks
+// NEW: Uses framework-specific models with heterogeneous routing
 
 func (s *Service) runPESTEL(ctx context.Context, k *ContextContainer) (*PESTELAnalysis, error) {
 	var res PESTELAnalysis
 	data := map[string]interface{}{"enrichment_data": k.EnrichmentData}
-	err := s.llm.GenerateStructured(ctx, s.analystModel, llm.FrameworkPESTELPrompt, data, &res)
+	opts := llm.NewGenerationOptions(s.frameworks["pestel"])
+	err := s.llm.GenerateStructuredWithOptions(ctx, opts, llm.FrameworkPESTELPrompt, data, &res)
 	return &res, err
 }
 
 func (s *Service) runPorter(ctx context.Context, k *ContextContainer) (*PorterAnalysis, error) {
 	var res PorterAnalysis
 	data := map[string]interface{}{"enrichment_data": k.EnrichmentData}
-	err := s.llm.GenerateStructured(ctx, s.analystModel, llm.FrameworkPorterPrompt, data, &res)
+	opts := llm.NewGenerationOptions(s.frameworks["porter"])
+	err := s.llm.GenerateStructuredWithOptions(ctx, opts, llm.FrameworkPorterPrompt, data, &res)
 	return &res, err
 }
 
 func (s *Service) runTamSamSom(ctx context.Context, k *ContextContainer) (*TamSamSomAnalysis, error) {
 	var res TamSamSomAnalysis
 	data := map[string]interface{}{"enrichment_data": k.EnrichmentData}
-	err := s.llm.GenerateStructured(ctx, s.analystModel, llm.FrameworkTamSamSomPrompt, data, &res)
+	opts := llm.NewGenerationOptions(s.frameworks["tam_sam_som"])
+	err := s.llm.GenerateStructuredWithOptions(ctx, opts, llm.FrameworkTamSamSomPrompt, data, &res)
 	return &res, err
 }
 
@@ -221,35 +224,40 @@ func (s *Service) runSWOT(ctx context.Context, k *ContextContainer) (*SWOTAnalys
 		"pestel_insights": k.PESTEL.Summary,
 		"porter_insights": k.Porter.Summary,
 	}
-	err := s.llm.GenerateStructured(ctx, s.analystModel, llm.FrameworkSWOTPrompt, data, &res)
+	opts := llm.NewGenerationOptions(s.frameworks["swot"])
+	err := s.llm.GenerateStructuredWithOptions(ctx, opts, llm.FrameworkSWOTPrompt, data, &res)
 	return &res, err
 }
 
 func (s *Service) runBenchmarking(ctx context.Context, k *ContextContainer) (*BenchmarkingAnalysis, error) {
 	var res BenchmarkingAnalysis
 	data := map[string]interface{}{"enrichment_data": k.EnrichmentData, "market_scale": k.TamSamSom.Summary}
-	err := s.llm.GenerateStructured(ctx, s.analystModel, llm.FrameworkBenchmarkingPrompt, data, &res)
+	opts := llm.NewGenerationOptions(s.frameworks["benchmarking"])
+	err := s.llm.GenerateStructuredWithOptions(ctx, opts, llm.FrameworkBenchmarkingPrompt, data, &res)
 	return &res, err
 }
 
 func (s *Service) runBlueOcean(ctx context.Context, k *ContextContainer) (*BlueOceanAnalysis, error) {
 	var res BlueOceanAnalysis
 	data := map[string]interface{}{"enrichment_data": k.EnrichmentData, "porter_insights": k.Porter.Summary}
-	err := s.llm.GenerateStructured(ctx, s.analystModel, llm.FrameworkBlueOceanPrompt, data, &res)
+	opts := llm.NewGenerationOptions(s.frameworks["blue_ocean"])
+	err := s.llm.GenerateStructuredWithOptions(ctx, opts, llm.FrameworkBlueOceanPrompt, data, &res)
 	return &res, err
 }
 
 func (s *Service) runGrowthHacking(ctx context.Context, k *ContextContainer) (*GrowthHackingAnalysis, error) {
 	var res GrowthHackingAnalysis
 	data := map[string]interface{}{"enrichment_data": k.EnrichmentData}
-	err := s.llm.GenerateStructured(ctx, s.analystModel, llm.FrameworkGrowthHackingPrompt, data, &res)
+	opts := llm.NewGenerationOptions(s.frameworks["growth_hacking"])
+	err := s.llm.GenerateStructuredWithOptions(ctx, opts, llm.FrameworkGrowthHackingPrompt, data, &res)
 	return &res, err
 }
 
 func (s *Service) runScenarios(ctx context.Context, k *ContextContainer) (*ScenarioAnalysis, error) {
 	var res ScenarioAnalysis
 	data := map[string]interface{}{"enrichment_data": k.EnrichmentData, "pestel_insights": k.PESTEL.Summary}
-	err := s.llm.GenerateStructured(ctx, s.analystModel, llm.FrameworkScenariosPrompt, data, &res)
+	opts := llm.NewGenerationOptions(s.frameworks["scenarios"])
+	err := s.llm.GenerateStructuredWithOptions(ctx, opts, llm.FrameworkScenariosPrompt, data, &res)
 	return &res, err
 }
 
@@ -267,7 +275,8 @@ func (s *Service) runOKRs(ctx context.Context, k *ContextContainer) (*OKRAnalysi
 		"blue_ocean_insights": k.BlueOcean.Summary,
 		"swot_weaknesses":     k.SWOT.Weaknesses,
 	}
-	err := s.llm.GenerateStructured(ctx, s.analystModel, llm.FrameworkOKRsPrompt, data, &res)
+	opts := llm.NewGenerationOptions(s.frameworks["okrs"])
+	err := s.llm.GenerateStructuredWithOptions(ctx, opts, llm.FrameworkOKRsPrompt, data, &res)
 
 	// DEBUG: Log what we got back
 	s.logger.Debug().
@@ -287,7 +296,8 @@ func (s *Service) runBSC(ctx context.Context, k *ContextContainer) (*BalancedSco
 		Msg("🔍 DEBUG BSC Input Data")
 
 	data := map[string]interface{}{"enrichment_data": k.EnrichmentData, "blue_ocean_insights": k.BlueOcean.Summary}
-	err := s.llm.GenerateStructured(ctx, s.analystModel, llm.FrameworkBSCPrompt, data, &res)
+	opts := llm.NewGenerationOptions(s.frameworks["bsc"])
+	err := s.llm.GenerateStructuredWithOptions(ctx, opts, llm.FrameworkBSCPrompt, data, &res)
 
 	// DEBUG: Log what we got back
 	s.logger.Debug().
@@ -310,7 +320,8 @@ func (s *Service) runDecisionMatrix(ctx context.Context, k *ContextContainer) (*
 		Msg("🔍 DEBUG DecisionMatrix Input Data")
 
 	data := map[string]interface{}{"enrichment_data": k.EnrichmentData, "scenario_insights": k.Scenarios.Summary}
-	err := s.llm.GenerateStructured(ctx, s.analystModel, llm.FrameworkDecisionMatrixPrompt, data, &res)
+	opts := llm.NewGenerationOptions(s.frameworks["decision_matrix"])
+	err := s.llm.GenerateStructuredWithOptions(ctx, opts, llm.FrameworkDecisionMatrixPrompt, data, &res)
 
 	// DEBUG: Log what we got back
 	s.logger.Debug().
@@ -338,7 +349,8 @@ func (s *Service) runSynthesis(ctx context.Context, k *ContextContainer) (Analys
 		"enrichment_data":         k.EnrichmentData,
 		"all_framework_summaries": summaries,
 	}
-	// Uses s.synthesisModel (Sonnet 4.5)
-	err := s.llm.GenerateStructured(ctx, s.synthesisModel, llm.SynthesisPrompt, data, &res)
+	// NEW: Uses framework-specific synthesis config (Claude 3.5 Sonnet with T=0.4)
+	opts := llm.NewGenerationOptions(s.frameworks["synthesis"])
+	err := s.llm.GenerateStructuredWithOptions(ctx, opts, llm.SynthesisPrompt, data, &res)
 	return res, err
 }

@@ -12,6 +12,13 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// FrameworkConfig holds model-specific configuration for each analysis framework
+type FrameworkConfig struct {
+	Model       string
+	Temperature float64
+	MaxTokens   int
+}
+
 // Config holds all application configuration
 type Config struct {
 	// Server configuration
@@ -24,9 +31,12 @@ type Config struct {
 
 	// AI/LLM Configuration
 	OpenRouterAPIKey string
-	EnrichmentModel  string // Gemini 2.0 Flash
-	AnalysisModel    string // Gemini 2.0 Pro
-	SynthesisModel   string // Claude 3.5 Sonnet
+	EnrichmentModel  string // Gemini 2.0 Flash (deprecated, use Frameworks["enrichment"])
+	AnalysisModel    string // Gemini 2.0 Pro (deprecated, use Frameworks[framework])
+	SynthesisModel   string // Claude 3.5 Sonnet (deprecated, use Frameworks["synthesis"])
+
+	// Framework-specific model configurations (heterogeneous approach)
+	Frameworks map[string]FrameworkConfig
 
 	// Redis for background jobs
 	RedisURL      string
@@ -88,6 +98,9 @@ func Load() (*Config, error) {
 
 	// Parse Redis configuration
 	cfg.RedisURL, cfg.RedisPassword = parseRedisConfig()
+
+	// Load framework-specific configurations
+	cfg.Frameworks = loadFrameworkConfigs()
 
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -173,6 +186,107 @@ func getEnvBool(key string, fallback bool) bool {
 		return value == "true" || value == "1"
 	}
 	return fallback
+}
+
+func getEnvFloat(key string, fallback float64) float64 {
+	if value, ok := os.LookupEnv(key); ok {
+		if f, err := strconv.ParseFloat(value, 64); err == nil {
+			return f
+		}
+	}
+	return fallback
+}
+
+// loadFrameworkConfigs loads heterogeneous model configurations for all analysis frameworks
+// Based on Strategic Cascade Optimization Report (Nov 2025)
+func loadFrameworkConfigs() map[string]FrameworkConfig {
+	configs := make(map[string]FrameworkConfig)
+
+	// Enrichment Layer (Layer 0)
+	configs["enrichment"] = FrameworkConfig{
+		Model:       getEnv("AI_ENRICHMENT_MODEL", "google/gemini-2.0-flash-001"),
+		Temperature: getEnvFloat("AI_ENRICHMENT_TEMP", 0.5),
+		MaxTokens:   getEnvInt("AI_ENRICHMENT_MAX_TOKENS", 8000),
+	}
+
+	// Layer 1: Environment Scanning
+	configs["pestel"] = FrameworkConfig{
+		Model:       getEnv("AI_PESTEL_MODEL", "openai/o3-mini"),
+		Temperature: getEnvFloat("AI_PESTEL_TEMP", 0.2),
+		MaxTokens:   getEnvInt("AI_PESTEL_MAX_TOKENS", 300),
+	}
+
+	configs["porter"] = FrameworkConfig{
+		Model:       getEnv("AI_PORTER_MODEL", "anthropic/claude-3.5-sonnet"),
+		Temperature: getEnvFloat("AI_PORTER_TEMP", 0.3),
+		MaxTokens:   getEnvInt("AI_PORTER_MAX_TOKENS", 250),
+	}
+
+	configs["tam_sam_som"] = FrameworkConfig{
+		Model:       getEnv("AI_TAM_MODEL", "openai/o3-mini"),
+		Temperature: getEnvFloat("AI_TAM_TEMP", 0.1),
+		MaxTokens:   getEnvInt("AI_TAM_MAX_TOKENS", 350),
+	}
+
+	// Layer 2: Positioning
+	configs["swot"] = FrameworkConfig{
+		Model:       getEnv("AI_SWOT_MODEL", "google/gemini-2.0-pro-exp-02-05"),
+		Temperature: getEnvFloat("AI_SWOT_TEMP", 0.4),
+		MaxTokens:   getEnvInt("AI_SWOT_MAX_TOKENS", 200),
+	}
+
+	configs["benchmarking"] = FrameworkConfig{
+		Model:       getEnv("AI_BENCHMARKING_MODEL", "google/gemini-2.0-pro-exp-02-05"),
+		Temperature: getEnvFloat("AI_BENCHMARKING_TEMP", 0.35),
+		MaxTokens:   getEnvInt("AI_BENCHMARKING_MAX_TOKENS", 220),
+	}
+
+	// Layer 3: Strategy
+	configs["blue_ocean"] = FrameworkConfig{
+		Model:       getEnv("AI_BLUE_OCEAN_MODEL", "anthropic/claude-3.5-sonnet"),
+		Temperature: getEnvFloat("AI_BLUE_OCEAN_TEMP", 0.7),
+		MaxTokens:   getEnvInt("AI_BLUE_OCEAN_MAX_TOKENS", 300),
+	}
+
+	configs["growth_hacking"] = FrameworkConfig{
+		Model:       getEnv("AI_GROWTH_HACKING_MODEL", "anthropic/claude-3.5-sonnet"),
+		Temperature: getEnvFloat("AI_GROWTH_HACKING_TEMP", 0.6),
+		MaxTokens:   getEnvInt("AI_GROWTH_HACKING_MAX_TOKENS", 250),
+	}
+
+	configs["scenarios"] = FrameworkConfig{
+		Model:       getEnv("AI_SCENARIOS_MODEL", "google/gemini-3.0-pro"),
+		Temperature: getEnvFloat("AI_SCENARIOS_TEMP", 0.6),
+		MaxTokens:   getEnvInt("AI_SCENARIOS_MAX_TOKENS", 400),
+	}
+
+	// Layer 4: Execution
+	configs["okrs"] = FrameworkConfig{
+		Model:       getEnv("AI_OKRS_MODEL", "openai/o3-mini"),
+		Temperature: getEnvFloat("AI_OKRS_TEMP", 0.25),
+		MaxTokens:   getEnvInt("AI_OKRS_MAX_TOKENS", 200),
+	}
+
+	configs["bsc"] = FrameworkConfig{
+		Model:       getEnv("AI_BSC_MODEL", "anthropic/claude-3.5-sonnet"),
+		Temperature: getEnvFloat("AI_BSC_TEMP", 0.35),
+		MaxTokens:   getEnvInt("AI_BSC_MAX_TOKENS", 220),
+	}
+
+	configs["decision_matrix"] = FrameworkConfig{
+		Model:       getEnv("AI_DECISION_MATRIX_MODEL", "openai/o3-mini"),
+		Temperature: getEnvFloat("AI_DECISION_MATRIX_TEMP", 0.2),
+		MaxTokens:   getEnvInt("AI_DECISION_MATRIX_MAX_TOKENS", 300),
+	}
+
+	// Synthesis Layer
+	configs["synthesis"] = FrameworkConfig{
+		Model:       getEnv("AI_SYNTHESIS_MODEL", "anthropic/claude-3.5-sonnet"),
+		Temperature: getEnvFloat("AI_SYNTHESIS_TEMP", 0.4),
+		MaxTokens:   getEnvInt("AI_SYNTHESIS_MAX_TOKENS", 3000),
+	}
+
+	return configs
 }
 
 func setupLogger() {

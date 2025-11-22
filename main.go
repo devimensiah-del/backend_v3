@@ -106,6 +106,8 @@ func main() {
 		llmClient,
 		cfg.EnrichmentModel,
 	)
+	// NEW: Inject framework-specific enrichment config
+	enrichSvc.SetEnrichmentConfig(cfg.Frameworks["enrichment"])
 
 	// Analysis (The Strategy Team)
 	analysisSvc := analysis.NewService(
@@ -115,6 +117,9 @@ func main() {
 		cfg.AnalysisModel,
 		cfg.SynthesisModel,
 	)
+	// NEW: Inject all framework-specific configs (heterogeneous routing)
+	analysisSvc.SetFrameworks(cfg.Frameworks)
+	log.Info().Int("framework_count", len(cfg.Frameworks)).Msg("Loaded heterogeneous model configurations")
 
 	// Report (The Publisher)
 	reportSvc := report.NewService(

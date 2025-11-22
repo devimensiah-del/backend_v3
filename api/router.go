@@ -15,7 +15,6 @@ func SetupRouter(handler *Handler, logger zerolog.Logger, jwtSecret string, allo
 	router := gin.New()
 
 	// Global middleware
-	// FIX: Passed allowedOrigins to the middleware
 	router.Use(CORSMiddleware(allowedOrigins))
 	router.Use(RequestIDMiddleware())
 	router.Use(LoggingMiddleware(logger))

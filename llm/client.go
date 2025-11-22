@@ -10,8 +10,18 @@ import (
 	"strings"
 	"time"
 
+	"backend_v3/config"
+
 	"github.com/sony/gobreaker"
 )
+
+// GenerationOptions holds model-specific parameters for LLM generation
+// Supports heterogeneous model routing with framework-specific configurations
+type GenerationOptions struct {
+	Model       string
+	Temperature float64
+	MaxTokens   int
+}
 
 // Client wraps OpenRouter API with retry logic and circuit breaker
 type Client struct {
@@ -43,9 +53,9 @@ func NewClient(apiKey string) *Client {
 	}
 }
 
-// GenerateStructured is the "Magic Method" for your Analysis Service.
-// FIX: Now accepts 'model' string to support the Hybrid Architecture.
-func (c *Client) GenerateStructured(ctx context.Context, model string, promptTemplate string, data interface{}, targetSchema interface{}) error {
+// GenerateStructuredWithOptions is the new "Magic Method" for framework-specific model routing.
+// Supports heterogeneous model configurations with different temperatures and max_tokens per framework.
+func (c *Client) GenerateStructuredWithOptions(ctx context.Context, opts GenerationOptions, promptTemplate string, data interface{}, targetSchema interface{}) error {
 
 	// 1. Prepare the Context
 	finalPrompt := promptTemplate
@@ -67,15 +77,15 @@ func (c *Client) GenerateStructured(ctx context.Context, model string, promptTem
 		finalPrompt += fmt.Sprintf("\n\nContext Data:\n%s", string(valBytes))
 	}
 
-	// 2. Create Request using the specific MODEL passed in
+	// 2. Create Request using GenerationOptions (framework-specific config)
 	req := &Request{
-		Model:        model, // <--- Use the injected variable
+		Model:        opts.Model,
 		SystemPrompt: "You are a JSON-only API. Return strictly valid JSON matching the requested schema.",
 		Messages: []Message{
 			{Role: "user", Content: finalPrompt},
 		},
-		Temperature: 0.5,
-		MaxTokens:   4000,
+		Temperature: opts.Temperature,
+		MaxTokens:   opts.MaxTokens,
 	}
 
 	// 3. Call API
@@ -96,6 +106,26 @@ func (c *Client) GenerateStructured(ctx context.Context, model string, promptTem
 	}
 
 	return nil
+}
+
+// GenerateStructured (DEPRECATED) - kept for backward compatibility.
+// Use GenerateStructuredWithOptions for framework-specific routing.
+func (c *Client) GenerateStructured(ctx context.Context, model string, promptTemplate string, data interface{}, targetSchema interface{}) error {
+	opts := GenerationOptions{
+		Model:       model,
+		Temperature: 0.5, // Default temperature
+		MaxTokens:   4000,
+	}
+	return c.GenerateStructuredWithOptions(ctx, opts, promptTemplate, data, targetSchema)
+}
+
+// Helper to convert FrameworkConfig to GenerationOptions
+func NewGenerationOptions(cfg config.FrameworkConfig) GenerationOptions {
+	return GenerationOptions{
+		Model:       cfg.Model,
+		Temperature: cfg.Temperature,
+		MaxTokens:   cfg.MaxTokens,
+	}
 }
 
 // Call makes an LLM API request (Low-level)

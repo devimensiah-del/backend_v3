@@ -133,23 +133,23 @@
             <div class="company-name-header">{{ .CompanyName }}</div>
         </div>
 
-        <h1 class="page-title">Risk Assessment</h1>
-        <div class="page-subtitle">Scenario Analysis</div>
+        <h1 class="page-title">Avaliação de Riscos</h1>
+        <div class="page-subtitle">Análise de Cenários</div>
 
         <div class="risk-grid">
             <div class="risk-box risk-high">
-                <div class="risk-title">High Impact Risks</div>
+                <div class="risk-title">Riscos de Alto Impacto</div>
                 <div class="risk-content">{{ .Scenarios.ScenarioPessimistic }}</div>
             </div>
 
             <div class="risk-box risk-medium">
-                <div class="risk-title">Mitigation Strategies</div>
+                <div class="risk-title">Estratégias de Mitigação</div>
                 <div class="risk-content">{{ .Scenarios.ScenarioRealist }}</div>
             </div>
         </div>
 
         <div class="signals-section">
-            <div class="signals-title">Early Warning Indicators</div>
+            <div class="signals-title">Indicadores de Alerta Antecipado</div>
             <ul class="signals-list">
                 {{ range .Scenarios.EarlyWarningSignals }}
                 <li class="signal-item">{{ . }}</li>
@@ -158,7 +158,7 @@
         </div>
 
         <div class="footer">
-            <div>IMENSIAH — Strategic Intelligence Report</div>
+            <div>IMENSIAH — Relatório de Inteligência Estratégica</div>
             <div>{{ .Date }}</div>
         </div>
     </div>
