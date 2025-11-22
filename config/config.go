@@ -62,7 +62,6 @@ type Config struct {
 // Load reads configuration from environment variables
 func Load() (*Config, error) {
 	_ = godotenv.Load() // Load .env if present
-	setupLogger()
 
 	cfg := &Config{
 		Port:           getEnv("SERVER_PORT", "8080"),
@@ -96,6 +95,9 @@ func Load() (*Config, error) {
 		FrontendURL:     "http://localhost:3000",
 	}
 
+	// Setup logging AFTER environment is determined
+	setupLogger(cfg.Environment)
+
 	// Parse Redis configuration
 	cfg.RedisURL, cfg.RedisPassword = parseRedisConfig()
 
@@ -123,10 +125,14 @@ func parseRedisConfig() (addr string, password string) {
 				password, _ = parsed.User.Password()
 			}
 
-			log.Info().Str("addr", addr).Bool("has_password", password != "").Msg("Using REDIS_URL")
+			log.Info().
+				Str("source", "REDIS_URL").
+				Str("addr", addr).
+				Bool("has_password", password != "").
+				Msg("Redis configuration loaded")
 			return addr, password
 		}
-		log.Warn().Err(err).Str("url", redisURL).Msg("Failed to parse REDIS_URL, falling back to REDIS_ADDR")
+		log.Warn().Err(err).Msg("Failed to parse REDIS_URL, falling back to REDIS_ADDR")
 	}
 
 	// Fall back to REDIS_ADDR (local development)
@@ -144,7 +150,11 @@ func parseRedisConfig() (addr string, password string) {
 		}
 	}
 
-	log.Info().Str("addr", addr).Bool("has_password", password != "").Msg("Using REDIS_ADDR")
+	log.Info().
+		Str("source", "REDIS_ADDR").
+		Str("addr", addr).
+		Bool("has_password", password != "").
+		Msg("Redis configuration loaded")
 	return addr, password
 }
 
@@ -299,6 +309,21 @@ func loadFrameworkConfig(frameworkName, modelEnv, tempEnv, tokensEnv, defaultMod
 	}
 }
 
-func setupLogger() {
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+func setupLogger(environment string) {
+	// Production: Use JSON logging for Railway/structured log parsing
+	// Development: Use pretty console output with colors
+	if environment == "production" {
+		// JSON format for production - Railway can parse this correctly
+		log.Logger = zerolog.New(os.Stderr).With().Timestamp().Caller().Logger()
+		zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
+	} else {
+		// Console format for development - easier to read locally
+		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+	}
+
+	// Set global log level
+	zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	if environment == "development" {
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	}
 }
