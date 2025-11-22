@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog"
 )
 
@@ -81,7 +82,8 @@ func CORSMiddleware(allowedOrigins string, logger zerolog.Logger) gin.HandlerFun
 }
 
 // AuthMiddleware validates JWT tokens from Supabase using the HMAC secret
-func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
+// and fetches the user's role from the database
+func AuthMiddleware(jwtSecret string, db *sqlx.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -116,20 +118,21 @@ func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 		// Extract Claims
 		if claims, ok := token.Claims.(jwt.MapClaims); ok {
 			// Supabase stores the user UUID in "sub"
+			userID := ""
 			if sub, ok := claims["sub"].(string); ok {
+				userID = sub
 				c.Set("userID", sub)
 			}
 
-			// Check for role (usually in 'role' or 'app_metadata')
-			role := "user"
-			if r, ok := claims["role"].(string); ok {
-				role = r
-			}
-			// Supabase specific: check app_metadata for admin flag
-			if appMeta, ok := claims["app_metadata"].(map[string]interface{}); ok {
-				if appRole, ok := appMeta["role"].(string); ok {
-					role = appRole
+			// Fetch role from database instead of JWT token
+			role := "user" // Default fallback
+			if userID != "" && db != nil {
+				var dbRole string
+				err := db.Get(&dbRole, "SELECT role FROM user_profiles WHERE id = $1", userID)
+				if err == nil {
+					role = dbRole
 				}
+				// If error (user not found), default to "user" role
 			}
 			c.Set("userRole", role)
 		}

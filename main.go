@@ -238,6 +238,7 @@ func main() {
 		cfg.SupabaseJWTSecret, // For AuthMiddleware
 		cfg.AllowedOrigins,    // For CORSMiddleware
 		cfg.Environment == "production",
+		db, // For role lookup in AuthMiddleware
 	)
 
 	srv := &http.Server{

@@ -2,12 +2,13 @@ package api
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog"
 )
 
 // SetupRouter configures all API routes
 // Now accepts allowedOrigins for CORS configuration
-func SetupRouter(handler *Handler, logger zerolog.Logger, jwtSecret string, allowedOrigins string, isProd bool) *gin.Engine {
+func SetupRouter(handler *Handler, logger zerolog.Logger, jwtSecret string, allowedOrigins string, isProd bool, db *sqlx.DB) *gin.Engine {
 	if isProd {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -43,7 +44,7 @@ func SetupRouter(handler *Handler, logger zerolog.Logger, jwtSecret string, allo
 
 	// Protected Auth routes (authentication required)
 	authAPI := router.Group("/api/v1/auth")
-	authAPI.Use(AuthMiddleware(jwtSecret))
+	authAPI.Use(AuthMiddleware(jwtSecret, db))
 	{
 		authAPI.GET("/me", handler.GetCurrentUser)
 		authAPI.POST("/logout", handler.Logout)
@@ -52,14 +53,14 @@ func SetupRouter(handler *Handler, logger zerolog.Logger, jwtSecret string, allo
 
 	// User profile alias (frontend expects /user/profile)
 	userAPI := router.Group("/api/v1/user")
-	userAPI.Use(AuthMiddleware(jwtSecret))
+	userAPI.Use(AuthMiddleware(jwtSecret, db))
 	{
 		userAPI.GET("/profile", handler.GetCurrentUser)
 	}
 
 	// Protected User Routes (v1)
 	protectedAPI := router.Group("/api/v1")
-	protectedAPI.Use(AuthMiddleware(jwtSecret))
+	protectedAPI.Use(AuthMiddleware(jwtSecret, db))
 	{
 		// List user's own submissions
 		protectedAPI.GET("/submissions", handler.ListUserSubmissions)
@@ -70,7 +71,7 @@ func SetupRouter(handler *Handler, logger zerolog.Logger, jwtSecret string, allo
 
 	// Admin API routes (v1)
 	adminAPI := router.Group("/api/v1/admin")
-	adminAPI.Use(AuthMiddleware(jwtSecret))
+	adminAPI.Use(AuthMiddleware(jwtSecret, db))
 	adminAPI.Use(AdminAuthMiddleware())
 	{
 		adminAPI.GET("/submissions", handler.ListSubmissions)
