@@ -72,6 +72,15 @@ func main() {
 		Int("max_idle_conns", 5).
 		Msg("Database connection pool configured")
 
+	// CRITICAL: Test database connection (health check will fail if this fails)
+	log.Info().Msg("Testing database connection...")
+	if err := db.Ping(); err != nil {
+		log.Fatal().
+			Err(err).
+			Msg("FATAL: Database connection test failed - cannot reach PostgreSQL")
+	}
+	log.Info().Msg("✓ Database connection verified")
+
 	// 3. REDIS (Asynq & Cache)
 	log.Info().Msg("Connecting to Redis...")
 	redisOpt := asynq.RedisClientOpt{
