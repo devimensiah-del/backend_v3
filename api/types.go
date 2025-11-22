@@ -186,10 +186,11 @@ type MessageResponse struct {
 }
 
 type SubmissionListResponse struct {
-	Submissions interface{} `json:"submissions"`
-	Page        int         `json:"page"`
-	Limit       int         `json:"limit"`
-	Total       int         `json:"total"`
+	Data       interface{} `json:"data"`     // Changed from "submissions" to match frontend
+	Page       int         `json:"page"`
+	PageSize   int         `json:"pageSize"` // Changed from "limit" to match frontend
+	Total      int         `json:"total"`
+	TotalPages int         `json:"totalPages"` // Added to match frontend
 }
 
 // AnalyticsResponse returns admin analytics/metrics

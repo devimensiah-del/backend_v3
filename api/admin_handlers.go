@@ -60,11 +60,18 @@ func (h *Handler) ListSubmissions(c *gin.Context) {
 		return
 	}
 
+	// Calculate total pages
+	totalPages := (total + limit - 1) / limit // Ceiling division
+	if totalPages < 1 {
+		totalPages = 1
+	}
+
 	c.JSON(http.StatusOK, SubmissionListResponse{
-		Submissions: submissions,
-		Page:        page,
-		Limit:       limit,
-		Total:       total,
+		Data:       submissions,
+		Page:       page,
+		PageSize:   limit,
+		Total:      total,
+		TotalPages: totalPages,
 	})
 }
 
