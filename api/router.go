@@ -56,6 +56,7 @@ func SetupRouter(handler *Handler, logger zerolog.Logger, jwtSecret string, allo
 	userAPI.Use(AuthMiddleware(jwtSecret, db))
 	{
 		userAPI.GET("/profile", handler.GetCurrentUser)
+		userAPI.PUT("/profile", handler.UpdateUserProfile)
 	}
 
 	// Protected User Routes (v1)
@@ -65,6 +66,7 @@ func SetupRouter(handler *Handler, logger zerolog.Logger, jwtSecret string, allo
 		// List user's own submissions
 		protectedAPI.GET("/submissions", handler.ListUserSubmissions)
 		protectedAPI.GET("/submissions/:id", handler.GetSubmission)
+		protectedAPI.GET("/submissions/:id/enrichment", handler.GetEnrichment)
 		protectedAPI.GET("/submissions/:id/report/preview", handler.PreviewReport)
 		protectedAPI.POST("/submissions/:id/report/publish", handler.PublishReport)
 	}
