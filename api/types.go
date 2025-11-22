@@ -35,19 +35,20 @@ type UpdatePasswordRequest struct {
 
 // CreateSubmissionRequest matches the frontend SubmissionFormData structure
 // Frontend sends: companyName, cnpj, industry, companySize, website, strategicGoal, currentChallenges, competitivePosition, additionalInfo (JSON string)
+// Only companyName is required at the API level - contact fields validated separately from additionalInfo
 type CreateSubmissionRequest struct {
-	// Required fields from frontend
-	CompanyName         string `json:"companyName" binding:"required"`
-	CNPJ                string `json:"cnpj" binding:"required"`
-	Industry            string `json:"industry" binding:"required"`
-	CompanySize         string `json:"companySize" binding:"required"`
-	StrategicGoal       string `json:"strategicGoal" binding:"required"`
-	CurrentChallenges   string `json:"currentChallenges" binding:"required"`
-	CompetitivePosition string `json:"competitivePosition" binding:"required"`
+	// Required field
+	CompanyName string `json:"companyName" binding:"required"`
 
-	// Optional fields
-	Website        *string `json:"website,omitempty"`
-	AdditionalInfo *string `json:"additionalInfo,omitempty"` // JSON string containing contact and other fields
+	// Optional fields that may be empty
+	CNPJ                string  `json:"cnpj"`
+	Industry            string  `json:"industry"`
+	CompanySize         string  `json:"companySize"`
+	StrategicGoal       string  `json:"strategicGoal"`
+	CurrentChallenges   string  `json:"currentChallenges"`
+	CompetitivePosition string  `json:"competitivePosition"`
+	Website             *string `json:"website,omitempty"`
+	AdditionalInfo      *string `json:"additionalInfo,omitempty"` // JSON string containing contact and other fields
 }
 
 // AdditionalInfoData represents the parsed additionalInfo JSON string from frontend

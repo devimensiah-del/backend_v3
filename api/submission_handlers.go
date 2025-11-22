@@ -31,20 +31,41 @@ func (h *Handler) CreateSubmission(c *gin.Context) {
 		}
 	}
 
-	// Validate required contact fields (either from additionalInfo or will use defaults)
+	// Validate required contact fields from additionalInfo
+	// Required: contactName, contactEmail
 	if additionalInfo.ContactName == "" {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Error:   "Validation failed",
-			Message: "Contact name is required in additionalInfo",
+			Message: "Contact name is required (provide in additionalInfo)",
 		})
 		return
 	}
 	if additionalInfo.ContactEmail == "" {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Error:   "Validation failed",
-			Message: "Contact email is required in additionalInfo",
+			Message: "Contact email is required (provide in additionalInfo)",
 		})
 		return
+	}
+
+	// Use defaults for optional fields if not provided
+	if req.CNPJ == "" {
+		req.CNPJ = "00.000.000/0000-00" // Default CNPJ
+	}
+	if req.Industry == "" {
+		req.Industry = "Não especificado"
+	}
+	if req.CompanySize == "" {
+		req.CompanySize = "Não especificado"
+	}
+	if req.StrategicGoal == "" {
+		req.StrategicGoal = "Em definição"
+	}
+	if req.CurrentChallenges == "" {
+		req.CurrentChallenges = "A definir"
+	}
+	if req.CompetitivePosition == "" {
+		req.CompetitivePosition = "Em análise"
 	}
 
 	// Get authenticated user ID if available
