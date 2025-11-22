@@ -43,7 +43,10 @@ func (h *Handler) GetCurrentUser(c *gin.Context) {
 func (h *Handler) Login(c *gin.Context) {
 	var req LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request", Message: err.Error()})
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid request",
+			Message: "Por favor, preencha email e senha válidos",
+		})
 		return
 	}
 
@@ -75,7 +78,10 @@ func (h *Handler) Login(c *gin.Context) {
 func (h *Handler) Signup(c *gin.Context) {
 	var req SignupRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request", Message: err.Error()})
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid request",
+			Message: "Por favor, preencha todos os campos obrigatórios corretamente",
+		})
 		return
 	}
 
@@ -154,7 +160,10 @@ func (h *Handler) Logout(c *gin.Context) {
 func (h *Handler) ForgotPassword(c *gin.Context) {
 	var req ForgotPasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request", Message: err.Error()})
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid request",
+			Message: "Por favor, forneça um email válido",
+		})
 		return
 	}
 
@@ -181,7 +190,10 @@ func (h *Handler) ForgotPassword(c *gin.Context) {
 func (h *Handler) ResetPassword(c *gin.Context) {
 	var req ResetPasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request", Message: err.Error()})
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid request",
+			Message: "Token e nova senha são obrigatórios",
+		})
 		return
 	}
 
@@ -207,7 +219,10 @@ func (h *Handler) ResetPassword(c *gin.Context) {
 func (h *Handler) UpdatePassword(c *gin.Context) {
 	var req UpdatePasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request", Message: err.Error()})
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid request",
+			Message: "Senha atual e nova senha são obrigatórias",
+		})
 		return
 	}
 
