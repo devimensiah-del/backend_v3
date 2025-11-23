@@ -202,3 +202,45 @@ func (h *Handler) ApproveEnrichment(c *gin.Context) {
 		"message":    "Enrichment approved, analysis job enqueued",
 	})
 }
+
+// GetEnrichmentAdmin handles GET /api/v1/admin/enrichment/:id
+// Admin can fetch enrichment directly by enrichment ID (not just by submission ID)
+func (h *Handler) GetEnrichmentAdmin(c *gin.Context) {
+	enrichmentID := c.Param("id")
+
+	// Parse and validate UUID
+	enrichUUID, err := parseUUID(enrichmentID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid ID",
+			Message: "Invalid enrichment ID format",
+		})
+		return
+	}
+
+	// Get enrichment by ID (admin access, no ownership check needed)
+	enrichment, err := h.enrichmentSvc.GetByID(c.Request.Context(), enrichUUID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{
+			Error:   "Not found",
+			Message: "Enrichment not found",
+		})
+		return
+	}
+
+	// Transform to DTO
+	response := EnrichmentResponse{
+		ID:           enrichment.ID.String(),
+		SubmissionID: enrichment.SubmissionID.String(),
+		Status:       string(enrichment.Status),
+		Progress:     enrichment.Progress,
+		CurrentStep:  enrichment.CurrentStep,
+		Data:         enrichment.EnrichedData,
+		CreatedAt:    enrichment.CreatedAt,
+		UpdatedAt:    enrichment.UpdatedAt,
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"enrichment": response,
+	})
+}

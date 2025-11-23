@@ -102,7 +102,7 @@ func (h *Handler) GetSubmissionAdmin(c *gin.Context) {
 	// Build detailed response with all fields
 	resp := buildSubmissionDetailResponse(sub, h, c.Request.Context(), subUUID, submissionID)
 
-	c.JSON(http.StatusOK, resp)
+	c.JSON(http.StatusOK, gin.H{"submission": resp})
 }
 
 // UpdateSubmissionStatus handles PUT /api/v1/admin/submissions/:id/status

@@ -361,3 +361,39 @@ func (h *Handler) SendAnalysis(c *gin.Context) {
 		"message":  "Analysis sent to user successfully",
 	})
 }
+
+// GetAnalysisAdmin handles GET /api/v1/admin/analysis/:id
+// Admin can fetch analysis directly by analysis ID (not just by submission ID)
+func (h *Handler) GetAnalysisAdmin(c *gin.Context) {
+	analysisID := c.Param("id")
+
+	// Get analysis by ID (admin access, no ownership check needed)
+	analysis, err := h.analysisSvc.GetByID(c.Request.Context(), analysisID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{
+			Error:   "Not found",
+			Message: "Analysis not found",
+		})
+		return
+	}
+
+	// Transform to response
+	analysisData := make(map[string]interface{})
+	analysisBytes, _ := json.Marshal(analysis)
+	json.Unmarshal(analysisBytes, &analysisData)
+
+	response := AnalysisResponse{
+		ID:           analysis.ID,
+		SubmissionID: analysis.SubmissionID,
+		Status:       analysis.Status,
+		Version:      analysis.Version,
+		ParentID:     analysis.ParentAnalysisID,
+		Analysis:     analysisData,
+		CreatedAt:    analysis.CreatedAt,
+		UpdatedAt:    analysis.UpdatedAt,
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"analysis": response,
+	})
+}

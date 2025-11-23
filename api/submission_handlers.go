@@ -181,7 +181,7 @@ func (h *Handler) GetSubmission(c *gin.Context) {
 
 	// 4. Build Response with all fields
 	resp := buildSubmissionDetailResponse(sub, h, c.Request.Context(), subUUID, submissionID)
-	c.JSON(http.StatusOK, resp)
+	c.JSON(http.StatusOK, gin.H{"submission": resp})
 }
 
 // ListUserSubmissions handles GET /api/v1/submissions (authenticated user's submissions only)

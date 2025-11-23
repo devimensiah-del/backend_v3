@@ -93,10 +93,12 @@ func SetupRouter(handler *Handler, logger zerolog.Logger, jwtSecret string, allo
 		adminAPI.GET("/analytics", handler.GetAnalytics)
 
 		// Enrichment management
+		adminAPI.GET("/enrichment/:id", handler.GetEnrichmentAdmin)
 		adminAPI.PUT("/enrichment/:id", handler.UpdateEnrichment)
 		adminAPI.POST("/enrichment/:id/approve", handler.ApproveEnrichment)
 
 		// Analysis management
+		adminAPI.GET("/analysis/:id", handler.GetAnalysisAdmin)
 		adminAPI.PUT("/analysis/:id", handler.UpdateAnalysis)
 		adminAPI.POST("/analysis/:id/version", handler.CreateAnalysisVersion)
 		adminAPI.POST("/analysis/:id/approve", handler.ApproveAnalysis)
