@@ -238,19 +238,27 @@ func (s *Service) Publish(ctx context.Context, submissionID, analysisID string) 
 		CoverPage:                htmlPages[0],  // 01_cover.html
 		ExecutiveSummary:         htmlPages[1],  // 02_exec_summary.html
 		TableOfContents:          htmlPages[2],  // 03_toc.html
-		PESTELPage:              htmlPages[3],  // 04_pestel.html
-		PorterPage:              htmlPages[4],  // 05_porter.html
-		SWOTPage:                htmlPages[5],  // 06_swot.html
-		TamSamSomPage:           htmlPages[6],  // 07_tam_sam_som.html (NEW)
-		BlueOceanPage:           htmlPages[7],  // 08_ocean.html (NEW)
-		OKRPage:                 htmlPages[8],  // 09_okrs.html
-		BSCPage:                 htmlPages[9],  // 10_business_model.html → BSC (RENAMED)
-		BenchmarkingPage:        htmlPages[10], // 11_competitive_analysis.html (NEW)
-		FinancialProjectionsPage: htmlPages[11], // 12_financial_projections.html (NEW)
-		GrowthHackingPage:       htmlPages[12], // 13_gtm_strategy.html (NEW)
-		RiskAssessmentPage:      htmlPages[13], // 14_risk_assessment.html (NEW)
-		DecisionMatrixPage:      htmlPages[14], // 15_roadmap.html (NEW)
-		AppendixPage:            htmlPages[15], // 16_appendix.html
+		DividerPart1Page:         htmlPages[3],  // 03a_divider_part1.html
+		PESTELPesPage:            htmlPages[4],  // 04a_pestel_pes.html
+		PESTELTelPage:            htmlPages[5],  // 04b_pestel_tel.html
+		PorterPage:               htmlPages[6],  // 05a_porter_7forces.html
+		SWOTPage:                 htmlPages[7],  // 06_swot.html
+		DividerPart2Page:         htmlPages[8],  // 08a_divider_part2.html
+		TamSamSomPage:            htmlPages[9],  // 07_tam_sam_som.html
+		BlueOceanPage:            htmlPages[10], // 08_ocean.html
+		DividerPart3Page:         htmlPages[11], // 11a_divider_part3.html
+		OKRPage:                  htmlPages[12], // 12a_okrs_quarterly.html
+		GrowthLoopsPage:          htmlPages[13], // 13a_growth_loops.html
+		DividerPart4Page:         htmlPages[14], // 14a_divider_part4.html
+		ScenariosPage:            htmlPages[15], // 15a_scenarios.html
+		RecommendationsPage:      htmlPages[16], // 16a_recommendations_review.html
+		BSCPage:                  htmlPages[17], // 10_business_model.html
+		BenchmarkingPage:         htmlPages[18], // 11_competitive_analysis.html
+		FinancialProjectionsPage: htmlPages[19], // 12_financial_projections.html
+		GrowthHackingPage:        htmlPages[20], // 13_gtm_strategy.html
+		RiskAssessmentPage:       htmlPages[21], // 14_risk_assessment.html
+		RoadmapPage:              htmlPages[22], // 15_roadmap.html
+		AppendixPage:             htmlPages[23], // 16_appendix.html
 	}
 
 	// Ideally use Upsert logic here

@@ -18,7 +18,7 @@ func TestEndToEndWorkflow_SubmissionToEnrichment(t *testing.T) {
 
 	ctx := context.Background()
 
-	t.Run("Full workflow: Submission → Enrichment (pending→finished)", func(t *testing.T) {
+	t.Run("Full workflow: Submission → Enrichment (pending→completed)", func(t *testing.T) {
 		// 1. Create a test submission
 		sub := helper.CreateTestSubmission(t, ctx)
 		require.NotNil(t, sub)
@@ -60,7 +60,7 @@ func TestEndToEndWorkflow_SubmissionToEnrichment(t *testing.T) {
 
 		// 8. Verify finished status
 		finishedEnr := helper.GetEnrichmentBySubmissionID(t, ctx, sub.ID)
-		assert.Equal(t, enrichment.StatusFinished, finishedEnr.Status)
+		assert.Equal(t, enrichment.StatusCompleted, finishedEnr.Status)
 		assert.Equal(t, 100, finishedEnr.Progress)
 		assert.NotNil(t, finishedEnr.CompletedAt)
 
@@ -175,7 +175,7 @@ func TestEnrichmentStatusTransitions(t *testing.T) {
 		enr.Finish()
 		err := helper.EnrichmentRepo.UpdateSystem(ctx, enr)
 		require.NoError(t, err)
-		helper.AssertEnrichmentStatus(t, ctx, sub.ID, enrichment.StatusFinished)
+		helper.AssertEnrichmentStatus(t, ctx, sub.ID, enrichment.StatusCompleted)
 
 		// Transition to approved
 		enr.Status = enrichment.StatusApproved

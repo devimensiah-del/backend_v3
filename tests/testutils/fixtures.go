@@ -158,7 +158,7 @@ func NewTestEnrichment(submissionID uuid.UUID) *enrichment.Enrichment {
 	return &enrichment.Enrichment{
 		ID:            uuid.New(),
 		SubmissionID:  submissionID,
-		Status:        enrichment.StatusFinished,
+		Status:        enrichment.StatusCompleted,
 		Progress:      100,
 		CurrentStep:   "Enrichment completed",
 		IsLocked:      false,
@@ -219,10 +219,10 @@ func NewTestAnalysis(submissionID, enrichmentID string) *analysis.Analysis {
 // =================================================================
 
 var (
-	TestSubmissionID  = uuid.MustParse("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11")
-	TestEnrichmentID  = uuid.MustParse("b1fecba0-ad1c-5fg9-cc7e-7cca6e491b22")
-	TestAnalysisID    = uuid.MustParse("c2gfddbb-be2d-6gh0-dd8f-8ddb7f502c33")
-	TestUserID        = uuid.MustParse("d3hgeecc-cf3e-7hi1-ee9g-9eec8g613d44")
+	TestSubmissionID = uuid.MustParse("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11")
+	TestEnrichmentID = uuid.MustParse("b1fecba0-ad1c-5fg9-cc7e-7cca6e491b22")
+	TestAnalysisID   = uuid.MustParse("c2gfddbb-be2d-6gh0-dd8f-8ddb7f502c33")
+	TestUserID       = uuid.MustParse("d3hgeecc-cf3e-7hi1-ee9g-9eec8g613d44")
 )
 
 const (
@@ -249,23 +249,23 @@ func getTestPESTEL() analysis.PESTELAnalysis {
 
 func getTestPorter() analysis.PorterAnalysis {
 	return analysis.PorterAnalysis{
-		CompetitiveRivalry:              "Intense competition from AWS, Azure, GCP",
-		SupplierPower:                   "Moderate - dependent on datacenter providers",
-		BuyerPower:                      "High - enterprise customers have leverage",
-		ThreatNewEntrants:               "Medium - high capital requirements",
-		ThreatSubstitutes:               "Medium - open-source alternatives exist",
-		PowerPartnershipsEcosystems:     "High - Kubernetes ecosystem partnerships critical",
-		DisruptionAIData:                "High - AI-driven infrastructure optimization emerging",
-		CompetitiveRivalryIntensity:     "Alta",
-		SupplierPowerIntensity:          "Média",
-		BuyerPowerIntensity:             "Alta",
-		ThreatNewEntrantsIntensity:      "Média",
-		ThreatSubstitutesIntensity:      "Média",
+		CompetitiveRivalry:                   "Intense competition from AWS, Azure, GCP",
+		SupplierPower:                        "Moderate - dependent on datacenter providers",
+		BuyerPower:                           "High - enterprise customers have leverage",
+		ThreatNewEntrants:                    "Medium - high capital requirements",
+		ThreatSubstitutes:                    "Medium - open-source alternatives exist",
+		PowerPartnershipsEcosystems:          "High - Kubernetes ecosystem partnerships critical",
+		DisruptionAIData:                     "High - AI-driven infrastructure optimization emerging",
+		CompetitiveRivalryIntensity:          "Alta",
+		SupplierPowerIntensity:               "Média",
+		BuyerPowerIntensity:                  "Alta",
+		ThreatNewEntrantsIntensity:           "Média",
+		ThreatSubstitutesIntensity:           "Média",
 		PowerPartnershipsEcosystemsIntensity: "Alta",
-		DisruptionAIDataIntensity:       "Alta",
-		StrategicImplications:           []string{"Differentiate on service quality", "Build ecosystem partnerships", "Invest in AI automation", "Focus on niche verticals"},
-		OverallAttractiveness:           "Moderately attractive - high growth but intense competition",
-		Summary:                         "Challenging competitive landscape requiring differentiation strategy",
+		DisruptionAIDataIntensity:            "Alta",
+		StrategicImplications:                []string{"Differentiate on service quality", "Build ecosystem partnerships", "Invest in AI automation", "Focus on niche verticals"},
+		OverallAttractiveness:                "Moderately attractive - high growth but intense competition",
+		Summary:                              "Challenging competitive landscape requiring differentiation strategy",
 	}
 }
 
@@ -294,17 +294,17 @@ func getTestSWOT() analysis.SWOTAnalysis {
 
 func getTestTamSamSom() analysis.TamSamSomAnalysis {
 	return analysis.TamSamSomAnalysis{
-		TAM:         "R$ 45B (Brazil cloud market 2025)",
-		SAM:         "R$ 8B (Kubernetes infrastructure segment)",
-		SOM:         "R$ 120M (achievable in 3 years with 1.5% market share)",
-		Assumptions: []string{"22% CAGR cloud growth", "Enterprise adoption rate 35%", "Customer acquisition cost R$ 25k"},
-		CAGR:        "22% (2024-2028)",
-		DataQuality: "complete",
-		NextSteps:   []string{},
-		ProxyIndicators: []string{},
-		ExpectedOutputs: []string{},
+		TAM:                "R$ 45B (Brazil cloud market 2025)",
+		SAM:                "R$ 8B (Kubernetes infrastructure segment)",
+		SOM:                "R$ 120M (achievable in 3 years with 1.5% market share)",
+		Assumptions:        []string{"22% CAGR cloud growth", "Enterprise adoption rate 35%", "Customer acquisition cost R$ 25k"},
+		CAGR:               "22% (2024-2028)",
+		DataQuality:        "complete",
+		NextSteps:          []string{},
+		ProxyIndicators:    []string{},
+		ExpectedOutputs:    []string{},
 		MethodologicalNote: "Based on Gartner cloud forecasts and local market research",
-		Summary:     "Large addressable market with realistic 3-year revenue target",
+		Summary:            "Large addressable market with realistic 3-year revenue target",
 	}
 }
 
@@ -402,21 +402,21 @@ func getTestGrowthHacking() analysis.GrowthHackingAnalysis {
 func getTestScenarios() analysis.ScenarioAnalysis {
 	return analysis.ScenarioAnalysis{
 		Optimistic: analysis.Scenario{
-			Name:        "Cenário Otimista",
-			Probability: 20,
-			Description: "Market grows 30% annually, we capture 3% share",
+			Name:            "Cenário Otimista",
+			Probability:     20,
+			Description:     "Market grows 30% annually, we capture 3% share",
 			RequiredActions: []string{"Aggressive hiring", "Expand to LATAM"},
 		},
 		Realist: analysis.Scenario{
-			Name:        "Cenário Realista",
-			Probability: 60,
-			Description: "Market grows 22%, we capture 1.5% share",
+			Name:            "Cenário Realista",
+			Probability:     60,
+			Description:     "Market grows 22%, we capture 1.5% share",
 			RequiredActions: []string{"Focus on customer success", "Build partnerships"},
 		},
 		Pessimistic: analysis.Scenario{
-			Name:        "Cenário Pessimista",
-			Probability: 20,
-			Description: "Economic downturn, market grows 10%",
+			Name:            "Cenário Pessimista",
+			Probability:     20,
+			Description:     "Economic downturn, market grows 10%",
 			RequiredActions: []string{"Cost optimization", "Focus on retention"},
 		},
 		MitigationTactics:   []string{"Diversify revenue streams", "Build cash reserves"},
@@ -427,8 +427,8 @@ func getTestScenarios() analysis.ScenarioAnalysis {
 
 func getTestDecisionMatrix() analysis.DecisionMatrixAnalysis {
 	return analysis.DecisionMatrixAnalysis{
-		Alternatives: []string{"Expand LATAM", "Build enterprise features", "Partner with AWS"},
-		Criteria:     []string{"ROI", "Time to market", "Risk", "Strategic fit"},
+		Alternatives:        []string{"Expand LATAM", "Build enterprise features", "Partner with AWS"},
+		Criteria:            []string{"ROI", "Time to market", "Risk", "Strategic fit"},
 		FinalRecommendation: "Focus on enterprise features first, then LATAM expansion",
 		RecommendedOption:   "Build enterprise features",
 		Score:               "8.2/10",
@@ -449,8 +449,8 @@ func getTestDecisionMatrix() analysis.DecisionMatrixAnalysis {
 
 func getTestSynthesis() analysis.AnalysisSynthesis {
 	return analysis.AnalysisSynthesis{
-		ExecutiveSummary:  "Acme Tech has strong technical foundation in growing market. Key priority: enhance enterprise features and improve brand awareness.",
-		CentralChallenge:  "Scale revenue 3x while maintaining technical excellence and customer satisfaction",
+		ExecutiveSummary: "Acme Tech has strong technical foundation in growing market. Key priority: enhance enterprise features and improve brand awareness.",
+		CentralChallenge: "Scale revenue 3x while maintaining technical excellence and customer satisfaction",
 		MainFindings: []string{
 			"Strong: Technical excellence, high retention",
 			"Weak: Brand awareness, marketing reach",

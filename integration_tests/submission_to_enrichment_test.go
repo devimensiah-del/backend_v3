@@ -117,7 +117,7 @@ func TestSubmissionToEnrichment_JobExecution(t *testing.T) {
 
 		// Verify final state
 		finishedEnr := helper.GetEnrichmentBySubmissionID(t, ctx, sub.ID)
-		assert.Equal(t, enrichment.StatusFinished, finishedEnr.Status)
+		assert.Equal(t, enrichment.StatusCompleted, finishedEnr.Status)
 		assert.Equal(t, 100, finishedEnr.Progress)
 		assert.NotNil(t, finishedEnr.CompletedAt)
 		assert.NotNil(t, finishedEnr.EnrichedData)
@@ -139,7 +139,7 @@ func TestSubmissionToEnrichment_StatusProgression(t *testing.T) {
 
 	ctx := context.Background()
 
-	t.Run("Status progression: pending → finished", func(t *testing.T) {
+	t.Run("Status progression: pending → completed", func(t *testing.T) {
 		// Create submission
 		sub := helper.CreateTestSubmission(t, ctx)
 
@@ -162,9 +162,9 @@ func TestSubmissionToEnrichment_StatusProgression(t *testing.T) {
 		require.NoError(t, err)
 
 		// Now finished
-		helper.AssertEnrichmentStatus(t, ctx, sub.ID, enrichment.StatusFinished)
+		helper.AssertEnrichmentStatus(t, ctx, sub.ID, enrichment.StatusCompleted)
 
-		t.Logf("✓ Status progression verified: pending → finished")
+		t.Logf("✓ Status progression verified: pending → completed")
 	})
 }
 
@@ -236,7 +236,7 @@ func TestSubmissionToEnrichment_RetryOnFailure(t *testing.T) {
 
 		// Verify success
 		finalEnr := helper.GetEnrichmentBySubmissionID(t, ctx, sub.ID)
-		assert.Equal(t, enrichment.StatusFinished, finalEnr.Status)
+		assert.Equal(t, enrichment.StatusCompleted, finalEnr.Status)
 		assert.Empty(t, finalEnr.ErrorMessage)
 		assert.Equal(t, 100, finalEnr.Progress)
 
@@ -381,7 +381,7 @@ func TestSubmissionToEnrichment_ConcurrentJobs(t *testing.T) {
 
 		// Verify all finished
 		for i := 0; i < numSubmissions; i++ {
-			helper.AssertEnrichmentStatus(t, ctx, submissions[i].ID, enrichment.StatusFinished)
+			helper.AssertEnrichmentStatus(t, ctx, submissions[i].ID, enrichment.StatusCompleted)
 		}
 
 		t.Logf("✓ %d submissions processed concurrently", numSubmissions)

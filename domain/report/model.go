@@ -13,24 +13,35 @@ type Report struct {
 	SubmissionID string    `db:"submission_id" json:"submission_id"`
 	AnalysisID   string    `db:"analysis_id" json:"analysis_id"`
 
-	// 16 HTML Pages - Each page is a complete HTML document (Strategic Cascade Framework)
-	// Frontend developers: These are ready to display in iframe or render directly
-	CoverPage              string `db:"cover_page" json:"cover_page"`                           // Page 1: Title, company info, date
-	ExecutiveSummary       string `db:"executive_summary" json:"executive_summary"`             // Page 2: High-level overview from synthesis
-	TableOfContents        string `db:"table_of_contents" json:"table_of_contents"`             // Page 3: Navigation links to all sections
-	PESTELPage             string `db:"pestel_page" json:"pestel_page"`                         // Page 4: PESTEL analysis (Layer 1: Environment)
-	PorterPage             string `db:"porter_page" json:"porter_page"`                         // Page 5: Porter's Five Forces (Layer 1: Environment)
-	SWOTPage               string `db:"swot_page" json:"swot_page"`                             // Page 6: SWOT analysis (Layer 2: Positioning)
-	TamSamSomPage          string `db:"tam_sam_som_page" json:"tam_sam_som_page"`               // Page 7: TAM-SAM-SOM Market Sizing (Layer 1: Environment)
-	BlueOceanPage          string `db:"blue_ocean_page" json:"blue_ocean_page"`                 // Page 8: Blue Ocean Strategy (Layer 3: Strategy)
-	OKRPage                string `db:"okr_page" json:"okr_page"`                               // Page 9: OKRs with timelines (Layer 4: Execution)
-	BSCPage                string `db:"bsc_page" json:"bsc_page"`                               // Page 10: Balanced Scorecard (Layer 4: Execution)
-	BenchmarkingPage       string `db:"benchmarking_page" json:"benchmarking_page"`             // Page 11: Competitive Benchmarking (Layer 2: Positioning)
-	FinancialProjectionsPage string `db:"financial_projections_page" json:"financial_projections_page"` // Page 12: Financial Projections/Scenarios
-	GrowthHackingPage      string `db:"growth_hacking_page" json:"growth_hacking_page"`         // Page 13: Growth Hacking / GTM Strategy (Layer 3: Strategy)
-	RiskAssessmentPage     string `db:"risk_assessment_page" json:"risk_assessment_page"`       // Page 14: Risk Assessment
-	DecisionMatrixPage     string `db:"decision_matrix_page" json:"decision_matrix_page"`       // Page 15: Decision Matrix / Roadmap (Layer 4: Execution)
-	AppendixPage           string `db:"appendix_page" json:"appendix_page"`                     // Page 16: Raw data, sources, methodology
+	// 24 HTML Pages - Strategic Cascade Framework (v2)
+	CoverPage                string `db:"cover_page" json:"cover_page"`                               // Page 1
+	ExecutiveSummary         string `db:"executive_summary" json:"executive_summary"`                 // Page 2
+	TableOfContents          string `db:"table_of_contents" json:"table_of_contents"`                 // Page 3
+	DividerPart1Page         string `db:"divider_part1_page" json:"divider_part1_page"`               // Page 4 (NEW)
+	PESTELPesPage            string `db:"pestel_pes_page" json:"pestel_pes_page"`                     // Page 5 (NEW)
+	PESTELTelPage            string `db:"pestel_tel_page" json:"pestel_tel_page"`                     // Page 6 (NEW)
+	PorterPage               string `db:"porter_page" json:"porter_page"`                             // Page 7
+	SWOTPage                 string `db:"swot_page" json:"swot_page"`                                 // Page 8
+	DividerPart2Page         string `db:"divider_part2_page" json:"divider_part2_page"`               // Page 9 (NEW)
+	TamSamSomPage            string `db:"tam_sam_som_page" json:"tam_sam_som_page"`                   // Page 10
+	BlueOceanPage            string `db:"blue_ocean_page" json:"blue_ocean_page"`                     // Page 11
+	DividerPart3Page         string `db:"divider_part3_page" json:"divider_part3_page"`               // Page 12 (NEW)
+	OKRPage                  string `db:"okr_page" json:"okr_page"`                                   // Page 13
+	GrowthLoopsPage          string `db:"growth_loops_page" json:"growth_loops_page"`                 // Page 14 (NEW)
+	DividerPart4Page         string `db:"divider_part4_page" json:"divider_part4_page"`               // Page 15 (NEW)
+	ScenariosPage            string `db:"scenarios_page" json:"scenarios_page"`                       // Page 16 (Renamed from ScenariosPage in logic, but keeping DB column if possible or mapping correctly)
+	RecommendationsPage      string `db:"recommendations_page" json:"recommendations_page"`           // Page 17 (NEW)
+	BSCPage                  string `db:"bsc_page" json:"bsc_page"`                                   // Page 18
+	BenchmarkingPage         string `db:"benchmarking_page" json:"benchmarking_page"`                 // Page 19
+	FinancialProjectionsPage string `db:"financial_projections_page" json:"financial_projections_page"` // Page 20
+	GrowthHackingPage        string `db:"growth_hacking_page" json:"growth_hacking_page"`             // Page 21
+	RiskAssessmentPage       string `db:"risk_assessment_page" json:"risk_assessment_page"`           // Page 22
+	RoadmapPage              string `db:"roadmap_page" json:"roadmap_page"`                           // Page 23 (NEW)
+	AppendixPage             string `db:"appendix_page" json:"appendix_page"`                         // Page 24
+
+	// DEPRECATED: Old framework pages (kept for backward compatibility)
+	PESTELPage             string `db:"pestel_page" json:"pestel_page,omitempty"`               // Replaced by PESTELPesPage and PESTELTelPage
+	DecisionMatrixPage     string `db:"decision_matrix_page" json:"decision_matrix_page,omitempty"` // Replaced by RoadmapPage
 
 	// DEPRECATED: Old framework pages (kept for backward compatibility, no longer populated)
 	BCGMatrixPage          string `db:"bcg_matrix_page" json:"bcg_matrix_page,omitempty"`      // DEPRECATED: BCG Matrix (replaced by BSC)
@@ -47,7 +58,7 @@ type Report struct {
 	Status               string     `db:"status" json:"status"`                 // pending, processing, completed, failed
 	ErrorMessage         string     `db:"error_message" json:"error_message"`   // Error details if generation failed
 	GenerationTimeMs     int64      `db:"generation_time_ms" json:"generation_time_ms"` // Time to generate HTML pages
-	TotalPages           int        `db:"total_pages" json:"total_pages"`       // Should always be 16
+	TotalPages           int        `db:"total_pages" json:"total_pages"`       // Should always be 24
 	CreatedAt            time.Time  `db:"created_at" json:"created_at"`
 	UpdatedAt            time.Time  `db:"updated_at" json:"updated_at"`
 	CompletedAt          *time.Time `db:"completed_at" json:"completed_at"`

@@ -159,7 +159,7 @@ type Status string
 
 const (
 	StatusPending  Status = "pending"  // Queued, worker not started
-	StatusFinished Status = "finished" // Worker completed enrichment
+	StatusCompleted Status = "completed" // Worker completed enrichment
 	StatusApproved Status = "approved" // Admin approved, ready for analysis
 	// Note: Removed StatusProcessing and StatusFailed
 	// Failures keep status as "pending" with error_message populated
@@ -190,7 +190,7 @@ func (e *Enrichment) Start() {
 }
 
 func (e *Enrichment) Finish() {
-	e.Status = StatusFinished
+	e.Status = StatusCompleted
 	n := time.Now()
 	e.CompletedAt = &n
 	e.Progress = 100

@@ -313,7 +313,7 @@ func TestEnrichmentWorkflow_Integration(t *testing.T) {
 	}
 
 	// Check enrichment status
-	assert.Equal(t, enrichment.StatusFinished, result.Status, "Status should be 'finished'")
+	assert.Equal(t, enrichment.StatusCompleted, result.Status, "Status should be 'finished'")
 	assert.Equal(t, 100, result.Progress, "Progress should be 100%")
 
 	// Validate the JSON structure matches what the database expects
@@ -665,7 +665,7 @@ func TestEnrichmentWorkflow_LockedEnrichmentSkipped(t *testing.T) {
 	lockedEnrichment := &enrichment.Enrichment{
 		ID:           uuid.New(),
 		SubmissionID: submissionID,
-		Status:       enrichment.StatusFinished,
+		Status:       enrichment.StatusCompleted,
 		IsLocked:     true, // LOCKED by user
 		Progress:     100,
 	}

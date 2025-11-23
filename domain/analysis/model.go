@@ -75,24 +75,24 @@ type PESTELAnalysis struct {
 
 type PorterAnalysis struct {
 	// Traditional 5 Forces
-	CompetitiveRivalry    string `json:"competitive_rivalry"`
-	SupplierPower         string `json:"supplier_power"`
-	BuyerPower            string `json:"buyer_power"`
-	ThreatNewEntrants     string `json:"threat_new_entrants"`
-	ThreatSubstitutes     string `json:"threat_substitutes"`
+	CompetitiveRivalry string `json:"competitive_rivalry"`
+	SupplierPower      string `json:"supplier_power"`
+	BuyerPower         string `json:"buyer_power"`
+	ThreatNewEntrants  string `json:"threat_new_entrants"`
+	ThreatSubstitutes  string `json:"threat_substitutes"`
 
 	// +2 Modern Forces (2025+)
 	PowerPartnershipsEcosystems string `json:"power_partnerships_ecosystems"` // Collaborative networks & platform effects
 	DisruptionAIData            string `json:"disruption_ai_data"`            // AI/Data-driven disruption potential
 
 	// Intensity Ratings (Alta/Média/Baixa) for each force
-	CompetitiveRivalryIntensity         string `json:"competitive_rivalry_intensity"`
-	SupplierPowerIntensity              string `json:"supplier_power_intensity"`
-	BuyerPowerIntensity                 string `json:"buyer_power_intensity"`
-	ThreatNewEntrantsIntensity          string `json:"threat_new_entrants_intensity"`
-	ThreatSubstitutesIntensity          string `json:"threat_substitutes_intensity"`
+	CompetitiveRivalryIntensity          string `json:"competitive_rivalry_intensity"`
+	SupplierPowerIntensity               string `json:"supplier_power_intensity"`
+	BuyerPowerIntensity                  string `json:"buyer_power_intensity"`
+	ThreatNewEntrantsIntensity           string `json:"threat_new_entrants_intensity"`
+	ThreatSubstitutesIntensity           string `json:"threat_substitutes_intensity"`
 	PowerPartnershipsEcosystemsIntensity string `json:"power_partnerships_ecosystems_intensity"`
-	DisruptionAIDataIntensity           string `json:"disruption_ai_data_intensity"`
+	DisruptionAIDataIntensity            string `json:"disruption_ai_data_intensity"`
 
 	// Strategic Implications (4 key actionable points)
 	StrategicImplications []string `json:"strategic_implications"`
@@ -190,8 +190,8 @@ type Scenario struct {
 }
 
 type ScenarioAnalysis struct {
-	Optimistic Scenario `json:"optimistic"` // Optimistic scenario (typically 20%)
-	Realist    Scenario `json:"realist"`    // Realistic scenario (typically 60%)
+	Optimistic  Scenario `json:"optimistic"`  // Optimistic scenario (typically 20%)
+	Realist     Scenario `json:"realist"`     // Realistic scenario (typically 60%)
 	Pessimistic Scenario `json:"pessimistic"` // Pessimistic scenario (typically 20%)
 
 	MitigationTactics   []string `json:"mitigation_tactics"`    // Risk mitigation strategies
@@ -212,13 +212,13 @@ type TamSamSomAnalysis struct {
 	CAGR        string   `json:"cagr"`
 
 	// Data Quality & Partial Data Support (for "Data Insufficient" scenarios)
-	DataQuality        string   `json:"data_quality"`         // "complete" | "partial" | "insufficient"
-	NextSteps          []string `json:"next_steps"`           // Steps to gather missing data
-	ProxyIndicators    []string `json:"proxy_indicators"`     // Alternative metrics when data is insufficient
-	ExpectedOutputs    []string `json:"expected_outputs"`     // What complete analysis should include
-	MethodologicalNote string   `json:"methodological_note"`  // Explanation of methodology or data limitations
+	DataQuality        string   `json:"data_quality"`        // "complete" | "partial" | "insufficient"
+	NextSteps          []string `json:"next_steps"`          // Steps to gather missing data
+	ProxyIndicators    []string `json:"proxy_indicators"`    // Alternative metrics when data is insufficient
+	ExpectedOutputs    []string `json:"expected_outputs"`    // What complete analysis should include
+	MethodologicalNote string   `json:"methodological_note"` // Explanation of methodology or data limitations
 
-	Summary     string   `json:"summary"`
+	Summary string `json:"summary"`
 }
 
 // PriorityRecommendation represents a prioritized strategic recommendation
@@ -232,8 +232,8 @@ type PriorityRecommendation struct {
 
 // ReviewCycle defines the review and monitoring cadence
 type ReviewCycle struct {
-	Frequency             string   `json:"frequency"`               // "Trimestral", "Mensal", etc.
-	ExtraordinaryTriggers []string `json:"extraordinary_triggers"`  // Events that trigger extraordinary review
+	Frequency             string   `json:"frequency"`              // "Trimestral", "Mensal", etc.
+	ExtraordinaryTriggers []string `json:"extraordinary_triggers"` // Events that trigger extraordinary review
 }
 
 type DecisionMatrixAnalysis struct {
@@ -242,23 +242,23 @@ type DecisionMatrixAnalysis struct {
 	FinalRecommendation string   `json:"final_recommendation"`
 
 	// Enhanced Decision Support (TUC Glasses alignment)
-	RecommendedOption       string                    `json:"recommended_option"`        // Best option name
-	Score                   string                    `json:"score"`                     // Score (e.g., "7.3/10")
-	ScoreComparison         string                    `json:"score_comparison"`          // Comparison to alternatives (e.g., "+23% above second")
-	PriorityRecommendations []PriorityRecommendation  `json:"priority_recommendations"`  // Top 3 recommendations with budgets & timelines
-	ReviewCycle             ReviewCycle               `json:"review_cycle"`              // Review frequency and triggers
-	MonitoringMetrics       []string                  `json:"monitoring_metrics"`        // Metrics to track execution
+	RecommendedOption       string                   `json:"recommended_option"`       // Best option name
+	Score                   string                   `json:"score"`                    // Score (e.g., "7.3/10")
+	ScoreComparison         string                   `json:"score_comparison"`         // Comparison to alternatives (e.g., "+23% above second")
+	PriorityRecommendations []PriorityRecommendation `json:"priority_recommendations"` // Top 3 recommendations with budgets & timelines
+	ReviewCycle             ReviewCycle              `json:"review_cycle"`             // Review frequency and triggers
+	MonitoringMetrics       []string                 `json:"monitoring_metrics"`       // Metrics to track execution
 
-	Summary             string   `json:"summary"`
+	Summary string `json:"summary"`
 }
 
 type AnalysisSynthesis struct {
-	ExecutiveSummary      string   `json:"executive_summary"`
+	ExecutiveSummary string `json:"executive_summary"`
 
 	// Enhanced Executive Summary Components (TUC Glasses alignment)
-	CentralChallenge string   `json:"central_challenge"`  // Primary strategic challenge facing the company
-	MainFindings     []string `json:"main_findings"`      // 4-point SWOT summary from executive summary
-	ImportantNotes   []string `json:"important_notes"`    // Critical observations and warnings
+	CentralChallenge string   `json:"central_challenge"` // Primary strategic challenge facing the company
+	MainFindings     []string `json:"main_findings"`     // 4-point SWOT summary from executive summary
+	ImportantNotes   []string `json:"important_notes"`   // Critical observations and warnings
 
 	KeyFindings           []string `json:"key_findings"`
 	StrategicPriorities   []string `json:"strategic_priorities"`
@@ -328,7 +328,7 @@ func (a *Analysis) CreateNewVersion() *Analysis {
 		// Copy basic info
 		SubmissionID:     a.SubmissionID,
 		EnrichmentID:     a.EnrichmentID,
-		Status:           string(StatusPending),
+		Status:           a.Status, // Copy status from previous version per user requirement
 		ProcessingTimeMs: 0,
 		CreatedAt:        time.Now(),
 		UpdatedAt:        time.Now(),

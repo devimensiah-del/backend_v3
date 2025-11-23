@@ -37,7 +37,7 @@ func TestGetByID_TableDriven(t *testing.T) {
 				e := &enrichment.Enrichment{
 					ID:           uuid.New(),
 					SubmissionID: uuid.New(),
-					Status:       enrichment.StatusFinished,
+					Status:       enrichment.StatusCompleted,
 					Progress:     100,
 				}
 				repo.On("GetByID", mock.Anything, mock.Anything).Return(e, nil)
@@ -45,7 +45,7 @@ func TestGetByID_TableDriven(t *testing.T) {
 			expectError: false,
 			validate: func(t *testing.T, e *enrichment.Enrichment) {
 				assert.NotNil(t, e)
-				assert.Equal(t, enrichment.StatusFinished, e.Status)
+				assert.Equal(t, enrichment.StatusCompleted, e.Status)
 				assert.Equal(t, 100, e.Progress)
 			},
 		},
@@ -145,7 +145,7 @@ func TestGetBySubmissionID_TableDriven(t *testing.T) {
 				latestE := &enrichment.Enrichment{
 					ID:           uuid.New(),
 					SubmissionID: uuid.New(),
-					Status:       enrichment.StatusFinished,
+					Status:       enrichment.StatusCompleted,
 					Progress:     100,
 					CreatedAt:    time.Now(),
 				}
@@ -154,7 +154,7 @@ func TestGetBySubmissionID_TableDriven(t *testing.T) {
 			expectError: false,
 			validate: func(t *testing.T, e *enrichment.Enrichment) {
 				assert.NotNil(t, e)
-				assert.Equal(t, enrichment.StatusFinished, e.Status)
+				assert.Equal(t, enrichment.StatusCompleted, e.Status)
 			},
 		},
 	}
@@ -211,7 +211,7 @@ func TestUpdateEnrichmentData_TableDriven(t *testing.T) {
 				existingE := &enrichment.Enrichment{
 					ID:           uuid.New(),
 					SubmissionID: uuid.New(),
-					Status:       enrichment.StatusFinished,
+					Status:       enrichment.StatusCompleted,
 					EnrichedData: enrichment.JSONMap{},
 				}
 				repo.On("GetByID", mock.Anything, mock.Anything).Return(existingE, nil)
@@ -325,7 +325,7 @@ func TestUpdateFields_TableDriven(t *testing.T) {
 				e := &enrichment.Enrichment{
 					ID:           uuid.New(),
 					SubmissionID: uuid.New(),
-					Status:       enrichment.StatusFinished,
+					Status:       enrichment.StatusCompleted,
 					EnrichedData: enrichment.JSONMap{
 						"profile_overview": map[string]interface{}{
 							"legal_name":      "Original Corp",
@@ -410,7 +410,7 @@ func TestUpdateFields_TableDriven(t *testing.T) {
 				e := &enrichment.Enrichment{
 					ID:           uuid.New(),
 					SubmissionID: uuid.New(),
-					Status:       enrichment.StatusFinished, // Should stay finished
+					Status:       enrichment.StatusCompleted, // Should stay finished
 					EnrichedData: enrichment.JSONMap{
 						"status_field": "original",
 					},
@@ -418,7 +418,7 @@ func TestUpdateFields_TableDriven(t *testing.T) {
 				repo.On("GetByID", mock.Anything, mock.Anything).Return(e, nil)
 				repo.On("UpdateUser", mock.Anything, mock.MatchedBy(func(e *enrichment.Enrichment) bool {
 					// Verify status remains finished
-					return e.Status == enrichment.StatusFinished
+					return e.Status == enrichment.StatusCompleted
 				})).Return(nil)
 			},
 			expectError: false,

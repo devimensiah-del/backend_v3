@@ -89,7 +89,7 @@ func (s *Service) EnrichSubmission(ctx context.Context, submissionID uuid.UUID) 
 	enrichment.SourcesStatus = s.combineSources(technicalData.Sources, resp.Sources)
 
 	// Save final state
-	s.saveProfile(enrichment, nil)
+	s.saveProfile(ctx, enrichment, nil)
 
 	log.Info().Dur("duration", time.Since(startTime)).Msg("Enrichment Pipeline Success")
 	return s.markAsComplete(ctx, sub, enrichment)
@@ -148,11 +148,14 @@ func (s *Service) markAsComplete(ctx context.Context, sub *submission.Submission
 	return e, nil
 }
 
-func (s *Service) saveProfile(e *Enrichment, err error) {
+func (s *Service) saveProfile(ctx context.Context, e *Enrichment, err error) {
 	if err != nil {
 		e.Fail(err)
 	}
-	_ = context.Background()
+	// Actually save the enriched data to database
+	if updateErr := s.repo.UpdateSystem(ctx, e); updateErr != nil {
+		log.Error().Err(updateErr).Msg("Failed to save enriched profile to database")
+	}
 }
 
 func (s *Service) compileUserDossier(sub *submission.Submission) string {

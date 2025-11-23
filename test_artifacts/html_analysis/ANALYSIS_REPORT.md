@@ -8,64 +8,13 @@
 
 ## Page-by-Page Analysis
 
-### DividerPart4
-- **Size:** 3761 bytes
-- **Issues Found:** 1
-  - ⚠️ Contains very long text blocks (>300 chars) that may overflow
-
-### CompetitiveAnalysis
-- **Size:** 4610 bytes
-- **Issues Found:** 1
-  - ⚠️ Contains very long text blocks (>300 chars) that may overflow
-
-### RiskAssessment
-- **Size:** 5303 bytes
-- **Issues Found:** 1
-  - ⚠️ Contains very long text blocks (>300 chars) that may overflow
-
-### Cover
-- **Size:** 5205 bytes
-- **Issues Found:** 1
-  - ⚠️ Contains very long text blocks (>300 chars) that may overflow
-
-### ExecutiveSummary
-- **Size:** 7990 bytes
-- **Issues Found:** 1
-  - ⚠️ Contains very long text blocks (>300 chars) that may overflow
-
-### BusinessModel
-- **Size:** 5638 bytes
-- **Issues Found:** 1
-  - ⚠️ Contains very long text blocks (>300 chars) that may overflow
-
-### FinancialProjections
-- **Size:** 4924 bytes
-- **Issues Found:** 1
-  - ⚠️ Contains very long text blocks (>300 chars) that may overflow
-
-### Roadmap
-- **Size:** 5016 bytes
+### DividerPart1
+- **Size:** 3974 bytes
 - **Issues Found:** 1
   - ⚠️ Contains very long text blocks (>300 chars) that may overflow
 
 ### PESTEL_PES
 - **Size:** 5326 bytes
-- **Issues Found:** 1
-  - ⚠️ Contains very long text blocks (>300 chars) that may overflow
-
-### Porter
-- **Size:** 10590 bytes
-- **Issues Found:** 2
-  - ⚠️ Porter's analysis may be incomplete (found 1 force references, expected 7+)
-  - ⚠️ Contains very long text blocks (>300 chars) that may overflow
-
-### DividerPart3
-- **Size:** 3871 bytes
-- **Issues Found:** 1
-  - ⚠️ Contains very long text blocks (>300 chars) that may overflow
-
-### OKRs
-- **Size:** 9240 bytes
 - **Issues Found:** 1
   - ⚠️ Contains very long text blocks (>300 chars) that may overflow
 
@@ -79,8 +28,13 @@
 - **Issues Found:** 1
   - ⚠️ Contains very long text blocks (>300 chars) that may overflow
 
-### GTMStrategy
-- **Size:** 5268 bytes
+### Roadmap
+- **Size:** 5016 bytes
+- **Issues Found:** 1
+  - ⚠️ Contains very long text blocks (>300 chars) that may overflow
+
+### Appendix
+- **Size:** 6632 bytes
 - **Issues Found:** 1
   - ⚠️ Contains very long text blocks (>300 chars) that may overflow
 
@@ -89,8 +43,49 @@
 - **Issues Found:** 1
   - ⚠️ Contains very long text blocks (>300 chars) that may overflow
 
+### Porter
+- **Size:** 10590 bytes
+- **Issues Found:** 2
+  - ⚠️ Porter's analysis may be incomplete (found 1 force references, expected 7+)
+  - ⚠️ Contains very long text blocks (>300 chars) that may overflow
+
 ### SWOT
 - **Size:** 12770 bytes
+- **Issues Found:** 1
+  - ⚠️ Contains very long text blocks (>300 chars) that may overflow
+
+### BlueOcean
+- **Size:** 6938 bytes
+- **Issues Found:** 1
+  - ⚠️ Contains very long text blocks (>300 chars) that may overflow
+
+### DividerPart3
+- **Size:** 3871 bytes
+- **Issues Found:** 1
+  - ⚠️ Contains very long text blocks (>300 chars) that may overflow
+
+### DividerPart4
+- **Size:** 3761 bytes
+- **Issues Found:** 1
+  - ⚠️ Contains very long text blocks (>300 chars) that may overflow
+
+### BusinessModel
+- **Size:** 5638 bytes
+- **Issues Found:** 1
+  - ⚠️ Contains very long text blocks (>300 chars) that may overflow
+
+### FinancialProjections
+- **Size:** 4924 bytes
+- **Issues Found:** 1
+  - ⚠️ Contains very long text blocks (>300 chars) that may overflow
+
+### Cover
+- **Size:** 5205 bytes
+- **Issues Found:** 1
+  - ⚠️ Contains very long text blocks (>300 chars) that may overflow
+
+### TableOfContents
+- **Size:** 8411 bytes
 - **Issues Found:** 1
   - ⚠️ Contains very long text blocks (>300 chars) that may overflow
 
@@ -104,18 +99,18 @@
 - **Issues Found:** 1
   - ⚠️ Contains very long text blocks (>300 chars) that may overflow
 
-### Appendix
-- **Size:** 6632 bytes
+### GTMStrategy
+- **Size:** 5268 bytes
 - **Issues Found:** 1
   - ⚠️ Contains very long text blocks (>300 chars) that may overflow
 
-### TableOfContents
-- **Size:** 8411 bytes
+### RiskAssessment
+- **Size:** 5303 bytes
 - **Issues Found:** 1
   - ⚠️ Contains very long text blocks (>300 chars) that may overflow
 
-### DividerPart1
-- **Size:** 3974 bytes
+### ExecutiveSummary
+- **Size:** 7990 bytes
 - **Issues Found:** 1
   - ⚠️ Contains very long text blocks (>300 chars) that may overflow
 
@@ -124,8 +119,13 @@
 - **Issues Found:** 1
   - ⚠️ Contains very long text blocks (>300 chars) that may overflow
 
-### BlueOcean
-- **Size:** 6938 bytes
+### OKRs
+- **Size:** 9240 bytes
+- **Issues Found:** 1
+  - ⚠️ Contains very long text blocks (>300 chars) that may overflow
+
+### CompetitiveAnalysis
+- **Size:** 4610 bytes
 - **Issues Found:** 1
   - ⚠️ Contains very long text blocks (>300 chars) that may overflow
 

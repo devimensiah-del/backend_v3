@@ -118,7 +118,7 @@ func (s *Service) Approve(ctx context.Context, id uuid.UUID) error {
 	}
 
 	// Validate status is "finished"
-	if enrichment.Status != StatusFinished {
+	if enrichment.Status != StatusCompleted {
 		return fmt.Errorf("enrichment must be in 'finished' status to approve, current status: %s", enrichment.Status)
 	}
 

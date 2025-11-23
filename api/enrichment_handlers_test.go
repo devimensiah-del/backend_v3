@@ -2,7 +2,6 @@ package api
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -50,7 +49,7 @@ func TestGetEnrichment_Found(t *testing.T) {
 	mockEnrichment := &enrichment.Enrichment{
 		ID:           enrichmentID,
 		SubmissionID: submissionID,
-		Status:       enrichment.StatusFinished,
+		Status:       enrichment.StatusCompleted,
 		Progress:     100,
 		CurrentStep:  "completed",
 		EnrichedData: map[string]interface{}{
@@ -86,7 +85,7 @@ func TestGetEnrichment_Found(t *testing.T) {
 	assert.Contains(t, response, "enrichment")
 	enrichmentData := response["enrichment"].(map[string]interface{})
 	assert.Equal(t, enrichmentID.String(), enrichmentData["id"])
-	assert.Equal(t, "finished", enrichmentData["status"])
+	assert.Equal(t, "completed", enrichmentData["status"])
 	assert.Equal(t, float64(100), enrichmentData["progress"])
 
 	mockSubmissionSvc.AssertExpectations(t)
@@ -182,7 +181,7 @@ func TestUpdateEnrichment_ValidUpdate(t *testing.T) {
 	updatedEnrichment := &enrichment.Enrichment{
 		ID:           enrichmentID,
 		SubmissionID: submissionID,
-		Status:       enrichment.StatusFinished,
+		Status:       enrichment.StatusCompleted,
 		Progress:     100,
 		CurrentStep:  "completed",
 		EnrichedData: updateData,
@@ -301,7 +300,7 @@ func TestApproveEnrichment_InvalidStatus(t *testing.T) {
 
 	enrichmentID := uuid.New()
 
-	// Service returns error when status is not "finished"
+	// Service returns error when status is not "completed"
 	mockEnrichmentSvc.On("Approve", mock.Anything, enrichmentID).Return(errors.New("invalid status"))
 
 	req, _ := http.NewRequest("POST", "/api/v1/admin/enrichment/"+enrichmentID.String()+"/approve", nil)

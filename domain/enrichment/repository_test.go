@@ -97,10 +97,10 @@ func TestGetByID_Success(t *testing.T) {
 	// Expect SELECT query
 	rows := sqlmock.NewRows([]string{
 		"id", "submission_id", "status", "progress", "current_step", "is_locked",
-		"sources_status", "enriched_data", "started_at", "completed_at",
+		"sources_status", "data", "started_at", "completed_at",
 		"error_message", "retry_count", "max_retries", "created_at", "updated_at",
 	}).AddRow(
-		enrichID, submissionID, string(enrichment.StatusFinished), 100,
+		enrichID, submissionID, string(enrichment.StatusCompleted), 100,
 		"Complete", false, sourcesJSON, enrichedJSON,
 		now, now, "", 0, 3, now, now,
 	)
@@ -117,7 +117,7 @@ func TestGetByID_Success(t *testing.T) {
 	assert.NotNil(t, result)
 	assert.Equal(t, enrichID, result.ID)
 	assert.Equal(t, submissionID, result.SubmissionID)
-	assert.Equal(t, enrichment.StatusFinished, result.Status)
+	assert.Equal(t, enrichment.StatusCompleted, result.Status)
 	assert.Equal(t, 100, result.Progress)
 
 	// Verify JSONB data was scanned correctly
@@ -174,10 +174,10 @@ func TestGetBySubmissionID_ReturnsLatest(t *testing.T) {
 	// Expect SELECT query with ORDER BY and LIMIT
 	rows := sqlmock.NewRows([]string{
 		"id", "submission_id", "status", "progress", "current_step", "is_locked",
-		"sources_status", "enriched_data", "started_at", "completed_at",
+		"sources_status", "data", "started_at", "completed_at",
 		"error_message", "retry_count", "max_retries", "created_at", "updated_at",
 	}).AddRow(
-		latestEnrichID, submissionID, string(enrichment.StatusFinished), 100,
+		latestEnrichID, submissionID, string(enrichment.StatusCompleted), 100,
 		"Complete", false, sourcesJSON, enrichedJSON,
 		now, now, "", 0, 3, now, now,
 	)
@@ -213,7 +213,7 @@ func TestUpdateSystem_OnlyWhenNotLocked(t *testing.T) {
 	e := &enrichment.Enrichment{
 		ID:            enrichID,
 		SubmissionID:  uuid.New(),
-		Status:        enrichment.StatusFinished,
+		Status:        enrichment.StatusCompleted,
 		Progress:      100,
 		CurrentStep:   "Complete",
 		IsLocked:      false,
@@ -229,7 +229,7 @@ func TestUpdateSystem_OnlyWhenNotLocked(t *testing.T) {
 	// Expect UPDATE with WHERE id = X AND is_locked = FALSE
 	mock.ExpectExec(`UPDATE enrichments SET .+ WHERE id = .+ AND is_locked = FALSE`).
 		WithArgs(
-			string(enrichment.StatusFinished),
+			string(enrichment.StatusCompleted),
 			100,
 			"Complete",
 			sqlmock.AnyArg(), // sources_status JSON
@@ -267,7 +267,7 @@ func TestUpdateSystem_SkipsWhenLocked(t *testing.T) {
 	e := &enrichment.Enrichment{
 		ID:            enrichID,
 		SubmissionID:  uuid.New(),
-		Status:        enrichment.StatusFinished,
+		Status:        enrichment.StatusCompleted,
 		Progress:      100,
 		CurrentStep:   "Complete",
 		IsLocked:      true, // Locked by user
@@ -308,16 +308,16 @@ func TestUpdateUser_LocksRecord(t *testing.T) {
 	enrichID := uuid.New()
 
 	e := &enrichment.Enrichment{
-		ID:            enrichID,
-		SubmissionID:  uuid.New(),
-		Status:        enrichment.StatusFinished,
-		EnrichedData:  enrichment.JSONMap{"updated": "data"},
-		IsLocked:      false, // Will be set to true
-		UpdatedAt:     time.Now(),
+		ID:           enrichID,
+		SubmissionID: uuid.New(),
+		Status:       enrichment.StatusCompleted,
+		EnrichedData: enrichment.JSONMap{"updated": "data"},
+		IsLocked:     false, // Will be set to true
+		UpdatedAt:    time.Now(),
 	}
 
 	// Expect UPDATE with is_locked = TRUE
-	mock.ExpectExec(`UPDATE enrichments SET enriched_data = .+, is_locked = TRUE, updated_at = .+ WHERE id = .+`).
+	mock.ExpectExec(`UPDATE enrichments SET data = .+, is_locked = TRUE, updated_at = .+ WHERE id = .+`).
 		WithArgs(
 			sqlmock.AnyArg(), // enriched_data JSON
 			sqlmock.AnyArg(), // updated_at
@@ -392,7 +392,7 @@ func TestJSONB_SourcesStatusUpdate(t *testing.T) {
 	e := &enrichment.Enrichment{
 		ID:            enrichID,
 		SubmissionID:  uuid.New(),
-		Status:        enrichment.StatusFinished,
+		Status:        enrichment.StatusCompleted,
 		SourcesStatus: sourcesStatus,
 		EnrichedData:  enrichment.JSONMap{},
 		UpdatedAt:     time.Now(),
@@ -446,7 +446,7 @@ func TestJSONB_EnrichedDataUpdate(t *testing.T) {
 	e := &enrichment.Enrichment{
 		ID:            enrichID,
 		SubmissionID:  uuid.New(),
-		Status:        enrichment.StatusFinished,
+		Status:        enrichment.StatusCompleted,
 		SourcesStatus: enrichment.JSONMap{},
 		EnrichedData:  enrichedData,
 		UpdatedAt:     time.Now(),

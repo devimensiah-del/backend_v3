@@ -90,7 +90,7 @@ func TestEndToEndPipeline_Complete(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify enrichment finished
-		helper.AssertEnrichmentStatus(t, ctx, sub.ID, enrichment.StatusFinished)
+		helper.AssertEnrichmentStatus(t, ctx, sub.ID, enrichment.StatusCompleted)
 		t.Logf("✓ Enrichment finished: %s", enr.ID)
 
 		// Admin approves enrichment
@@ -465,7 +465,7 @@ func TestEndToEndPipeline_StageCompletion(t *testing.T) {
 		enr.Finish()
 		err := helper.EnrichmentRepo.UpdateSystem(ctx, enr)
 		require.NoError(t, err)
-		require.Equal(t, enrichment.StatusFinished, enr.Status)
+		require.Equal(t, enrichment.StatusCompleted, enr.Status)
 		t.Log("✓ Stage 2 complete: Enrichment finished")
 
 		// Stage 3: Enrichment must be approved before analysis
