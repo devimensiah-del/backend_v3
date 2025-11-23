@@ -1,6 +1,9 @@
 package analysis
 
 import (
+	"database/sql/driver"
+	"encoding/json"
+	"errors"
 	"time"
 )
 
@@ -351,4 +354,214 @@ func (a *Analysis) CreateNewVersion() *Analysis {
 	}
 
 	return newAnalysis
+}
+
+// ============================================
+// JSONB Serialization for PostgreSQL
+// ============================================
+// Implement driver.Valuer and sql.Scanner for all framework types
+// This enables PostgreSQL JSONB storage and retrieval
+
+// --- PESTELAnalysis ---
+
+func (p PESTELAnalysis) Value() (driver.Value, error) {
+	return json.Marshal(p)
+}
+
+func (p *PESTELAnalysis) Scan(value interface{}) error {
+	if value == nil {
+		return nil
+	}
+	b, ok := value.([]byte)
+	if !ok {
+		return errors.New("type assertion to []byte failed for PESTELAnalysis")
+	}
+	return json.Unmarshal(b, p)
+}
+
+// --- PorterAnalysis ---
+
+func (p PorterAnalysis) Value() (driver.Value, error) {
+	return json.Marshal(p)
+}
+
+func (p *PorterAnalysis) Scan(value interface{}) error {
+	if value == nil {
+		return nil
+	}
+	b, ok := value.([]byte)
+	if !ok {
+		return errors.New("type assertion to []byte failed for PorterAnalysis")
+	}
+	return json.Unmarshal(b, p)
+}
+
+// --- SWOTAnalysis ---
+
+func (s SWOTAnalysis) Value() (driver.Value, error) {
+	return json.Marshal(s)
+}
+
+func (s *SWOTAnalysis) Scan(value interface{}) error {
+	if value == nil {
+		return nil
+	}
+	b, ok := value.([]byte)
+	if !ok {
+		return errors.New("type assertion to []byte failed for SWOTAnalysis")
+	}
+	return json.Unmarshal(b, s)
+}
+
+// --- BlueOceanAnalysis ---
+
+func (b BlueOceanAnalysis) Value() (driver.Value, error) {
+	return json.Marshal(b)
+}
+
+func (b *BlueOceanAnalysis) Scan(value interface{}) error {
+	if value == nil {
+		return nil
+	}
+	bytes, ok := value.([]byte)
+	if !ok {
+		return errors.New("type assertion to []byte failed for BlueOceanAnalysis")
+	}
+	return json.Unmarshal(bytes, b)
+}
+
+// --- BalancedScorecardAnalysis ---
+
+func (bsc BalancedScorecardAnalysis) Value() (driver.Value, error) {
+	return json.Marshal(bsc)
+}
+
+func (bsc *BalancedScorecardAnalysis) Scan(value interface{}) error {
+	if value == nil {
+		return nil
+	}
+	b, ok := value.([]byte)
+	if !ok {
+		return errors.New("type assertion to []byte failed for BalancedScorecardAnalysis")
+	}
+	return json.Unmarshal(b, bsc)
+}
+
+// --- OKRAnalysis ---
+
+func (o OKRAnalysis) Value() (driver.Value, error) {
+	return json.Marshal(o)
+}
+
+func (o *OKRAnalysis) Scan(value interface{}) error {
+	if value == nil {
+		return nil
+	}
+	b, ok := value.([]byte)
+	if !ok {
+		return errors.New("type assertion to []byte failed for OKRAnalysis")
+	}
+	return json.Unmarshal(b, o)
+}
+
+// --- BenchmarkingAnalysis ---
+
+func (b BenchmarkingAnalysis) Value() (driver.Value, error) {
+	return json.Marshal(b)
+}
+
+func (b *BenchmarkingAnalysis) Scan(value interface{}) error {
+	if value == nil {
+		return nil
+	}
+	bytes, ok := value.([]byte)
+	if !ok {
+		return errors.New("type assertion to []byte failed for BenchmarkingAnalysis")
+	}
+	return json.Unmarshal(bytes, b)
+}
+
+// --- GrowthHackingAnalysis ---
+
+func (g GrowthHackingAnalysis) Value() (driver.Value, error) {
+	return json.Marshal(g)
+}
+
+func (g *GrowthHackingAnalysis) Scan(value interface{}) error {
+	if value == nil {
+		return nil
+	}
+	b, ok := value.([]byte)
+	if !ok {
+		return errors.New("type assertion to []byte failed for GrowthHackingAnalysis")
+	}
+	return json.Unmarshal(b, g)
+}
+
+// --- ScenarioAnalysis ---
+
+func (s ScenarioAnalysis) Value() (driver.Value, error) {
+	return json.Marshal(s)
+}
+
+func (s *ScenarioAnalysis) Scan(value interface{}) error {
+	if value == nil {
+		return nil
+	}
+	b, ok := value.([]byte)
+	if !ok {
+		return errors.New("type assertion to []byte failed for ScenarioAnalysis")
+	}
+	return json.Unmarshal(b, s)
+}
+
+// --- TamSamSomAnalysis ---
+
+func (t TamSamSomAnalysis) Value() (driver.Value, error) {
+	return json.Marshal(t)
+}
+
+func (t *TamSamSomAnalysis) Scan(value interface{}) error {
+	if value == nil {
+		return nil
+	}
+	b, ok := value.([]byte)
+	if !ok {
+		return errors.New("type assertion to []byte failed for TamSamSomAnalysis")
+	}
+	return json.Unmarshal(b, t)
+}
+
+// --- DecisionMatrixAnalysis ---
+
+func (d DecisionMatrixAnalysis) Value() (driver.Value, error) {
+	return json.Marshal(d)
+}
+
+func (d *DecisionMatrixAnalysis) Scan(value interface{}) error {
+	if value == nil {
+		return nil
+	}
+	b, ok := value.([]byte)
+	if !ok {
+		return errors.New("type assertion to []byte failed for DecisionMatrixAnalysis")
+	}
+	return json.Unmarshal(b, d)
+}
+
+// --- AnalysisSynthesis ---
+
+func (a AnalysisSynthesis) Value() (driver.Value, error) {
+	return json.Marshal(a)
+}
+
+func (a *AnalysisSynthesis) Scan(value interface{}) error {
+	if value == nil {
+		return nil
+	}
+	b, ok := value.([]byte)
+	if !ok {
+		return errors.New("type assertion to []byte failed for AnalysisSynthesis")
+	}
+	return json.Unmarshal(b, a)
 }

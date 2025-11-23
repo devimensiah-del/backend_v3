@@ -26,7 +26,7 @@ import (
 
 const (
 	// Set to your OpenRouter API key to test with real AI, or leave empty to use mock
-	OPENROUTER_API_KEY = "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"
+	OPENROUTER_API_KEY = ""
 
 	// Set to true to use real scraper, false to mock it
 	USE_REAL_SCRAPER = true
