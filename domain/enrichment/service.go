@@ -145,7 +145,7 @@ func (s *Service) Approve(ctx context.Context, id uuid.UUID) error {
 		return fmt.Errorf("failed to create analysis job: %w", err)
 	}
 
-	task := asynq.NewTask("analysis", payloadBytes)
+	task := asynq.NewTask("analysis_job", payloadBytes)
 	if _, err := s.queueClient.Enqueue(task); err != nil {
 		log.Error().Err(err).Msg("Failed to enqueue analysis job")
 		return fmt.Errorf("failed to enqueue analysis job: %w", err)
