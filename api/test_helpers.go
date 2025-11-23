@@ -5,7 +5,6 @@ import (
 
 	"backend_v3/domain/analysis"
 	"backend_v3/domain/enrichment"
-	"backend_v3/domain/report"
 	"backend_v3/domain/submission"
 
 	"github.com/gin-gonic/gin"
@@ -18,11 +17,11 @@ import (
 // TestHandler is a test version of Handler that allows mocking
 type TestHandler struct {
 	Handler
-	MockSubmissionSvc  *MockSubmissionService
-	MockEnrichmentSvc  *MockEnrichmentService
-	MockAnalysisSvc    *MockAnalysisService
-	MockReportSvc      *MockReportService
-	MockAsynqClient    *MockAsynqClient
+	MockSubmissionSvc *MockSubmissionService
+	MockEnrichmentSvc *MockEnrichmentService
+	MockAnalysisSvc   *MockAnalysisService
+	MockReportSvc     *MockReportService
+	MockAsynqClient   *MockAsynqClient
 }
 
 // NewTestHandler creates a handler for testing with all mocks
