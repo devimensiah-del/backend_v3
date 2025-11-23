@@ -2,6 +2,7 @@ package report_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -687,5 +688,338 @@ func TestReportService_Publish_Coimma(t *testing.T) {
 	mockSubmissionRepo.AssertExpectations(t)
 	mockPDFGen.AssertExpectations(t)
 	mockStorage.AssertExpectations(t)
+	mockReportRepo.AssertExpectations(t)
+}
+
+// ----------------------------------------------------------------------------
+// TEST: Publish - PDF Generation Failure
+// ----------------------------------------------------------------------------
+
+func TestReportService_Publish_PDFGenerationFails(t *testing.T) {
+	ctx := context.Background()
+	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
+
+	mockAnalysisRepo := new(MockAnalysisRepo)
+	mockSubmissionRepo := new(MockSubmissionRepo)
+	mockReportRepo := new(MockReportRepo)
+	mockPDFGen := new(MockPDFGenerator)
+	mockStorage := new(MockStorageClient)
+
+	coimmaAnalysis := getCoimmaAnalysis()
+	coimmaSubmission := getCoimmaSubmission()
+
+	mockSubmissionRepo.On("GetByID", ctx, uuid.MustParse("db32e622-56bb-4fba-a480-9384aeaa2f5c")).
+		Return(coimmaSubmission, nil)
+	mockAnalysisRepo.On("GetByID", ctx, "6057454f-12bf-4783-8334-f5a4424ad246").
+		Return(coimmaAnalysis, nil)
+
+	// Mock PDF generation failure
+	mockPDFGen.On("Convert", ctx, mock.AnythingOfType("[]string")).
+		Return([]byte{}, fmt.Errorf("gotenberg service unavailable"))
+
+	svc := report.NewService(
+		mockReportRepo,
+		mockAnalysisRepo,
+		mockSubmissionRepo,
+		mockPDFGen,
+		mockStorage,
+		logger,
+	)
+
+	// Execute
+	pdfURL, err := svc.Publish(ctx, "db32e622-56bb-4fba-a480-9384aeaa2f5c", "6057454f-12bf-4783-8334-f5a4424ad246")
+
+	// Assert
+	assert.Error(t, err)
+	assert.Empty(t, pdfURL)
+	assert.Contains(t, err.Error(), "pdf generation failed")
+
+	mockAnalysisRepo.AssertExpectations(t)
+	mockSubmissionRepo.AssertExpectations(t)
+	mockPDFGen.AssertExpectations(t)
+	// Storage should NOT be called
+	mockStorage.AssertNotCalled(t, "Upload")
+}
+
+// ----------------------------------------------------------------------------
+// TEST: Publish - Storage Upload Failure
+// ----------------------------------------------------------------------------
+
+func TestReportService_Publish_StorageUploadFails(t *testing.T) {
+	ctx := context.Background()
+	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
+
+	mockAnalysisRepo := new(MockAnalysisRepo)
+	mockSubmissionRepo := new(MockSubmissionRepo)
+	mockReportRepo := new(MockReportRepo)
+	mockPDFGen := new(MockPDFGenerator)
+	mockStorage := new(MockStorageClient)
+
+	coimmaAnalysis := getCoimmaAnalysis()
+	coimmaSubmission := getCoimmaSubmission()
+
+	mockSubmissionRepo.On("GetByID", ctx, uuid.MustParse("db32e622-56bb-4fba-a480-9384aeaa2f5c")).
+		Return(coimmaSubmission, nil)
+	mockAnalysisRepo.On("GetByID", ctx, "6057454f-12bf-4783-8334-f5a4424ad246").
+		Return(coimmaAnalysis, nil)
+
+	mockPDFBytes := []byte("fake-pdf-content")
+	mockPDFGen.On("Convert", ctx, mock.AnythingOfType("[]string")).
+		Return(mockPDFBytes, nil)
+
+	// Mock storage upload failure
+	mockStorage.On("Upload", ctx, mock.AnythingOfType("string"), mockPDFBytes, "application/pdf").
+		Return("", fmt.Errorf("supabase connection timeout"))
+
+	svc := report.NewService(
+		mockReportRepo,
+		mockAnalysisRepo,
+		mockSubmissionRepo,
+		mockPDFGen,
+		mockStorage,
+		logger,
+	)
+
+	// Execute
+	pdfURL, err := svc.Publish(ctx, "db32e622-56bb-4fba-a480-9384aeaa2f5c", "6057454f-12bf-4783-8334-f5a4424ad246")
+
+	// Assert
+	assert.Error(t, err)
+	assert.Empty(t, pdfURL)
+	assert.Contains(t, err.Error(), "storage upload failed")
+
+	mockAnalysisRepo.AssertExpectations(t)
+	mockSubmissionRepo.AssertExpectations(t)
+	mockPDFGen.AssertExpectations(t)
+	mockStorage.AssertExpectations(t)
+	// Report should NOT be created
+	mockReportRepo.AssertNotCalled(t, "Create")
+}
+
+// ----------------------------------------------------------------------------
+// TEST: Publish - Missing Submission
+// ----------------------------------------------------------------------------
+
+func TestReportService_Publish_SubmissionNotFound(t *testing.T) {
+	ctx := context.Background()
+	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
+
+	mockAnalysisRepo := new(MockAnalysisRepo)
+	mockSubmissionRepo := new(MockSubmissionRepo)
+	mockReportRepo := new(MockReportRepo)
+	mockPDFGen := new(MockPDFGenerator)
+	mockStorage := new(MockStorageClient)
+
+	// Mock submission not found
+	mockSubmissionRepo.On("GetByID", ctx, uuid.MustParse("db32e622-56bb-4fba-a480-9384aeaa2f5c")).
+		Return(nil, fmt.Errorf("submission not found"))
+
+	svc := report.NewService(
+		mockReportRepo,
+		mockAnalysisRepo,
+		mockSubmissionRepo,
+		mockPDFGen,
+		mockStorage,
+		logger,
+	)
+
+	// Execute
+	pdfURL, err := svc.Publish(ctx, "db32e622-56bb-4fba-a480-9384aeaa2f5c", "6057454f-12bf-4783-8334-f5a4424ad246")
+
+	// Assert
+	assert.Error(t, err)
+	assert.Empty(t, pdfURL)
+
+	mockSubmissionRepo.AssertExpectations(t)
+	// Analysis should NOT be fetched
+	mockAnalysisRepo.AssertNotCalled(t, "GetByID")
+}
+
+// ----------------------------------------------------------------------------
+// TEST: Publish - Missing Analysis
+// ----------------------------------------------------------------------------
+
+func TestReportService_Publish_AnalysisNotFound(t *testing.T) {
+	ctx := context.Background()
+	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
+
+	mockAnalysisRepo := new(MockAnalysisRepo)
+	mockSubmissionRepo := new(MockSubmissionRepo)
+	mockReportRepo := new(MockReportRepo)
+	mockPDFGen := new(MockPDFGenerator)
+	mockStorage := new(MockStorageClient)
+
+	coimmaSubmission := getCoimmaSubmission()
+
+	mockSubmissionRepo.On("GetByID", ctx, uuid.MustParse("db32e622-56bb-4fba-a480-9384aeaa2f5c")).
+		Return(coimmaSubmission, nil)
+
+	// Mock analysis not found
+	mockAnalysisRepo.On("GetByID", ctx, "6057454f-12bf-4783-8334-f5a4424ad246").
+		Return(nil, fmt.Errorf("analysis not found"))
+
+	svc := report.NewService(
+		mockReportRepo,
+		mockAnalysisRepo,
+		mockSubmissionRepo,
+		mockPDFGen,
+		mockStorage,
+		logger,
+	)
+
+	// Execute
+	pdfURL, err := svc.Publish(ctx, "db32e622-56bb-4fba-a480-9384aeaa2f5c", "6057454f-12bf-4783-8334-f5a4424ad246")
+
+	// Assert
+	assert.Error(t, err)
+	assert.Empty(t, pdfURL)
+
+	mockSubmissionRepo.AssertExpectations(t)
+	mockAnalysisRepo.AssertExpectations(t)
+}
+
+// ----------------------------------------------------------------------------
+// TEST: GeneratePreview - All 24 Pages Rendered
+// ----------------------------------------------------------------------------
+
+func TestReportService_GeneratePreview_AllPagesRendered(t *testing.T) {
+	ctx := context.Background()
+	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
+
+	mockAnalysisRepo := new(MockAnalysisRepo)
+	mockSubmissionRepo := new(MockSubmissionRepo)
+	mockReportRepo := new(MockReportRepo)
+	mockPDFGen := new(MockPDFGenerator)
+	mockStorage := new(MockStorageClient)
+
+	coimmaAnalysis := getCoimmaAnalysis()
+	coimmaSubmission := getCoimmaSubmission()
+
+	mockSubmissionRepo.On("GetByID", ctx, uuid.MustParse("db32e622-56bb-4fba-a480-9384aeaa2f5c")).
+		Return(coimmaSubmission, nil)
+	mockAnalysisRepo.On("GetByID", ctx, "6057454f-12bf-4783-8334-f5a4424ad246").
+		Return(coimmaAnalysis, nil)
+
+	svc := report.NewService(
+		mockReportRepo,
+		mockAnalysisRepo,
+		mockSubmissionRepo,
+		mockPDFGen,
+		mockStorage,
+		logger,
+	)
+
+	// Execute
+	pages, err := svc.GeneratePreview(ctx, "db32e622-56bb-4fba-a480-9384aeaa2f5c", "6057454f-12bf-4783-8334-f5a4424ad246")
+
+	// Assert
+	assert.NoError(t, err)
+	assert.NotNil(t, pages)
+
+	// Verify all 24 pages exist
+	expectedPages := []string{
+		"Cover", "ExecutiveSummary", "TableOfContents",
+		"DividerPart1", "PESTEL_PES", "PESTEL_TEL", "Porter", "SWOT",
+		"DividerPart2", "MarketSizing", "BlueOcean",
+		"DividerPart3", "OKRs", "GrowthLoops",
+		"DividerPart4", "Scenarios", "Recommendations",
+		"BusinessModel", "CompetitiveAnalysis", "FinancialProjections",
+		"GTMStrategy", "RiskAssessment", "Roadmap", "Appendix",
+	}
+
+	assert.Equal(t, len(expectedPages), len(pages), "Should have exactly 24 pages")
+
+	for _, pageName := range expectedPages {
+		assert.Contains(t, pages, pageName, "Missing page: "+pageName)
+		assert.NotEmpty(t, pages[pageName], "Page should have HTML content: "+pageName)
+		assert.Contains(t, pages[pageName], "<!DOCTYPE html>", "Page should be complete HTML: "+pageName)
+	}
+
+	mockAnalysisRepo.AssertExpectations(t)
+	mockSubmissionRepo.AssertExpectations(t)
+}
+
+// ----------------------------------------------------------------------------
+// TEST: GetBySubmissionID
+// ----------------------------------------------------------------------------
+
+func TestReportService_GetBySubmissionID_Found(t *testing.T) {
+	ctx := context.Background()
+	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
+
+	mockAnalysisRepo := new(MockAnalysisRepo)
+	mockSubmissionRepo := new(MockSubmissionRepo)
+	mockReportRepo := new(MockReportRepo)
+	mockPDFGen := new(MockPDFGenerator)
+	mockStorage := new(MockStorageClient)
+
+	submissionID := uuid.New().String()
+	now := time.Now()
+
+	expectedReport := &report.Report{
+		ID:           uuid.New().String(),
+		SubmissionID: submissionID,
+		AnalysisID:   uuid.New().String(),
+		Status:       "completed",
+		PDFURL:       "https://storage.example.com/report.pdf",
+		TotalPages:   24,
+		CreatedAt:    now,
+	}
+
+	mockReportRepo.On("GetBySubmissionID", ctx, submissionID).
+		Return(expectedReport, nil)
+
+	svc := report.NewService(
+		mockReportRepo,
+		mockAnalysisRepo,
+		mockSubmissionRepo,
+		mockPDFGen,
+		mockStorage,
+		logger,
+	)
+
+	// Execute
+	result, err := svc.GetBySubmissionID(ctx, submissionID)
+
+	// Assert
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, expectedReport.ID, result.ID)
+	assert.Equal(t, submissionID, result.SubmissionID)
+
+	mockReportRepo.AssertExpectations(t)
+}
+
+func TestReportService_GetBySubmissionID_NotFound(t *testing.T) {
+	ctx := context.Background()
+	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
+
+	mockAnalysisRepo := new(MockAnalysisRepo)
+	mockSubmissionRepo := new(MockSubmissionRepo)
+	mockReportRepo := new(MockReportRepo)
+	mockPDFGen := new(MockPDFGenerator)
+	mockStorage := new(MockStorageClient)
+
+	submissionID := uuid.New().String()
+
+	mockReportRepo.On("GetBySubmissionID", ctx, submissionID).
+		Return(nil, fmt.Errorf("report not found"))
+
+	svc := report.NewService(
+		mockReportRepo,
+		mockAnalysisRepo,
+		mockSubmissionRepo,
+		mockPDFGen,
+		mockStorage,
+		logger,
+	)
+
+	// Execute
+	result, err := svc.GetBySubmissionID(ctx, submissionID)
+
+	// Assert
+	assert.Error(t, err)
+	assert.Nil(t, result)
+
 	mockReportRepo.AssertExpectations(t)
 }

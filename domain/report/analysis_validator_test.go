@@ -317,3 +317,202 @@ func min(a, b int) int {
 	}
 	return b
 }
+
+// TEST: Validate All 11 Frameworks Are Complete
+
+func TestAnalysisValidator_All11FrameworksComplete(t *testing.T) {
+	an := getCoimmaAnalysis()
+	tests := []struct {
+		name      string
+		validator func(*analysis.Analysis) error
+	}{
+		{"PESTEL", validatePESTEL},
+		{"Porter", validatePorter},
+		{"SWOT", validateSWOT},
+		{"TAM-SAM-SOM", validateTamSamSom},
+		{"Blue Ocean", validateBlueOcean},
+		{"OKRs", validateOKRs},
+		{"BSC", validateBSC},
+		{"Benchmarking", validateBenchmarking},
+		{"Scenarios", validateScenarios},
+		{"Growth Hacking", validateGrowthHacking},
+		{"Decision Matrix", validateDecisionMatrix},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.validator(an)
+			assert.NoError(t, err, "%s framework should be complete", tt.name)
+		})
+	}
+}
+
+func validatePESTEL(an *analysis.Analysis) error {
+	if len(an.PESTEL.Political) == 0 {
+		return fmt.Errorf("PESTEL Political is empty")
+	}
+	if len(an.PESTEL.Economic) == 0 {
+		return fmt.Errorf("PESTEL Economic is empty")
+	}
+	if len(an.PESTEL.Social) == 0 {
+		return fmt.Errorf("PESTEL Social is empty")
+	}
+	if len(an.PESTEL.Technological) == 0 {
+		return fmt.Errorf("PESTEL Technological is empty")
+	}
+	if len(an.PESTEL.Environmental) == 0 {
+		return fmt.Errorf("PESTEL Environmental is empty")
+	}
+	if len(an.PESTEL.Legal) == 0 {
+		return fmt.Errorf("PESTEL Legal is empty")
+	}
+	if an.PESTEL.Summary == "" {
+		return fmt.Errorf("PESTEL Summary is empty")
+	}
+	return nil
+}
+
+func validatePorter(an *analysis.Analysis) error {
+	if an.Porter.CompetitiveRivalry == "" || an.Porter.SupplierPower == "" ||
+		an.Porter.BuyerPower == "" || an.Porter.ThreatNewEntrants == "" ||
+		an.Porter.ThreatSubstitutes == "" || an.Porter.PowerPartnershipsEcosystems == "" ||
+		an.Porter.DisruptionAIData == "" {
+		return fmt.Errorf("Porter has empty forces")
+	}
+	validIntensities := map[string]bool{"Alta": true, "Média": true, "Baixa": true}
+	if !validIntensities[an.Porter.CompetitiveRivalryIntensity] {
+		return fmt.Errorf("Porter CompetitiveRivalryIntensity invalid")
+	}
+	if len(an.Porter.StrategicImplications) == 0 {
+		return fmt.Errorf("Porter StrategicImplications is empty")
+	}
+	return nil
+}
+
+func validateSWOT(an *analysis.Analysis) error {
+	if len(an.SWOT.Strengths) == 0 || len(an.SWOT.Weaknesses) == 0 ||
+		len(an.SWOT.Opportunities) == 0 || len(an.SWOT.Threats) == 0 {
+		return fmt.Errorf("SWOT has empty quadrants")
+	}
+	for i, item := range an.SWOT.Strengths {
+		if item.Confidence == "" || item.Source == "" {
+			return fmt.Errorf("SWOT Strength %d missing confidence/source", i)
+		}
+	}
+	return nil
+}
+
+func validateTamSamSom(an *analysis.Analysis) error {
+	if an.TamSamSom.TAM == "" || an.TamSamSom.SAM == "" || an.TamSamSom.SOM == "" {
+		return fmt.Errorf("TAM-SAM-SOM has empty values")
+	}
+	if len(an.TamSamSom.Assumptions) == 0 {
+		return fmt.Errorf("TAM-SAM-SOM Assumptions is empty")
+	}
+	return nil
+}
+
+func validateBlueOcean(an *analysis.Analysis) error {
+	if len(an.BlueOcean.Eliminate) == 0 || len(an.BlueOcean.Reduce) == 0 ||
+		len(an.BlueOcean.Raise) == 0 || len(an.BlueOcean.Create) == 0 {
+		return fmt.Errorf("Blue Ocean ERRC grid incomplete")
+	}
+	return nil
+}
+
+func validateOKRs(an *analysis.Analysis) error {
+	if len(an.OKRs.Quarters) == 0 {
+		return fmt.Errorf("OKRs Quarters is empty")
+	}
+	for i, quarter := range an.OKRs.Quarters {
+		if quarter.Quarter == "" || quarter.Objective == "" || len(quarter.KeyResults) == 0 {
+			return fmt.Errorf("OKR Quarter %d incomplete", i)
+		}
+	}
+	return nil
+}
+
+func validateBSC(an *analysis.Analysis) error {
+	if len(an.BSC.Financial) == 0 || len(an.BSC.Customer) == 0 ||
+		len(an.BSC.Internal) == 0 || len(an.BSC.LearningGrowth) == 0 {
+		return fmt.Errorf("BSC has empty perspectives")
+	}
+	return nil
+}
+
+func validateBenchmarking(an *analysis.Analysis) error {
+	if len(an.Benchmarking.Competitors) == 0 || len(an.Benchmarking.PerformanceGaps) == 0 {
+		return fmt.Errorf("Benchmarking incomplete")
+	}
+	return nil
+}
+
+func validateScenarios(an *analysis.Analysis) error {
+	if an.Scenarios.Optimistic.Name == "" || an.Scenarios.Realist.Name == "" || an.Scenarios.Pessimistic.Name == "" {
+		return fmt.Errorf("Scenarios missing names")
+	}
+	total := an.Scenarios.Optimistic.Probability + an.Scenarios.Realist.Probability + an.Scenarios.Pessimistic.Probability
+	if total != 100 {
+		return fmt.Errorf("Scenarios probabilities sum to %d, not 100", total)
+	}
+	return nil
+}
+
+func validateGrowthHacking(an *analysis.Analysis) error {
+	if an.GrowthHacking.LeapLoop.Name == "" || an.GrowthHacking.ScaleLoop.Name == "" {
+		return fmt.Errorf("Growth Hacking loops missing")
+	}
+	if len(an.GrowthHacking.LeapLoop.Steps) == 0 || len(an.GrowthHacking.ScaleLoop.Steps) == 0 {
+		return fmt.Errorf("Growth Hacking loops have no steps")
+	}
+	return nil
+}
+
+func validateDecisionMatrix(an *analysis.Analysis) error {
+	if an.DecisionMatrix.RecommendedOption == "" || len(an.DecisionMatrix.PriorityRecommendations) == 0 {
+		return fmt.Errorf("Decision Matrix incomplete")
+	}
+	return nil
+}
+
+func TestAnalysisValidator_IncompleteAnalysisRejected(t *testing.T) {
+	incompleteAnalysis := &analysis.Analysis{
+		ID:     uuid.New().String(),
+		Status: "completed",
+		PESTEL: analysis.PESTELAnalysis{
+			Political:     []string{"Test"},
+			Economic:      []string{"Test"},
+			Social:        []string{"Test"},
+			Technological: []string{"Test"},
+			Environmental: []string{"Test"},
+			Legal:         []string{"Test"},
+			Summary:       "Test",
+		},
+		SWOT: analysis.SWOTAnalysis{},
+	}
+	err := validateSWOT(incompleteAnalysis)
+	assert.Error(t, err, "Incomplete SWOT should fail validation")
+}
+
+func TestAnalysisValidator_FrameworkDataIntegrity(t *testing.T) {
+	an := getCoimmaAnalysis()
+	t.Run("PESTEL has 6 dimensions", func(t *testing.T) {
+		assert.Greater(t, len(an.PESTEL.Political), 0)
+		assert.Greater(t, len(an.PESTEL.Economic), 0)
+		assert.Greater(t, len(an.PESTEL.Social), 0)
+		assert.Greater(t, len(an.PESTEL.Technological), 0)
+		assert.Greater(t, len(an.PESTEL.Environmental), 0)
+		assert.Greater(t, len(an.PESTEL.Legal), 0)
+	})
+	t.Run("Porter has 7 forces", func(t *testing.T) {
+		assert.NotEmpty(t, an.Porter.CompetitiveRivalry)
+		assert.NotEmpty(t, an.Porter.DisruptionAIData)
+	})
+	t.Run("SWOT has 4 quadrants", func(t *testing.T) {
+		assert.Greater(t, len(an.SWOT.Strengths), 0)
+		assert.Greater(t, len(an.SWOT.Weaknesses), 0)
+	})
+	t.Run("Scenarios sum to 100%", func(t *testing.T) {
+		total := an.Scenarios.Optimistic.Probability + an.Scenarios.Realist.Probability + an.Scenarios.Pessimistic.Probability
+		assert.Equal(t, 100, total)
+	})
+}

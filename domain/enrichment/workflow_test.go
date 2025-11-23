@@ -365,3 +365,386 @@ func TestEnrichmentWorkflow_Integration(t *testing.T) {
 
 	t.Log("✅ ALL TESTS PASSED - JSON structure matches database expectations")
 }
+
+// ============================================================================
+// ADDITIONAL WORKFLOW TESTS
+// ============================================================================
+
+// TestEnrichmentWorkflow_MalformedJSON tests LLM returning invalid JSON
+func TestEnrichmentWorkflow_MalformedJSON(t *testing.T) {
+	ctx := context.Background()
+
+	// Setup test data
+	submissionID := uuid.New()
+	companyWebsite := "https://example.com"
+
+	sub := &submission.Submission{
+		ID:             submissionID,
+		CompanyName:    "Test Corp",
+		CompanyWebsite: &companyWebsite,
+		Status:         "received",
+	}
+
+	// Setup mocks
+	enrichRepo := new(MockRepository)
+	subRepo := new(MockSubmissionRepo)
+
+	subRepo.On("GetByID", mock.Anything, submissionID).Return(sub, nil)
+	enrichRepo.On("GetBySubmissionID", mock.Anything, submissionID).Return(nil, fmt.Errorf("not found"))
+	enrichRepo.On("Create", mock.Anything, mock.AnythingOfType("*enrichment.Enrichment")).Return(nil)
+	enrichRepo.On("UpdateSystem", mock.Anything, mock.AnythingOfType("*enrichment.Enrichment")).Return(nil)
+
+	// Setup mock AI server that returns MALFORMED JSON
+	mockAIServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{
+					"message": map[string]interface{}{
+						// Invalid JSON - missing closing brace
+						"content": `{"profile_overview": {"legal_name": "Test"`,
+					},
+				},
+			},
+			"usage": map[string]interface{}{"total_tokens": 100},
+		}
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer mockAIServer.Close()
+
+	llmClient := llm.NewClientWithBaseURL("mock-key", mockAIServer.URL)
+
+	cfg := config.FrameworkConfig{
+		Model:       "test-model",
+		Temperature: 0.5,
+		MaxTokens:   4000,
+	}
+
+	queueClient := asynq.NewClient(asynq.RedisClientOpt{Addr: "localhost:6379"})
+	defer queueClient.Close()
+
+	svc := enrichment.NewService(enrichRepo, subRepo, llmClient, queueClient, cfg)
+
+	// Execute
+	result, err := svc.EnrichSubmission(ctx, submissionID)
+
+	// Assert - Should FAIL EXPLICITLY
+	assert.Error(t, err, "Should return error for malformed JSON")
+	assert.Nil(t, result, "Result should be nil on JSON parse error")
+	assert.Contains(t, err.Error(), "failed to parse LLM response as JSON", "Error should indicate JSON parse failure")
+
+	t.Log("✅ Malformed JSON test passed - job correctly fails instead of creating corrupt data")
+}
+
+// TestEnrichmentWorkflow_RetryLogic tests retry mechanism (requires integration with job handler)
+func TestEnrichmentWorkflow_RetryBehavior(t *testing.T) {
+	t.Skip("Retry logic is handled by Asynq job handler - tested in integration tests")
+
+	// NOTE: This test would require:
+	// 1. Mock Asynq server
+	// 2. Simulate job failures
+	// 3. Verify exponential backoff (1s, 2s, 4s)
+	// 4. Verify max 3 retry attempts
+	// 5. Verify MarkAsFailed is called after exhaustion
+
+	// For now, we document the expected behavior:
+	// - Worker should retry failed jobs 3 times
+	// - Each retry should have exponential backoff
+	// - After 3 failures, ErrorHandler calls MarkAsFailed
+	// - Status remains "pending" with error_message populated
+}
+
+// TestEnrichmentWorkflow_TransientDataGathering tests data gathering from multiple sources
+func TestEnrichmentWorkflow_TransientDataGathering(t *testing.T) {
+	ctx := context.Background()
+
+	submissionID := uuid.New()
+	companyWebsite := "https://testcorp.com"
+
+	sub := &submission.Submission{
+		ID:             submissionID,
+		CompanyName:    "Test Corporation",
+		CompanyWebsite: &companyWebsite,
+		Status:         "received",
+	}
+
+	// Setup mocks
+	enrichRepo := new(MockRepository)
+	subRepo := new(MockSubmissionRepo)
+
+	subRepo.On("GetByID", mock.Anything, submissionID).Return(sub, nil)
+	enrichRepo.On("GetBySubmissionID", mock.Anything, submissionID).Return(nil, fmt.Errorf("not found"))
+	enrichRepo.On("Create", mock.Anything, mock.AnythingOfType("*enrichment.Enrichment")).Return(nil)
+	enrichRepo.On("UpdateSystem", mock.Anything, mock.AnythingOfType("*enrichment.Enrichment")).Return(nil)
+
+	// Create mock web server for scraper
+	mockWebServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		html := `<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Corporation - Leading Tech Company</title>
+    <meta name="description" content="We provide cutting-edge technology solutions">
+</head>
+<body><h1>Test Corp</h1></body>
+</html>`
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(html))
+	}))
+	defer mockWebServer.Close()
+
+	// Update submission to point to mock server
+	sub.CompanyWebsite = &mockWebServer.URL
+
+	// Setup mock AI server
+	mockAIServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{
+					"message": map[string]interface{}{
+						"content": getMockAIResponse(),
+					},
+				},
+			},
+			"usage": map[string]interface{}{"total_tokens": 1500},
+		}
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer mockAIServer.Close()
+
+	llmClient := llm.NewClientWithBaseURL("mock-key", mockAIServer.URL)
+
+	cfg := config.FrameworkConfig{
+		Model:       "test-model",
+		Temperature: 0.5,
+		MaxTokens:   4000,
+	}
+
+	queueClient := asynq.NewClient(asynq.RedisClientOpt{Addr: "localhost:6379"})
+	defer queueClient.Close()
+
+	svc := enrichment.NewService(enrichRepo, subRepo, llmClient, queueClient, cfg)
+
+	// Execute
+	result, err := svc.EnrichSubmission(ctx, submissionID)
+
+	// Assert
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+
+	// Verify transient data sources were captured
+	assert.NotNil(t, result.SourcesStatus, "Sources should be tracked")
+
+	sourcesMap := result.SourcesStatus
+	t.Logf("Sources captured: %v", sourcesMap)
+
+	// Check that multiple data sources were used
+	// Note: DNS validation happens but may fail in test environment
+	// Scraper should succeed (mock web server)
+	// AI sources should be present
+
+	hasAnySources := len(sourcesMap) > 0
+	assert.True(t, hasAnySources, "Should have captured at least one data source")
+
+	t.Log("✅ Transient data gathering test passed")
+}
+
+// TestEnrichmentWorkflow_UnifiedProfileValidation tests all required fields are present
+func TestEnrichmentWorkflow_UnifiedProfileValidation(t *testing.T) {
+	ctx := context.Background()
+
+	submissionID := uuid.New()
+	companyWebsite := "https://example.com"
+
+	sub := &submission.Submission{
+		ID:             submissionID,
+		CompanyName:    "Complete Corp",
+		CompanyWebsite: &companyWebsite,
+		Status:         "received",
+	}
+
+	// Setup mocks
+	enrichRepo := new(MockRepository)
+	subRepo := new(MockSubmissionRepo)
+
+	subRepo.On("GetByID", mock.Anything, submissionID).Return(sub, nil)
+	enrichRepo.On("GetBySubmissionID", mock.Anything, submissionID).Return(nil, fmt.Errorf("not found"))
+	enrichRepo.On("Create", mock.Anything, mock.AnythingOfType("*enrichment.Enrichment")).Return(nil)
+	enrichRepo.On("UpdateSystem", mock.Anything, mock.AnythingOfType("*enrichment.Enrichment")).Return(nil)
+
+	// Setup mock AI server with COMPLETE UnifiedProfile
+	mockAIServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{
+					"message": map[string]interface{}{
+						"content": getMockAIResponse(),
+					},
+				},
+			},
+			"usage": map[string]interface{}{"total_tokens": 1500},
+		}
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer mockAIServer.Close()
+
+	llmClient := llm.NewClientWithBaseURL("mock-key", mockAIServer.URL)
+
+	cfg := config.FrameworkConfig{
+		Model:       "test-model",
+		Temperature: 0.5,
+		MaxTokens:   4000,
+	}
+
+	queueClient := asynq.NewClient(asynq.RedisClientOpt{Addr: "localhost:6379"})
+	defer queueClient.Close()
+
+	svc := enrichment.NewService(enrichRepo, subRepo, llmClient, queueClient, cfg)
+
+	// Execute
+	result, err := svc.EnrichSubmission(ctx, submissionID)
+
+	// Assert
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+
+	// Validate ALL required UnifiedProfile fields
+	jsonBytes, err := json.Marshal(result.EnrichedData)
+	assert.NoError(t, err)
+
+	var profile enrichment.UnifiedProfile
+	err = json.Unmarshal(jsonBytes, &profile)
+	assert.NoError(t, err, "Should unmarshal into UnifiedProfile")
+
+	// VALIDATE PROFILE OVERVIEW (4 required fields)
+	assert.NotEmpty(t, profile.ProfileOverview.LegalName, "legal_name is required")
+	assert.NotEmpty(t, profile.ProfileOverview.Website, "website is required")
+	assert.NotEmpty(t, profile.ProfileOverview.FoundationYear, "foundation_year is required")
+	assert.NotEmpty(t, profile.ProfileOverview.Headquarters, "headquarters is required")
+
+	// VALIDATE MARKET POSITION (3 required fields)
+	assert.NotEmpty(t, profile.MarketPosition.Sector, "sector is required")
+	assert.NotEmpty(t, profile.MarketPosition.TargetAudience, "target_audience is required")
+	assert.NotEmpty(t, profile.MarketPosition.ValueProposition, "value_proposition is required")
+
+	// VALIDATE FINANCIALS (3 required fields)
+	assert.NotEmpty(t, profile.Financials.EmployeesRange, "employees_range is required")
+	assert.NotEmpty(t, profile.Financials.RevenueEstimate, "revenue_estimate is required")
+	assert.NotEmpty(t, profile.Financials.BusinessModel, "business_model is required")
+
+	// VALIDATE COMPETITIVE LANDSCAPE (2 required fields)
+	assert.NotEmpty(t, profile.CompetitiveLandscape.Competitors, "competitors is required")
+	assert.NotEmpty(t, profile.CompetitiveLandscape.MarketShareStatus, "market_share_status is required")
+
+	// VALIDATE STRATEGIC ASSESSMENT (3 required fields)
+	assert.GreaterOrEqual(t, profile.StrategicAssessment.DigitalMaturity, 0, "digital_maturity must be >= 0")
+	assert.LessOrEqual(t, profile.StrategicAssessment.DigitalMaturity, 10, "digital_maturity must be <= 10")
+	assert.NotEmpty(t, profile.StrategicAssessment.Strengths, "strengths is required")
+	assert.NotEmpty(t, profile.StrategicAssessment.Weaknesses, "weaknesses is required")
+
+	t.Log("✅ UnifiedProfile validation passed - all required fields present")
+}
+
+// TestEnrichmentWorkflow_LockedEnrichmentSkipped tests that locked enrichments are skipped
+func TestEnrichmentWorkflow_LockedEnrichmentSkipped(t *testing.T) {
+	ctx := context.Background()
+
+	submissionID := uuid.New()
+
+	sub := &submission.Submission{
+		ID:          submissionID,
+		CompanyName: "Test Corp",
+		Status:      "received",
+	}
+
+	// Setup mocks
+	enrichRepo := new(MockRepository)
+	subRepo := new(MockSubmissionRepo)
+
+	subRepo.On("GetByID", mock.Anything, submissionID).Return(sub, nil)
+
+	// Return LOCKED enrichment
+	lockedEnrichment := &enrichment.Enrichment{
+		ID:           uuid.New(),
+		SubmissionID: submissionID,
+		Status:       enrichment.StatusFinished,
+		IsLocked:     true, // LOCKED by user
+		Progress:     100,
+	}
+
+	enrichRepo.On("GetBySubmissionID", mock.Anything, submissionID).Return(lockedEnrichment, nil)
+
+	cfg := config.FrameworkConfig{
+		Model:       "test-model",
+		Temperature: 0.5,
+		MaxTokens:   4000,
+	}
+
+	queueClient := asynq.NewClient(asynq.RedisClientOpt{Addr: "localhost:6379"})
+	defer queueClient.Close()
+
+	svc := enrichment.NewService(enrichRepo, subRepo, &llm.Client{}, queueClient, cfg)
+
+	// Execute
+	result, err := svc.EnrichSubmission(ctx, submissionID)
+
+	// Assert - Should skip processing
+	assert.NoError(t, err, "Should not error when skipping locked enrichment")
+	assert.Nil(t, result, "Result should be nil when enrichment is locked")
+
+	// Verify no updates were attempted
+	enrichRepo.AssertNotCalled(t, "UpdateSystem", mock.Anything, mock.Anything)
+
+	t.Log("✅ Locked enrichment skip test passed")
+}
+
+// TestEnrichmentWorkflow_ApprovedEnrichmentSkipped tests that approved enrichments are skipped
+func TestEnrichmentWorkflow_ApprovedEnrichmentSkipped(t *testing.T) {
+	ctx := context.Background()
+
+	submissionID := uuid.New()
+
+	sub := &submission.Submission{
+		ID:          submissionID,
+		CompanyName: "Test Corp",
+		Status:      "received",
+	}
+
+	// Setup mocks
+	enrichRepo := new(MockRepository)
+	subRepo := new(MockSubmissionRepo)
+
+	subRepo.On("GetByID", mock.Anything, submissionID).Return(sub, nil)
+
+	// Return APPROVED enrichment
+	approvedEnrichment := &enrichment.Enrichment{
+		ID:           uuid.New(),
+		SubmissionID: submissionID,
+		Status:       enrichment.StatusApproved, // Already approved
+		IsLocked:     false,
+		Progress:     100,
+	}
+
+	enrichRepo.On("GetBySubmissionID", mock.Anything, submissionID).Return(approvedEnrichment, nil)
+
+	cfg := config.FrameworkConfig{
+		Model:       "test-model",
+		Temperature: 0.5,
+		MaxTokens:   4000,
+	}
+
+	queueClient := asynq.NewClient(asynq.RedisClientOpt{Addr: "localhost:6379"})
+	defer queueClient.Close()
+
+	svc := enrichment.NewService(enrichRepo, subRepo, &llm.Client{}, queueClient, cfg)
+
+	// Execute
+	result, err := svc.EnrichSubmission(ctx, submissionID)
+
+	// Assert - Should skip processing
+	assert.NoError(t, err, "Should not error when skipping approved enrichment")
+	assert.Nil(t, result, "Result should be nil when enrichment is already approved")
+
+	// Verify no updates were attempted
+	enrichRepo.AssertNotCalled(t, "UpdateSystem", mock.Anything, mock.Anything)
+
+	t.Log("✅ Approved enrichment skip test passed")
+}

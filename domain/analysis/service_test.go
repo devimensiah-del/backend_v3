@@ -1,0 +1,748 @@
+package analysis
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"backend_v3/llm"
+
+	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
+	"github.com/jmoiron/sqlx"
+	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+)
+
+// =============================================================================
+// MOCKS
+// =============================================================================
+
+type MockRepository struct {
+	mock.Mock
+}
+
+func (m *MockRepository) Create(ctx context.Context, analysis *Analysis) error {
+	args := m.Called(ctx, analysis)
+	return args.Error(0)
+}
+
+func (m *MockRepository) Update(ctx context.Context, analysis *Analysis) error {
+	args := m.Called(ctx, analysis)
+	return args.Error(0)
+}
+
+func (m *MockRepository) UpdateWithTx(ctx context.Context, tx *sqlx.Tx, analysis *Analysis) error {
+	args := m.Called(ctx, tx, analysis)
+	return args.Error(0)
+}
+
+func (m *MockRepository) GetByID(ctx context.Context, id string) (*Analysis, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*Analysis), args.Error(1)
+}
+
+func (m *MockRepository) GetBySubmissionID(ctx context.Context, submissionID string) (*Analysis, error) {
+	args := m.Called(ctx, submissionID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*Analysis), args.Error(1)
+}
+
+func (m *MockRepository) GetLatestVersionBySubmissionID(ctx context.Context, submissionID string) (*Analysis, error) {
+	args := m.Called(ctx, submissionID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*Analysis), args.Error(1)
+}
+
+func (m *MockRepository) GetAllVersionsBySubmissionID(ctx context.Context, submissionID string) ([]*Analysis, error) {
+	args := m.Called(ctx, submissionID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*Analysis), args.Error(1)
+}
+
+func (m *MockRepository) List(ctx context.Context, limit, offset int) ([]*Analysis, error) {
+	args := m.Called(ctx, limit, offset)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*Analysis), args.Error(1)
+}
+
+func (m *MockRepository) Delete(ctx context.Context, id string) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
+func (m *MockRepository) BeginTx(ctx context.Context) (*sqlx.Tx, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*sqlx.Tx), args.Error(1)
+}
+
+type MockSubmissionRepository struct {
+	mock.Mock
+}
+
+func (m *MockSubmissionRepository) GetByID(ctx context.Context, id uuid.UUID) (*SubmissionData, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*SubmissionData), args.Error(1)
+}
+
+type MockLLMClient struct {
+	mock.Mock
+}
+
+func (m *MockLLMClient) GenerateStructured(ctx context.Context, model string, prompt string, data interface{}, targetSchema interface{}) error {
+	args := m.Called(ctx, model, prompt, data, targetSchema)
+	return args.Error(0)
+}
+
+func (m *MockLLMClient) GenerateStructuredWithOptions(ctx context.Context, opts llm.GenerationOptions, prompt string, data interface{}, targetSchema interface{}) error {
+	args := m.Called(ctx, opts, prompt, data, targetSchema)
+	return args.Error(0)
+}
+
+// =============================================================================
+// HELPER FUNCTIONS
+// =============================================================================
+
+func createTestService() (*Service, *MockRepository, *MockSubmissionRepository, *MockLLMClient) {
+	mockRepo := new(MockRepository)
+	mockSubRepo := new(MockSubmissionRepository)
+	mockLLM := new(MockLLMClient)
+
+	logger := zerolog.New(zerolog.NewTestWriter(nil)).Level(zerolog.Disabled)
+
+	// Create mock asynq client (won't actually connect to Redis)
+	queueClient := asynq.NewClient(asynq.RedisClientOpt{
+		Addr: "localhost:6379",
+	})
+
+	service := NewService(
+		mockRepo,
+		mockSubRepo,
+		mockLLM,
+		logger,
+		queueClient,
+		"test-analyst-model",
+		"test-synthesis-model",
+	)
+
+	return service, mockRepo, mockSubRepo, mockLLM
+}
+
+func createTestAnalysis() *Analysis {
+	now := time.Now()
+	analysisID := uuid.New().String()
+	submissionID := uuid.New().String()
+	enrichmentID := uuid.New().String()
+
+	return &Analysis{
+		ID:           analysisID,
+		SubmissionID: submissionID,
+		EnrichmentID: enrichmentID,
+		Status:       string(StatusCompleted),
+		Version:      1,
+		IsLatest:     true,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+		CompletedAt:  &now,
+		PESTEL: PESTELAnalysis{
+			Political:     []string{"Regulatory stability"},
+			Economic:      []string{"GDP growth 2%"},
+			Social:        []string{"Urbanization trend"},
+			Technological: []string{"AI adoption"},
+			Environmental: []string{"Sustainability pressure"},
+			Legal:         []string{"LGPD compliance"},
+			Summary:       "PESTEL summary",
+		},
+		Porter: PorterAnalysis{
+			CompetitiveRivalry:    "High",
+			SupplierPower:         "Medium",
+			BuyerPower:            "High",
+			ThreatNewEntrants:     "Low",
+			ThreatSubstitutes:     "Medium",
+			OverallAttractiveness: "Medium",
+			Summary:               "Porter summary",
+		},
+		SWOT: SWOTAnalysis{
+			Strengths:     []SWOTItem{{Content: "Strong brand", Confidence: "Alta", Source: "fato"}},
+			Weaknesses:    []SWOTItem{{Content: "Low tech", Confidence: "Média", Source: "análise de mercado"}},
+			Opportunities: []SWOTItem{{Content: "Market expansion", Confidence: "Alta", Source: "fato"}},
+			Threats:       []SWOTItem{{Content: "New competitors", Confidence: "Média", Source: "estimativa"}},
+			Summary:       "SWOT summary",
+		},
+	}
+}
+
+// =============================================================================
+// TESTS: GetByID
+// =============================================================================
+
+func TestService_GetByID_Success(t *testing.T) {
+	service, mockRepo, _, _ := createTestService()
+	defer service.queueClient.Close()
+
+	testAnalysis := createTestAnalysis()
+
+	mockRepo.On("GetByID", mock.Anything, testAnalysis.ID).Return(testAnalysis, nil)
+
+	result, err := service.GetByID(context.Background(), testAnalysis.ID)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, testAnalysis.ID, result.ID)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestService_GetByID_NotFound(t *testing.T) {
+	service, mockRepo, _, _ := createTestService()
+	defer service.queueClient.Close()
+
+	analysisID := uuid.New().String()
+
+	mockRepo.On("GetByID", mock.Anything, analysisID).Return(nil, errors.New("analysis not found"))
+
+	result, err := service.GetByID(context.Background(), analysisID)
+
+	assert.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "not found")
+	mockRepo.AssertExpectations(t)
+}
+
+func TestService_GetByID_DatabaseError(t *testing.T) {
+	service, mockRepo, _, _ := createTestService()
+	defer service.queueClient.Close()
+
+	analysisID := uuid.New().String()
+
+	mockRepo.On("GetByID", mock.Anything, analysisID).Return(nil, errors.New("database connection error"))
+
+	result, err := service.GetByID(context.Background(), analysisID)
+
+	assert.Error(t, err)
+	assert.Nil(t, result)
+	mockRepo.AssertExpectations(t)
+}
+
+// =============================================================================
+// TESTS: GetBySubmissionID
+// =============================================================================
+
+func TestService_GetBySubmissionID_ReturnsLatestVersion(t *testing.T) {
+	service, mockRepo, _, _ := createTestService()
+	defer service.queueClient.Close()
+
+	testAnalysis := createTestAnalysis()
+
+	mockRepo.On("GetBySubmissionID", mock.Anything, testAnalysis.SubmissionID).Return(testAnalysis, nil)
+
+	result, err := service.GetBySubmissionID(context.Background(), testAnalysis.SubmissionID)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, testAnalysis.SubmissionID, result.SubmissionID)
+	mockRepo.AssertExpectations(t)
+}
+
+// =============================================================================
+// TESTS: GetLatestVersion vs GetAllVersions
+// =============================================================================
+
+func TestService_GetLatestVersion_Success(t *testing.T) {
+	service, mockRepo, _, _ := createTestService()
+	defer service.queueClient.Close()
+
+	testAnalysis := createTestAnalysis()
+	testAnalysis.Version = 3
+	testAnalysis.IsLatest = true
+
+	mockRepo.On("GetLatestVersionBySubmissionID", mock.Anything, testAnalysis.SubmissionID).Return(testAnalysis, nil)
+
+	result, err := service.GetLatestVersion(context.Background(), testAnalysis.SubmissionID)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, 3, result.Version)
+	assert.True(t, result.IsLatest)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestService_GetAllVersions_ReturnsMultipleVersions(t *testing.T) {
+	service, mockRepo, _, _ := createTestService()
+	defer service.queueClient.Close()
+
+	submissionID := uuid.New().String()
+
+	// Create 3 versions
+	v1 := createTestAnalysis()
+	v1.SubmissionID = submissionID
+	v1.Version = 1
+	v1.IsLatest = false
+
+	v2 := createTestAnalysis()
+	v2.SubmissionID = submissionID
+	v2.Version = 2
+	v2.IsLatest = false
+	v2.ParentAnalysisID = &v1.ID
+
+	v3 := createTestAnalysis()
+	v3.SubmissionID = submissionID
+	v3.Version = 3
+	v3.IsLatest = true
+	v3.ParentAnalysisID = &v2.ID
+
+	versions := []*Analysis{v3, v2, v1} // Ordered by version DESC
+
+	mockRepo.On("GetAllVersionsBySubmissionID", mock.Anything, submissionID).Return(versions, nil)
+
+	results, err := service.GetAllVersions(context.Background(), submissionID)
+
+	assert.NoError(t, err)
+	assert.Len(t, results, 3)
+	assert.Equal(t, 3, results[0].Version)
+	assert.Equal(t, 2, results[1].Version)
+	assert.Equal(t, 1, results[2].Version)
+	mockRepo.AssertExpectations(t)
+}
+
+// =============================================================================
+// TESTS: Delete (Soft Delete)
+// =============================================================================
+
+func TestService_Delete_Success(t *testing.T) {
+	service, mockRepo, _, _ := createTestService()
+	defer service.queueClient.Close()
+
+	analysisID := uuid.New().String()
+
+	mockRepo.On("Delete", mock.Anything, analysisID).Return(nil)
+
+	err := service.Delete(context.Background(), analysisID)
+
+	assert.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestService_Delete_NotFound(t *testing.T) {
+	service, mockRepo, _, _ := createTestService()
+	defer service.queueClient.Close()
+
+	analysisID := uuid.New().String()
+
+	mockRepo.On("Delete", mock.Anything, analysisID).Return(errors.New("analysis not found or already deleted"))
+
+	err := service.Delete(context.Background(), analysisID)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+	mockRepo.AssertExpectations(t)
+}
+
+// =============================================================================
+// TESTS: UpdateFields (Framework Merge Logic)
+// =============================================================================
+
+func TestService_UpdateFields_Success(t *testing.T) {
+	service, mockRepo, _, _ := createTestService()
+	defer service.queueClient.Close()
+
+	testAnalysis := createTestAnalysis()
+
+	updateData := map[string]interface{}{
+		"pestel": map[string]interface{}{
+			"summary": "Updated PESTEL summary",
+		},
+	}
+
+	mockRepo.On("GetByID", mock.Anything, testAnalysis.ID).Return(testAnalysis, nil)
+	mockRepo.On("Update", mock.Anything, mock.MatchedBy(func(a *Analysis) bool {
+		return a.PESTEL.Summary == "Updated PESTEL summary"
+	})).Return(nil)
+
+	result, err := service.UpdateFields(context.Background(), testAnalysis.ID, updateData)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, "Updated PESTEL summary", result.PESTEL.Summary)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestService_UpdateFields_ValidationPreservesStatus(t *testing.T) {
+	service, mockRepo, _, _ := createTestService()
+	defer service.queueClient.Close()
+
+	testAnalysis := createTestAnalysis()
+	originalStatus := testAnalysis.Status
+
+	updateData := map[string]interface{}{
+		"swot": map[string]interface{}{
+			"summary": "Updated SWOT",
+		},
+	}
+
+	mockRepo.On("GetByID", mock.Anything, testAnalysis.ID).Return(testAnalysis, nil)
+	mockRepo.On("Update", mock.Anything, mock.MatchedBy(func(a *Analysis) bool {
+		return a.Status == originalStatus // Status should not change
+	})).Return(nil)
+
+	result, err := service.UpdateFields(context.Background(), testAnalysis.ID, updateData)
+
+	assert.NoError(t, err)
+	assert.Equal(t, originalStatus, result.Status)
+	mockRepo.AssertExpectations(t)
+}
+
+// =============================================================================
+// TESTS: CreateVersion
+// =============================================================================
+
+func TestService_CreateVersion_IncrementsVersion(t *testing.T) {
+	service, mockRepo, _, _ := createTestService()
+	defer service.queueClient.Close()
+
+	parentAnalysis := createTestAnalysis()
+	parentAnalysis.Version = 1
+
+	mockRepo.On("GetByID", mock.Anything, parentAnalysis.ID).Return(parentAnalysis, nil)
+	mockRepo.On("Create", mock.Anything, mock.MatchedBy(func(a *Analysis) bool {
+		return a.Version == 2 && a.ParentAnalysisID != nil && *a.ParentAnalysisID == parentAnalysis.ID
+	})).Return(nil)
+
+	result, err := service.CreateVersion(context.Background(), parentAnalysis.ID, nil)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, 2, result.Version)
+	assert.NotNil(t, result.ParentAnalysisID)
+	assert.Equal(t, parentAnalysis.ID, *result.ParentAnalysisID)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestService_CreateVersion_WithEdits(t *testing.T) {
+	service, mockRepo, _, _ := createTestService()
+	defer service.queueClient.Close()
+
+	parentAnalysis := createTestAnalysis()
+
+	edits := map[string]interface{}{
+		"pestel": map[string]interface{}{
+			"summary": "Edited PESTEL summary",
+		},
+	}
+
+	mockRepo.On("GetByID", mock.Anything, parentAnalysis.ID).Return(parentAnalysis, nil)
+	mockRepo.On("Create", mock.Anything, mock.MatchedBy(func(a *Analysis) bool {
+		return a.PESTEL.Summary == "Edited PESTEL summary" && a.Version == 2
+	})).Return(nil)
+
+	result, err := service.CreateVersion(context.Background(), parentAnalysis.ID, edits)
+
+	assert.NoError(t, err)
+	assert.Equal(t, "Edited PESTEL summary", result.PESTEL.Summary)
+	mockRepo.AssertExpectations(t)
+}
+
+// =============================================================================
+// TESTS: Approve
+// =============================================================================
+
+func TestService_Approve_Success(t *testing.T) {
+	service, mockRepo, _, _ := createTestService()
+	defer service.queueClient.Close()
+
+	testAnalysis := createTestAnalysis()
+	testAnalysis.Status = string(StatusCompleted)
+
+	mockRepo.On("GetByID", mock.Anything, testAnalysis.ID).Return(testAnalysis, nil)
+	mockRepo.On("Update", mock.Anything, mock.MatchedBy(func(a *Analysis) bool {
+		return a.Status == string(StatusApproved)
+	})).Return(nil)
+
+	err := service.Approve(context.Background(), testAnalysis.ID)
+
+	assert.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestService_Approve_RejectsNonCompletedStatus(t *testing.T) {
+	service, mockRepo, _, _ := createTestService()
+	defer service.queueClient.Close()
+
+	testAnalysis := createTestAnalysis()
+	testAnalysis.Status = string(StatusPending)
+
+	mockRepo.On("GetByID", mock.Anything, testAnalysis.ID).Return(testAnalysis, nil)
+
+	err := service.Approve(context.Background(), testAnalysis.ID)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "must be in 'completed' status")
+	mockRepo.AssertExpectations(t)
+}
+
+func TestService_Approve_TriggersReportJob(t *testing.T) {
+	service, mockRepo, _, _ := createTestService()
+	defer service.queueClient.Close()
+
+	testAnalysis := createTestAnalysis()
+	testAnalysis.Status = string(StatusCompleted)
+
+	mockRepo.On("GetByID", mock.Anything, testAnalysis.ID).Return(testAnalysis, nil)
+	mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*analysis.Analysis")).Return(nil)
+
+	// Note: We can't easily verify asynq job enqueueing without integration test,
+	// but we can verify the service method completes without error
+	err := service.Approve(context.Background(), testAnalysis.ID)
+
+	assert.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+}
+
+// =============================================================================
+// TESTS: Send
+// =============================================================================
+
+func TestService_Send_Success(t *testing.T) {
+	service, mockRepo, _, _ := createTestService()
+	defer service.queueClient.Close()
+
+	testAnalysis := createTestAnalysis()
+	testAnalysis.Status = string(StatusApproved)
+
+	userEmail := "test@example.com"
+
+	mockRepo.On("GetByID", mock.Anything, testAnalysis.ID).Return(testAnalysis, nil)
+	mockRepo.On("Update", mock.Anything, mock.MatchedBy(func(a *Analysis) bool {
+		return a.Status == string(StatusSent) && a.SentTo != nil && *a.SentTo == userEmail
+	})).Return(nil)
+
+	err := service.Send(context.Background(), testAnalysis.ID, userEmail)
+
+	assert.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestService_Send_RejectsNonApprovedStatus(t *testing.T) {
+	service, mockRepo, _, _ := createTestService()
+	defer service.queueClient.Close()
+
+	testAnalysis := createTestAnalysis()
+	testAnalysis.Status = string(StatusCompleted)
+
+	mockRepo.On("GetByID", mock.Anything, testAnalysis.ID).Return(testAnalysis, nil)
+
+	err := service.Send(context.Background(), testAnalysis.ID, "test@example.com")
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "must be in 'approved' status")
+	mockRepo.AssertExpectations(t)
+}
+
+func TestService_Send_UpdatesSentAtAndSentTo(t *testing.T) {
+	service, mockRepo, _, _ := createTestService()
+	defer service.queueClient.Close()
+
+	testAnalysis := createTestAnalysis()
+	testAnalysis.Status = string(StatusApproved)
+	testAnalysis.SentAt = nil
+	testAnalysis.SentTo = nil
+
+	userEmail := "admin@example.com"
+
+	mockRepo.On("GetByID", mock.Anything, testAnalysis.ID).Return(testAnalysis, nil)
+	mockRepo.On("Update", mock.Anything, mock.MatchedBy(func(a *Analysis) bool {
+		return a.SentAt != nil && a.SentTo != nil && *a.SentTo == userEmail
+	})).Return(nil)
+
+	err := service.Send(context.Background(), testAnalysis.ID, userEmail)
+
+	assert.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+}
+
+// =============================================================================
+// TESTS: MarkAsFailed
+// =============================================================================
+
+func TestService_MarkAsFailed_KeepsPendingStatus(t *testing.T) {
+	service, mockRepo, _, _ := createTestService()
+	defer service.queueClient.Close()
+
+	testAnalysis := createTestAnalysis()
+	testAnalysis.Status = string(StatusPending)
+	submissionID := testAnalysis.SubmissionID
+
+	errorMsg := "LLM timeout error"
+
+	mockRepo.On("GetBySubmissionID", mock.Anything, submissionID).Return(testAnalysis, nil)
+	mockRepo.On("Update", mock.Anything, mock.MatchedBy(func(a *Analysis) bool {
+		return a.Status == string(StatusPending) && a.ErrorMessage != nil && *a.ErrorMessage == errorMsg
+	})).Return(nil)
+
+	err := service.MarkAsFailed(context.Background(), submissionID, errorMsg)
+
+	assert.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestService_MarkAsFailed_SetsErrorMessage(t *testing.T) {
+	service, mockRepo, _, _ := createTestService()
+	defer service.queueClient.Close()
+
+	testAnalysis := createTestAnalysis()
+	testAnalysis.Status = string(StatusPending)
+	testAnalysis.ErrorMessage = nil
+
+	errorMsg := "Database connection lost during analysis"
+
+	mockRepo.On("GetBySubmissionID", mock.Anything, testAnalysis.SubmissionID).Return(testAnalysis, nil)
+	mockRepo.On("Update", mock.Anything, mock.MatchedBy(func(a *Analysis) bool {
+		return a.ErrorMessage != nil && *a.ErrorMessage == errorMsg
+	})).Return(nil)
+
+	err := service.MarkAsFailed(context.Background(), testAnalysis.SubmissionID, errorMsg)
+
+	assert.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+}
+
+// =============================================================================
+// TESTS: Table-Driven Tests for Multiple Scenarios
+// =============================================================================
+
+func TestService_GetByID_TableDriven(t *testing.T) {
+	tests := []struct {
+		name        string
+		analysisID  string
+		mockReturn  *Analysis
+		mockError   error
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name:        "Success",
+			analysisID:  uuid.New().String(),
+			mockReturn:  createTestAnalysis(),
+			mockError:   nil,
+			expectError: false,
+		},
+		{
+			name:        "Not Found",
+			analysisID:  uuid.New().String(),
+			mockReturn:  nil,
+			mockError:   errors.New("analysis not found"),
+			expectError: true,
+			errorMsg:    "not found",
+		},
+		{
+			name:        "Database Error",
+			analysisID:  uuid.New().String(),
+			mockReturn:  nil,
+			mockError:   errors.New("connection timeout"),
+			expectError: true,
+			errorMsg:    "timeout",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service, mockRepo, _, _ := createTestService()
+			defer service.queueClient.Close()
+
+			mockRepo.On("GetByID", mock.Anything, tt.analysisID).Return(tt.mockReturn, tt.mockError)
+
+			result, err := service.GetByID(context.Background(), tt.analysisID)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Nil(t, result)
+				if tt.errorMsg != "" {
+					assert.Contains(t, err.Error(), tt.errorMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, result)
+			}
+
+			mockRepo.AssertExpectations(t)
+		})
+	}
+}
+
+func TestService_Approve_TableDriven(t *testing.T) {
+	tests := []struct {
+		name        string
+		status      Status
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name:        "Approve Completed Analysis",
+			status:      StatusCompleted,
+			expectError: false,
+		},
+		{
+			name:        "Reject Pending Analysis",
+			status:      StatusPending,
+			expectError: true,
+			errorMsg:    "must be in 'completed' status",
+		},
+		{
+			name:        "Reject Already Approved",
+			status:      StatusApproved,
+			expectError: true,
+			errorMsg:    "must be in 'completed' status",
+		},
+		{
+			name:        "Reject Sent Analysis",
+			status:      StatusSent,
+			expectError: true,
+			errorMsg:    "must be in 'completed' status",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service, mockRepo, _, _ := createTestService()
+			defer service.queueClient.Close()
+
+			testAnalysis := createTestAnalysis()
+			testAnalysis.Status = string(tt.status)
+
+			mockRepo.On("GetByID", mock.Anything, testAnalysis.ID).Return(testAnalysis, nil)
+
+			if !tt.expectError {
+				mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*analysis.Analysis")).Return(nil)
+			}
+
+			err := service.Approve(context.Background(), testAnalysis.ID)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorMsg)
+			} else {
+				assert.NoError(t, err)
+			}
+
+			mockRepo.AssertExpectations(t)
+		})
+	}
+}

@@ -6,7 +6,8 @@
       "Bash(nul)",
       "Bash(go list:*)",
       "Bash(cat:*)",
-      "Bash(go test:*)"
+      "Bash(go test:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []

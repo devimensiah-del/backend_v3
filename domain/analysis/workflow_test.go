@@ -10,6 +10,7 @@ import (
 	"backend_v3/domain/analysis"
 	"backend_v3/llm"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/rs/zerolog"
@@ -469,6 +470,8 @@ func (m *MockRepository) List(ctx context.Context, limit, offset int) ([]*analys
 	return nil, nil
 }
 func (m *MockRepository) Delete(ctx context.Context, id string) error { return nil }
+func (m *MockRepository) BeginTx(ctx context.Context) (*sqlx.Tx, error) { return nil, nil }
+func (m *MockRepository) UpdateWithTx(ctx context.Context, tx *sqlx.Tx, analysis *analysis.Analysis) error { return nil }
 
 type MockSubmissionRepo struct {
 	mock.Mock
