@@ -143,7 +143,7 @@ type Enrichment struct {
 
 	// Generic JSON storage for flexibility
 	SourcesStatus JSONMap `json:"sourcesStatus,omitempty" db:"sources_status"`
-	EnrichedData  JSONMap `json:"enrichedData,omitempty" db:"enriched_data"`
+	EnrichedData  JSONMap `json:"enrichedData,omitempty" db:"data"`
 
 	StartedAt    *time.Time `json:"startedAt,omitempty" db:"started_at"`
 	CompletedAt  *time.Time `json:"completedAt,omitempty" db:"completed_at"`

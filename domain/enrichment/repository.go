@@ -38,11 +38,11 @@ func (r *PostgresRepository) Create(ctx context.Context, e *Enrichment) error {
 	query := `
 		INSERT INTO enrichments (
 			id, submission_id, status, progress, current_step, is_locked,
-			sources_status, enriched_data, started_at, completed_at,
+			sources_status, data, started_at, completed_at,
 			error_message, retry_count, max_retries, created_at, updated_at
 		) VALUES (
 			:id, :submission_id, :status, :progress, :current_step, :is_locked,
-			:sources_status, :enriched_data, :started_at, :completed_at,
+			:sources_status, :data, :started_at, :completed_at,
 			:error_message, :retry_count, :max_retries, :created_at, :updated_at
 		)
 	`
@@ -99,15 +99,15 @@ func (r *PostgresRepository) UpdateSystem(ctx context.Context, e *Enrichment) er
 	// We explicitly add "AND is_locked = false" to the WHERE clause
 	query := `
 		UPDATE enrichments SET
-			status = :status, 
-			progress = :progress, 
+			status = :status,
+			progress = :progress,
 			current_step = :current_step,
-			sources_status = :sources_status, 
-			enriched_data = :enriched_data, 
-			started_at = :started_at, 
+			sources_status = :sources_status,
+			data = :data,
+			started_at = :started_at,
 			completed_at = :completed_at,
-			error_message = :error_message, 
-			retry_count = :retry_count, 
+			error_message = :error_message,
+			retry_count = :retry_count,
 			updated_at = :updated_at
 		WHERE id = :id AND is_locked = FALSE
 	`
@@ -133,7 +133,7 @@ func (r *PostgresRepository) UpdateUser(ctx context.Context, e *Enrichment) erro
 
 	query := `
 		UPDATE enrichments SET
-			enriched_data = :enriched_data, 
+			data = :data,
 			is_locked = TRUE,
 			updated_at = :updated_at
 		WHERE id = :id
