@@ -63,13 +63,16 @@ func main() {
 	defer db.Close()
 
 	// Configure Connection Pool
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(5 * time.Minute)
+	// PRODUCTION FIX: Use configurable connection pool settings instead of hardcoded values
+	// This allows tuning for Railway/production limits without code changes
+	db.SetMaxOpenConns(cfg.DBMaxOpenConns)
+	db.SetMaxIdleConns(cfg.DBMaxIdleConns)
+	db.SetConnMaxLifetime(cfg.DBConnMaxLifetime)
 
 	log.Info().
-		Int("max_open_conns", 25).
-		Int("max_idle_conns", 5).
+		Int("max_open_conns", cfg.DBMaxOpenConns).
+		Int("max_idle_conns", cfg.DBMaxIdleConns).
+		Dur("conn_max_lifetime", cfg.DBConnMaxLifetime).
 		Msg("Database connection pool configured")
 
 	// CRITICAL: Test database connection (health check will fail if this fails)

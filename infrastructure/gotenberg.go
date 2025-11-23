@@ -8,24 +8,60 @@ import (
 	"mime/multipart"
 	"net/http"
 	"time"
+
+	"github.com/sony/gobreaker"
 )
 
 type GotenbergClient struct {
-	URL        string // e.g., "http://localhost:3000"
-	HTTPClient *http.Client
+	URL            string // e.g., "http://localhost:3000"
+	HTTPClient     *http.Client
+	CircuitBreaker *gobreaker.CircuitBreaker
 }
 
 func NewGotenbergClient(url string) *GotenbergClient {
+	// SECURITY/RELIABILITY: Add circuit breaker to prevent cascade failures
+	// If Gotenberg is down or slow, open circuit to fail fast
+	cbSettings := gobreaker.Settings{
+		Name:        "gotenberg-pdf",
+		MaxRequests: 2,                // Allow 2 requests in half-open state
+		Interval:    60 * time.Second, // Clear counts every minute
+		Timeout:     30 * time.Second, // After 30s, attempt to close circuit
+		ReadyToTrip: func(counts gobreaker.Counts) bool {
+			// Open circuit after 3 consecutive failures
+			return counts.ConsecutiveFailures > 3
+		},
+		OnStateChange: func(name string, from gobreaker.State, to gobreaker.State) {
+			// Log circuit breaker state changes
+			fmt.Printf("Circuit breaker '%s' changed from %s to %s\n", name, from, to)
+		},
+	}
+
 	return &GotenbergClient{
 		URL: url,
 		HTTPClient: &http.Client{
 			Timeout: 60 * time.Second, // PDF generation can be slow
 		},
+		CircuitBreaker: gobreaker.NewCircuitBreaker(cbSettings),
 	}
 }
 
 // Convert sends HTML files to Gotenberg's Chromium module
+// Wrapped with circuit breaker for resilience
 func (g *GotenbergClient) Convert(ctx context.Context, htmlPages []string) ([]byte, error) {
+	// Execute through circuit breaker
+	result, err := g.CircuitBreaker.Execute(func() (interface{}, error) {
+		return g.convert(ctx, htmlPages)
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("circuit breaker error: %w", err)
+	}
+
+	return result.([]byte), nil
+}
+
+// convert is the internal implementation wrapped by circuit breaker
+func (g *GotenbergClient) convert(ctx context.Context, htmlPages []string) ([]byte, error) {
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 

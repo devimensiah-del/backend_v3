@@ -13,12 +13,14 @@ import (
 type Repository interface {
 	Create(ctx context.Context, analysis *Analysis) error
 	Update(ctx context.Context, analysis *Analysis) error
+	UpdateWithTx(ctx context.Context, tx *sqlx.Tx, analysis *Analysis) error // Transactional update
 	GetByID(ctx context.Context, id string) (*Analysis, error)
 	GetBySubmissionID(ctx context.Context, submissionID string) (*Analysis, error)
 	GetLatestVersionBySubmissionID(ctx context.Context, submissionID string) (*Analysis, error)
 	GetAllVersionsBySubmissionID(ctx context.Context, submissionID string) ([]*Analysis, error)
 	List(ctx context.Context, limit, offset int) ([]*Analysis, error)
 	Delete(ctx context.Context, id string) error
+	BeginTx(ctx context.Context) (*sqlx.Tx, error) // Begin transaction
 }
 
 // PostgresRepository implements Repository using PostgreSQL
@@ -106,6 +108,65 @@ func (r *PostgresRepository) Update(ctx context.Context, analysis *Analysis) err
 	}
 
 	return nil
+}
+
+// UpdateWithTx modifies an existing analysis record within a transaction
+// CRITICAL: Use this for atomic checkpoint saves to prevent race conditions
+func (r *PostgresRepository) UpdateWithTx(ctx context.Context, tx *sqlx.Tx, analysis *Analysis) error {
+	query := `
+		UPDATE analyses SET
+			swot = :swot,
+			pestel = :pestel,
+			porter = :porter,
+			okrs = :okrs,
+			tam_sam_som = :tam_sam_som,
+			benchmarking = :benchmarking,
+			blue_ocean = :blue_ocean,
+			growth_hacking = :growth_hacking,
+			scenarios = :scenarios,
+			bsc = :bsc,
+			decision_matrix = :decision_matrix,
+			synthesis = :synthesis,
+			status = :status,
+			error_message = :error_message,
+			processing_time_ms = :processing_time_ms,
+			version = :version,
+			parent_analysis_id = :parent_analysis_id,
+			is_latest = :is_latest,
+			approved_at = :approved_at,
+			approved_by = :approved_by,
+			sent_at = :sent_at,
+			sent_to = :sent_to,
+			deleted_at = :deleted_at,
+			updated_at = :updated_at,
+			completed_at = :completed_at
+		WHERE id = :id
+	`
+
+	result, err := tx.NamedExecContext(ctx, query, analysis)
+	if err != nil {
+		return fmt.Errorf("failed to update analysis in transaction: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("analysis not found: %s", analysis.ID)
+	}
+
+	return nil
+}
+
+// BeginTx starts a new database transaction
+func (r *PostgresRepository) BeginTx(ctx context.Context) (*sqlx.Tx, error) {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	return tx, nil
 }
 
 // GetByID retrieves an analysis by its ID

@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -44,12 +45,30 @@ func CORSMiddleware(allowedOrigins string, logger zerolog.Logger) gin.HandlerFun
 			return
 		}
 
-		// For browser requests without Origin header (like direct URL access), allow through
+		// SECURITY FIX: Reject requests without Origin header on protected routes
+		// Empty Origin header can be used to bypass CORS restrictions
+		// Only allow for direct server-to-server calls (rare)
 		if requestOrigin == "" {
+			// Allow GET requests without Origin (RSS readers, curl, etc.)
+			// But reject POST/PUT/DELETE which modify data
+			if c.Request.Method != "GET" && c.Request.Method != "HEAD" {
+				logger.Warn().
+					Str("path", path).
+					Str("method", c.Request.Method).
+					Str("ip", c.ClientIP()).
+					Str("user_agent", c.Request.UserAgent()).
+					Msg("CORS: Rejected non-GET request without Origin header")
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+					"error":   "Forbidden",
+					"message": "Origin header required for this request",
+				})
+				return
+			}
+
 			logger.Debug().
 				Str("path", path).
 				Str("method", c.Request.Method).
-				Msg("No Origin header - allowing request")
+				Msg("No Origin header - allowing GET request")
 			c.Next()
 			return
 		}
@@ -121,6 +140,15 @@ func AuthMiddleware(jwtSecret string, db *sqlx.DB) gin.HandlerFunc {
 		})
 
 		if err != nil || !token.Valid {
+			// SECURITY: Log authentication failure
+			secLogger := NewSecurityEventLogger(zerolog.New(os.Stderr))
+			secLogger.LogAuthFailure(
+				c.ClientIP(),
+				c.Request.UserAgent(),
+				c.Request.URL.Path,
+				fmt.Sprintf("Invalid or expired token: %v", err),
+			)
+
 			c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Unauthorized", Message: "Invalid or expired token"})
 			c.Abort()
 			return
@@ -162,9 +190,21 @@ func AdminAuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// Check if role is admin, super_admin, or service_role (Supabase)
+			// Check if role is admin, super_admin, or service_role (Supabase)
 		userRole := fmt.Sprintf("%v", role)
 		if userRole != "admin" && userRole != "super_admin" && userRole != "service_role" {
+			// SECURITY: Log authorization failure
+			secLogger := NewSecurityEventLogger(zerolog.New(os.Stderr))
+			userID, _ := c.Get("userID")
+			secLogger.LogAuthzFailure(
+				fmt.Sprintf("%v", userID),
+				userRole,
+				c.ClientIP(),
+				c.Request.URL.Path,
+				c.Request.Method,
+				fmt.Sprintf("Insufficient privileges: role=%s, required=admin/super_admin", userRole),
+			)
+
 			c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Admin access required"})
 			c.Abort()
 			return

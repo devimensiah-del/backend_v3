@@ -172,6 +172,15 @@ func (s *Service) createAnalysisRecord(ctx context.Context, subID, enrichID stri
 }
 
 func (s *Service) saveCheckpoint(ctx context.Context, a *Analysis, k *ContextContainer, nextStatus string) {
+	// CRITICAL FIX: Wrap checkpoint saves in database transaction
+	// Prevents partial updates and race conditions during concurrent modifications
+	tx, err := s.repo.BeginTx(ctx)
+	if err != nil {
+		s.logger.Error().Err(err).Str("analysis_id", a.ID).Msg("Failed to begin checkpoint transaction")
+		return
+	}
+	defer tx.Rollback() // Rollback if commit not called
+
 	if k.PESTEL != nil {
 		a.PESTEL = *k.PESTEL
 	}
@@ -207,7 +216,23 @@ func (s *Service) saveCheckpoint(ctx context.Context, a *Analysis, k *ContextCon
 	}
 
 	a.Status = nextStatus
-	s.repo.Update(ctx, a)
+
+	// Update within transaction
+	if err := s.repo.UpdateWithTx(ctx, tx, a); err != nil {
+		s.logger.Error().Err(err).Str("analysis_id", a.ID).Msg("Failed to update analysis in transaction")
+		return
+	}
+
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
+		s.logger.Error().Err(err).Str("analysis_id", a.ID).Msg("Failed to commit checkpoint transaction")
+		return
+	}
+
+	s.logger.Info().
+		Str("analysis_id", a.ID).
+		Str("status", nextStatus).
+		Msg("Checkpoint saved successfully")
 }
 
 func (s *Service) markAsComplete(ctx context.Context, a *Analysis, startTime time.Time) {

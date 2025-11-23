@@ -72,12 +72,17 @@ func (s *Service) EnrichSubmission(ctx context.Context, submissionID uuid.UUID) 
 	var finalProfile map[string]interface{}
 	cleanJson := s.cleanJsonBlock(resp.Content)
 
+	// CRITICAL FIX: Fail explicitly on JSON parse errors instead of creating error placeholders
+	// Silent failures lead to corrupt data being passed to analysis, resulting in garbage PDFs
 	if err := json.Unmarshal([]byte(cleanJson), &finalProfile); err != nil {
-		log.Error().Err(err).Str("content", resp.Content).Msg("JSON Parse Failed")
-		finalProfile = map[string]interface{}{
-			"error": "json_parsing_failed",
-			"raw":   resp.Content,
-		}
+		log.Error().
+			Err(err).
+			Str("content", resp.Content).
+			Str("submission_id", submissionID.String()).
+			Msg("CRITICAL: LLM returned invalid JSON - failing enrichment job")
+
+		// Return error to job handler for retry logic
+		return nil, fmt.Errorf("failed to parse LLM response as JSON: %w (content: %s)", err, cleanJson)
 	}
 
 	enrichment.EnrichedData = JSONMap(finalProfile)

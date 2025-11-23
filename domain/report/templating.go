@@ -3,6 +3,8 @@ package report
 import (
 	"bytes"
 	"html/template"
+
+	"github.com/microcosm-cc/bluemonday"
 )
 
 // ReportPageData is the "Master Object" passed to every HTML template
@@ -41,10 +43,22 @@ func NewTemplateService() *TemplateService {
     </style>
     `
 
+	// SECURITY FIX: Create HTML sanitizer policy
+	// Allows only safe HTML tags and attributes for report content
+	// Prevents XSS attacks via malicious user input in PDF generation
+	sanitizer := bluemonday.UGCPolicy() // User Generated Content policy
+	sanitizer.AllowAttrs("class", "id").Globally()
+	sanitizer.AllowAttrs("style").OnElements("div", "span", "p", "h1", "h2", "h3", "h4", "h5", "h6")
+
 	// Parse all files in the templates folder
-	// Note: Ensure your HTML files use {{.Theme.PrimaryColor}} or CSS var(--primary)
+	// REMOVED: Unsafe "safeHTML" function that bypassed Go's auto-escaping
+	// Now using bluemonday sanitization for any HTML that needs to be rendered
 	tmpl := template.New("report").Funcs(template.FuncMap{
-		"safeHTML": func(s string) template.HTML { return template.HTML(s) },
+		"sanitizeHTML": func(s string) template.HTML {
+			// Sanitize user-provided HTML to prevent XSS
+			clean := sanitizer.Sanitize(s)
+			return template.HTML(clean)
+		},
 	})
 
 	tmpl = template.Must(tmpl.ParseGlob("templates/*.html"))

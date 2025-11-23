@@ -15,6 +15,9 @@ func SetupRouter(handler *Handler, logger zerolog.Logger, jwtSecret string, allo
 
 	router := gin.New()
 
+	// Create authentication rate limiter (5 attempts per 15 minutes)
+	authLimiter := NewAuthRateLimiter()
+
 	// Global middleware (CORS now includes health check bypass)
 	router.Use(CORSMiddleware(allowedOrigins, logger))
 	router.Use(RequestIDMiddleware())
@@ -34,7 +37,9 @@ func SetupRouter(handler *Handler, logger zerolog.Logger, jwtSecret string, allo
 	}
 
 	// Public Auth routes (no auth required)
+	// SECURITY: Apply stricter rate limiting to prevent brute force attacks
 	publicAuthAPI := router.Group("/api/v1/auth")
+	publicAuthAPI.Use(AuthRateLimitMiddleware(authLimiter))
 	{
 		publicAuthAPI.POST("/login", handler.Login)
 		publicAuthAPI.POST("/signup", handler.Signup)

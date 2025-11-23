@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/rs/zerolog"
@@ -28,6 +29,11 @@ type Config struct {
 
 	// Database (Supabase Postgres)
 	DatabaseURL string
+
+	// Database Connection Pool Configuration
+	DBMaxOpenConns    int
+	DBMaxIdleConns    int
+	DBConnMaxLifetime time.Duration
 
 	// AI/LLM Configuration
 	OpenRouterAPIKey string
@@ -78,6 +84,12 @@ func Load() (*Config, error) {
 		// Multiple origins separated by commas. Default only allows localhost.
 		AllowedOrigins: getEnv("ALLOWED_ORIGINS", "http://localhost:3000"),
 		DatabaseURL:    getEnv("DATABASE_URL", ""),
+
+		// Database Connection Pool (Railway PostgreSQL typically allows 50-100 connections)
+		// Production values should be tuned based on: (API instances × max_connections) + worker_connections < DB_limit
+		DBMaxOpenConns:    getEnvInt("DB_MAX_OPEN_CONNS", 25),         // Maximum open connections
+		DBMaxIdleConns:    getEnvInt("DB_MAX_IDLE_CONNS", 5),          // Idle connections to keep alive
+		DBConnMaxLifetime: time.Duration(getEnvInt("DB_CONN_MAX_LIFETIME_MINUTES", 5)) * time.Minute,
 
 		// AI Configuration
 		OpenRouterAPIKey: getEnv("OPENAI_API_KEY", ""),
@@ -184,12 +196,47 @@ func (c *Config) Validate() error {
 	if c.OpenRouterAPIKey == "" {
 		return fmt.Errorf("OPENAI_API_KEY is required")
 	}
+
+	// CRITICAL SECURITY: Validate JWT secret strength
 	if c.SupabaseJWTSecret == "" {
 		return fmt.Errorf("SUPABASE_JWT_SECRET is required for JWT validation")
 	}
+
+	// Enforce minimum secret length (32 characters minimum for cryptographic security)
+	if len(c.SupabaseJWTSecret) < 32 {
+		return fmt.Errorf("SUPABASE_JWT_SECRET must be at least 32 characters long (current: %d chars)", len(c.SupabaseJWTSecret))
+	}
+
+	// Check for common default/example values that should never be used in production
+	dangerousDefaults := []string{
+		"super-secret", "secret", "example", "test", "changeme", "password",
+		"jwt-secret", "your-secret-key", "default", "demo",
+	}
+	lowerSecret := strings.ToLower(c.SupabaseJWTSecret)
+	for _, dangerous := range dangerousDefaults {
+		if strings.Contains(lowerSecret, dangerous) {
+			return fmt.Errorf("SUPABASE_JWT_SECRET appears to contain a default/example value (%s) - use a cryptographically random secret", dangerous)
+		}
+	}
+
+	// In production, enforce additional security requirements
+	if c.Environment == "production" {
+		// Ensure ALLOWED_ORIGINS doesn't include localhost in production
+		if strings.Contains(strings.ToLower(c.AllowedOrigins), "localhost") {
+			return fmt.Errorf("ALLOWED_ORIGINS cannot contain 'localhost' in production environment")
+		}
+
+		// Ensure database uses SSL in production
+		if !strings.Contains(c.DatabaseURL, "sslmode=require") &&
+			!strings.Contains(c.DatabaseURL, "sslmode=verify-") {
+			return fmt.Errorf("DATABASE_URL must use sslmode=require or stronger in production")
+		}
+	}
+
 	if c.SupabaseAnonKey == "" {
 		return fmt.Errorf("SUPABASE_ANON_KEY is required for auth API calls")
 	}
+
 	return nil
 }
 
