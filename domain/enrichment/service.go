@@ -64,13 +64,19 @@ func (s *Service) UpdateEnrichmentData(ctx context.Context, id uuid.UUID, data m
 }
 
 // UpdateFields updates enrichment fields (admin edit)
-// Status remains unchanged (stays "finished")
+// Status remains unchanged (stays "completed")
 // Performs deep merge for nested objects to preserve existing fields
+// IMPORTANT: Cannot edit after status is "approved"
 func (s *Service) UpdateFields(ctx context.Context, id uuid.UUID, updateData map[string]interface{}) (*Enrichment, error) {
 	// Get current enrichment
 	enrichment, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
+	}
+
+	// Validate: Cannot edit after approval
+	if enrichment.Status == StatusApproved {
+		return nil, fmt.Errorf("cannot edit enrichment after it has been approved")
 	}
 
 	// Deep merge update data into existing enriched_data
@@ -109,7 +115,7 @@ func deepMerge(dest map[string]interface{}, src map[string]interface{}) map[stri
 	return dest
 }
 
-// Approve changes status from "finished" → "approved" and triggers analysis job creation
+// Approve changes status from "completed" → "approved" and triggers analysis job creation
 func (s *Service) Approve(ctx context.Context, id uuid.UUID) error {
 	// Get enrichment
 	enrichment, err := s.repo.GetByID(ctx, id)
@@ -117,9 +123,9 @@ func (s *Service) Approve(ctx context.Context, id uuid.UUID) error {
 		return err
 	}
 
-	// Validate status is "finished"
+	// Validate status is "completed"
 	if enrichment.Status != StatusCompleted {
-		return fmt.Errorf("enrichment must be in 'finished' status to approve, current status: %s", enrichment.Status)
+		return fmt.Errorf("enrichment must be in 'completed' status to approve, current status: %s", enrichment.Status)
 	}
 
 	// Update status to approved (system update, doesn't lock)

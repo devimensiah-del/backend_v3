@@ -75,6 +75,7 @@ func SetupRouter(handler *Handler, logger zerolog.Logger, jwtSecret string, allo
 		protectedAPI.GET("/submissions/:id/analysis", handler.GetAnalysis)
 		protectedAPI.GET("/submissions/:id/report/preview", handler.PreviewReport)
 		protectedAPI.POST("/submissions/:id/report/publish", handler.PublishReport)
+		protectedAPI.GET("/submissions/:id/report/download", handler.DownloadReport)
 	}
 
 	// Admin API routes (v1)

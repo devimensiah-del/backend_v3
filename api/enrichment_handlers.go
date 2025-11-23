@@ -96,7 +96,8 @@ func (h *Handler) GetEnrichment(c *gin.Context) {
 }
 
 // UpdateEnrichment handles PUT /api/v1/admin/enrichment/:id
-// Admin can edit enrichment fields (status remains "finished")
+// Admin can edit enrichment fields BEFORE approval (status remains "completed")
+// Cannot edit after status is "approved"
 func (h *Handler) UpdateEnrichment(c *gin.Context) {
 	enrichmentID := c.Param("id")
 
@@ -149,7 +150,7 @@ func (h *Handler) UpdateEnrichment(c *gin.Context) {
 }
 
 // ApproveEnrichment handles POST /api/v1/admin/enrichment/:id/approve
-// Changes status from "finished" → "approved" and triggers analysis creation
+// Changes status from "completed" → "approved" and triggers analysis creation
 func (h *Handler) ApproveEnrichment(c *gin.Context) {
 	enrichmentID := c.Param("id")
 
