@@ -5,43 +5,58 @@
     <title>Risk Assessment</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        @page { size: A4 portrait; margin: 0; }
+        @page { size: A4 landscape; margin: 0; }
+
+        html, body {
+            width: 842px;
+            height: 595px;
+            overflow: hidden;
+        }
 
         body {
-            width: 595px;
-            height: 842px;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             color: #0A101D;
             background: #FFFFFF;
         }
 
-        .page { width: 595px; height: 842px; padding: 40px; display: flex; flex-direction: column; }
+        .page {
+            width: 842px;
+            height: 595px;
+            max-width: 842px;
+            max-height: 595px;
+            overflow: hidden;
+            padding: 32px 40px;
+            display: flex;
+            flex-direction: column;
+        }
 
         .header {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 24px;
-            padding-bottom: 12px;
+            margin-bottom: 16px;
+            padding-bottom: 10px;
             border-bottom: 1px solid #E5E0D6;
         }
 
         .page-number { font-size: 10px; font-weight: 600; color: #B89E68; }
         .company-name-header { font-size: 10px; color: #71717A; }
 
-        .page-title { font-size: 24px; font-weight: 300; color: #0A101D; margin-bottom: 4px; }
-        .page-subtitle { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.15em; color: #B89E68; margin-bottom: 24px; }
+        .page-title { font-size: 22px; font-weight: 300; color: #0A101D; margin-bottom: 4px; }
+        .page-subtitle { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.15em; color: #B89E68; margin-bottom: 16px; }
 
         .risk-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 16px;
-            margin-bottom: 20px;
+            gap: 14px;
+            margin-bottom: 14px;
+            flex: 1;
+            overflow: hidden;
         }
 
         .risk-box {
             border: 2px solid;
-            padding: 16px;
-            height: 180px;
+            padding: 14px;
+            overflow: hidden;
         }
 
         .risk-high {
@@ -55,12 +70,12 @@
         }
 
         .risk-title {
-            font-size: 10px;
+            font-size: 9px;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.1em;
-            margin-bottom: 12px;
-            padding-bottom: 8px;
+            margin-bottom: 10px;
+            padding-bottom: 6px;
             border-bottom: 2px solid;
         }
 
@@ -75,24 +90,24 @@
         }
 
         .risk-content {
-            font-size: 10px;
-            line-height: 1.5;
+            font-size: 9px;
+            line-height: 1.45;
             color: #111827;
         }
 
         .signals-section {
             background: #F7F6F4;
-            padding: 16px;
+            padding: 12px;
             border-left: 4px solid #ef4444;
         }
 
         .signals-title {
-            font-size: 10px;
+            font-size: 9px;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.1em;
             color: #ef4444;
-            margin-bottom: 12px;
+            margin-bottom: 10px;
         }
 
         .signals-list {
@@ -100,11 +115,11 @@
         }
 
         .signal-item {
-            font-size: 9.5px;
-            line-height: 1.4;
+            font-size: 8.5px;
+            line-height: 1.35;
             color: #111827;
-            margin-bottom: 8px;
-            padding-left: 16px;
+            margin-bottom: 6px;
+            padding-left: 14px;
             position: relative;
         }
 

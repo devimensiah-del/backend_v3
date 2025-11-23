@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"html/template"
+	"strings"
 	"time"
 
 	"backend_v3/domain/analysis"
@@ -88,27 +89,46 @@ func (s *Service) GeneratePreview(ctx context.Context, submissionID, analysisID 
 	// We return a map so the Frontend can render them in tabs (e.g., "Show me the SWOT tab")
 	pages := make(map[string]string)
 
-	// Define the page mapping
+	// Define the page mapping - Using new report_v2 templates with TUC Glasses structure
 	renderList := []struct {
 		Key      string
 		Template string
 		Content  interface{}
 	}{
-		{"Cover", "01_cover.html", nil}, // Context is passed globally
+		// Executive Overview
+		{"Cover", "01_cover.html", nil},
 		{"ExecutiveSummary", "02_exec_summary.html", data.Analysis.Synthesis},
 		{"TableOfContents", "03_toc.html", nil},
-		{"PESTEL", "04_pestel.html", data.Analysis.PESTEL},
-		{"Porter", "05_porter.html", data.Analysis.Porter},
+
+		// Part I: Onde Estamos?
+		{"DividerPart1", "03a_divider_part1.html", nil},
+		{"PESTEL_PES", "04a_pestel_pes.html", data.Analysis.PESTEL},
+		{"PESTEL_TEL", "04b_pestel_tel.html", data.Analysis.PESTEL},
+		{"Porter", "05a_porter_7forces.html", data.Analysis.Porter},
 		{"SWOT", "06_swot.html", data.Analysis.SWOT},
+
+		// Part II: Onde Queremos Ir?
+		{"DividerPart2", "08a_divider_part2.html", nil},
 		{"MarketSizing", "07_tam_sam_som.html", data.Analysis.TamSamSom},
 		{"BlueOcean", "08_ocean.html", data.Analysis.BlueOcean},
-		{"OKRs", "09_okrs.html", data.Analysis.OKRs},
-		{"BusinessModel", "10_business_model.html", data.Analysis.BSC}, // Using Balanced Scorecard as business model view
+
+		// Part III: Como Chegar Lá?
+		{"DividerPart3", "11a_divider_part3.html", nil},
+		{"OKRs", "12a_okrs_quarterly.html", data.Analysis.OKRs},
+		{"GrowthLoops", "13a_growth_loops.html", data.Analysis.GrowthHacking},
+
+		// Part IV: O Que Fazer Agora?
+		{"DividerPart4", "14a_divider_part4.html", nil},
+		{"Scenarios", "15a_scenarios.html", data.Analysis.Scenarios},
+		{"Recommendations", "16a_recommendations_review.html", data.Analysis.DecisionMatrix},
+
+		// Appendices
+		{"BusinessModel", "10_business_model.html", data.Analysis.BSC},
 		{"CompetitiveAnalysis", "11_competitive_analysis.html", data.Analysis.Benchmarking},
-		{"FinancialProjections", "12_financial_projections.html", data.Analysis.Scenarios}, // Financial scenarios
+		{"FinancialProjections", "12_financial_projections.html", data.Analysis.Scenarios},
 		{"GTMStrategy", "13_gtm_strategy.html", data.Analysis.GrowthHacking},
 		{"RiskAssessment", "14_risk_assessment.html", data.Analysis.Scenarios},
-		{"Roadmap", "15_roadmap.html", data.Analysis.DecisionMatrix}, // Using decision matrix as roadmap
+		{"Roadmap", "15_roadmap.html", data.Analysis.DecisionMatrix},
 		{"Appendix", "16_appendix.html", nil},
 	}
 
@@ -133,26 +153,45 @@ func (s *Service) Publish(ctx context.Context, submissionID, analysisID string) 
 		return "", err
 	}
 
-	// Order matters for the PDF!
+	// Order matters for the PDF! Following TUC Glasses 4-part narrative structure
 	templateOrder := []struct {
 		Template string
 		Content  interface{}
 	}{
+		// Executive Overview
 		{"01_cover.html", nil},
 		{"02_exec_summary.html", data.Analysis.Synthesis},
 		{"03_toc.html", nil},
-		{"04_pestel.html", data.Analysis.PESTEL},
-		{"05_porter.html", data.Analysis.Porter},
+
+		// Part I: Onde Estamos? (Where are we?)
+		{"03a_divider_part1.html", nil},
+		{"04a_pestel_pes.html", data.Analysis.PESTEL},
+		{"04b_pestel_tel.html", data.Analysis.PESTEL},
+		{"05a_porter_7forces.html", data.Analysis.Porter},
 		{"06_swot.html", data.Analysis.SWOT},
+
+		// Part II: Onde Queremos Ir? (Where do we want to go?)
+		{"08a_divider_part2.html", nil},
 		{"07_tam_sam_som.html", data.Analysis.TamSamSom},
 		{"08_ocean.html", data.Analysis.BlueOcean},
-		{"09_okrs.html", data.Analysis.OKRs},
-		{"10_business_model.html", data.Analysis.BSC}, // Using Balanced Scorecard as business model view
+
+		// Part III: Como Chegar Lá? (How to get there?)
+		{"11a_divider_part3.html", nil},
+		{"12a_okrs_quarterly.html", data.Analysis.OKRs},
+		{"13a_growth_loops.html", data.Analysis.GrowthHacking},
+
+		// Part IV: O Que Fazer Agora? (What to do now?)
+		{"14a_divider_part4.html", nil},
+		{"15a_scenarios.html", data.Analysis.Scenarios},
+		{"16a_recommendations_review.html", data.Analysis.DecisionMatrix},
+
+		// Appendices
+		{"10_business_model.html", data.Analysis.BSC},
 		{"11_competitive_analysis.html", data.Analysis.Benchmarking},
-		{"12_financial_projections.html", data.Analysis.Scenarios}, // Financial scenarios
+		{"12_financial_projections.html", data.Analysis.Scenarios},
 		{"13_gtm_strategy.html", data.Analysis.GrowthHacking},
 		{"14_risk_assessment.html", data.Analysis.Scenarios},
-		{"15_roadmap.html", data.Analysis.DecisionMatrix}, // Using decision matrix as roadmap
+		{"15_roadmap.html", data.Analysis.DecisionMatrix},
 		{"16_appendix.html", nil},
 	}
 
@@ -190,12 +229,12 @@ func (s *Service) Publish(ctx context.Context, submissionID, analysisID string) 
 		PDFURL:              pdfURL,
 		PDFGeneratedAt:      &now,
 		PDFGenerationStatus: "completed",
-		TotalPages:          16,
+		TotalPages:          24, // Updated for new 4-part structure with dividers and appendices
 		CreatedAt:           now,
 		UpdatedAt:           now,
 		CompletedAt:         &now,
 
-		// Assign all 16 generated HTML pages (in order from templateOrder)
+		// Assign all 24 generated HTML pages (in order from templateOrder)
 		CoverPage:                htmlPages[0],  // 01_cover.html
 		ExecutiveSummary:         htmlPages[1],  // 02_exec_summary.html
 		TableOfContents:          htmlPages[2],  // 03_toc.html
@@ -306,10 +345,12 @@ func (s *Service) renderPage(templateName string, globalData *ReportData, specif
 	}
 
 	// Templates are now self-contained - parse individually
+	// Using report_v2 for TUC Glasses aligned templates
 	templatePaths := []string{
-		"templates/report/" + templateName,            // Production
-		"backend_v3/templates/report/" + templateName, // From root
-		"../templates/report/" + templateName,         // From tests
+		"templates/report_v2/" + templateName,                     // Production / From root
+		"backend_v3/templates/report_v2/" + templateName,          // From parent dir
+		"../templates/report_v2/" + templateName,                  // From tests in subdirs
+		"../../templates/report_v2/" + templateName,               // From deep test dirs
 	}
 
 	var tmpl *template.Template
@@ -318,6 +359,20 @@ func (s *Service) renderPage(templateName string, globalData *ReportData, specif
 	funcMap := template.FuncMap{
 		"safeHTML": func(s string) template.HTML { return template.HTML(s) },
 		"add":      func(a, b int) int { return a + b },
+		"lower":    func(s string) string { return strings.ToLower(s) },
+		"replace":  func(s, old, new string) string { return strings.ReplaceAll(s, old, new) },
+		"slice":    func(start, end int, s string) string {
+			if start < 0 {
+				start = 0
+			}
+			if end > len(s) {
+				end = len(s)
+			}
+			if start >= len(s) {
+				return ""
+			}
+			return s[start:end]
+		},
 	}
 
 	for _, path := range templatePaths {

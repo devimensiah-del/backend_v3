@@ -2,62 +2,59 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Strategic Analysis Report - {{ .CompanyName }}</title>
     <style>
-        * {
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        @page { size: A4 landscape; margin: 0; }
+
+        html, body {
+            width: 842px;
+            height: 595px;
             margin: 0;
             padding: 0;
-            box-sizing: border-box;
-        }
-
-        @page {
-            size: A4 portrait;
-            margin: 0;
+            overflow: hidden;
         }
 
         body {
-            width: 595px;
-            height: 842px;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
             color: #0A101D;
             background: #FFFFFF;
-            position: relative;
         }
 
         .page {
-            width: 595px;
-            height: 842px;
+            width: 842px;
+            height: 595px;
+            max-width: 842px;
+            max-height: 595px;
             padding: 40px;
             display: flex;
             flex-direction: column;
             position: relative;
+            overflow: hidden;
         }
 
-        /* Premium Gold Bar Accent */
         .accent-bar {
             position: absolute;
             left: 0;
-            top: 120px;
+            top: 100px;
             width: 6px;
-            height: 200px;
+            height: 180px;
             background: linear-gradient(180deg, #B89E68 0%, #A18852 100%);
         }
 
-        /* Logo */
         .logo-container {
-            margin-top: 80px;
-            margin-bottom: 60px;
+            margin-top: 60px;
+            margin-bottom: 40px;
             text-align: center;
         }
 
         .logo {
-            width: 120px;
-            height: 120px;
+            width: 100px;
+            height: 100px;
             margin: 0 auto;
         }
 
-        /* Title Section */
         .title-section {
             flex: 1;
             display: flex;
@@ -67,71 +64,69 @@
         }
 
         .report-label {
-            font-size: 10px;
+            font-size: 9px;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.2em;
             color: #B89E68;
-            margin-bottom: 24px;
+            margin-bottom: 20px;
         }
 
         .company-name {
-            font-size: 48px;
+            font-size: 42px;
             font-weight: 300;
             letter-spacing: -0.02em;
             color: #0A101D;
-            margin-bottom: 16px;
+            margin-bottom: 12px;
             line-height: 1.1;
         }
 
         .report-title {
-            font-size: 20px;
+            font-size: 18px;
             font-weight: 400;
             color: #52525B;
-            margin-bottom: 60px;
+            margin-bottom: 50px;
             letter-spacing: 0.01em;
         }
 
-        /* Meta Information */
         .meta-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 32px;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
             padding-left: 40px;
         }
 
         .meta-item {
             border-left: 2px solid #E5E0D6;
-            padding-left: 16px;
+            padding-left: 12px;
         }
 
         .meta-label {
-            font-size: 9px;
+            font-size: 8px;
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.15em;
             color: #71717A;
-            margin-bottom: 6px;
+            margin-bottom: 5px;
         }
 
         .meta-value {
-            font-size: 14px;
+            font-size: 12px;
             font-weight: 500;
             color: #0A101D;
         }
 
-        /* Footer */
         .footer {
             position: absolute;
-            bottom: 40px;
+            bottom: 32px;
             left: 40px;
             right: 40px;
-            padding-top: 24px;
+            padding-top: 20px;
             border-top: 1px solid #E5E0D6;
         }
 
         .footer-text {
-            font-size: 9px;
+            font-size: 8px;
             color: #71717A;
             text-align: center;
             letter-spacing: 0.05em;
@@ -145,10 +140,8 @@
 </head>
 <body>
     <div class="page">
-        <!-- Gold Accent Bar -->
         <div class="accent-bar"></div>
 
-        <!-- Logo -->
         <div class="logo-container">
             <svg class="logo" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
                 <circle cx="60" cy="60" r="58" fill="none" stroke="#0A101D" stroke-width="2"/>
@@ -156,14 +149,12 @@
             </svg>
         </div>
 
-        <!-- Title Section -->
         <div class="title-section">
             <div class="report-label">Relatório de Análise Estratégica</div>
             <h1 class="company-name">{{ .CompanyName }}</h1>
             <div class="report-title">Inteligência de Negócios Completa</div>
         </div>
 
-        <!-- Meta Information -->
         <div class="meta-grid">
             <div class="meta-item">
                 <div class="meta-label">Setor</div>
@@ -183,7 +174,6 @@
             </div>
         </div>
 
-        <!-- Footer -->
         <div class="footer">
             <div class="footer-text">
                 <span class="footer-brand">IMENSIAH</span> — Inteligência Artificial + Inteligência Humana

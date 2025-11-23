@@ -15,9 +15,33 @@ func (s *Service) RunAnalysis(ctx context.Context, submissionID, enrichmentID st
 	startTime := time.Now()
 	s.logger.Info().Str("sub_id", submissionID).Msg("Starting Strategic Cascade Analysis")
 
-	// 1. SETUP
-	// We use the models injected into the service (safe for testing)
-	knowledge := &ContextContainer{SubmissionID: submissionID, EnrichmentData: enrichmentData}
+	// 1. FETCH SUBMISSION DATA
+	submissionUUID, err := uuid.Parse(submissionID)
+	if err != nil {
+		s.logger.Error().Err(err).Str("sub_id", submissionID).Msg("Invalid submission ID format")
+		return nil, err
+	}
+
+	submission, err := s.submissionRepo.GetByID(ctx, submissionUUID)
+	if err != nil {
+		s.logger.Error().Err(err).Str("sub_id", submissionID).Msg("Failed to fetch submission data")
+		return nil, err
+	}
+
+	// Convert submission to map for template injection
+	submissionData := submissionToMap(submission)
+
+	s.logger.Info().
+		Str("company_name", submission.CompanyName).
+		Str("business_challenge", submission.BusinessChallenge).
+		Msg("Submission data loaded successfully")
+
+	// 2. SETUP CONTEXT
+	knowledge := &ContextContainer{
+		SubmissionID:   submissionID,
+		SubmissionData: submissionData,
+		EnrichmentData: enrichmentData,
+	}
 	analysis := s.createAnalysisRecord(ctx, submissionID, enrichmentID)
 
 	// ========================================================================
@@ -46,7 +70,8 @@ func (s *Service) RunAnalysis(ctx context.Context, submissionID, enrichmentID st
 			}
 		})
 	})
-	s.saveCheckpoint(ctx, analysis, knowledge, "processing_layer_2")
+	s.logger.Debug().Str("analysis_id", analysis.ID).Msg("Layer 2: Starting Positioning analysis")
+	s.saveCheckpoint(ctx, analysis, knowledge, string(StatusPending))
 
 	// ========================================================================
 	// LAYER 2: POSITIONING (Internal Fit)
@@ -55,7 +80,8 @@ func (s *Service) RunAnalysis(ctx context.Context, submissionID, enrichmentID st
 		s.exec(wg, func() { knowledge.SWOT, _ = s.runSWOT(ctx, knowledge) })
 		s.exec(wg, func() { knowledge.Benchmarking, _ = s.runBenchmarking(ctx, knowledge) })
 	})
-	s.saveCheckpoint(ctx, analysis, knowledge, "processing_layer_3")
+	s.logger.Debug().Str("analysis_id", analysis.ID).Msg("Layer 3: Starting Strategy analysis")
+	s.saveCheckpoint(ctx, analysis, knowledge, string(StatusPending))
 
 	// ========================================================================
 	// LAYER 3: STRATEGY (Direction)
@@ -65,7 +91,8 @@ func (s *Service) RunAnalysis(ctx context.Context, submissionID, enrichmentID st
 		s.exec(wg, func() { knowledge.GrowthHacking, _ = s.runGrowthHacking(ctx, knowledge) })
 		s.exec(wg, func() { knowledge.Scenarios, _ = s.runScenarios(ctx, knowledge) })
 	})
-	s.saveCheckpoint(ctx, analysis, knowledge, "processing_layer_4")
+	s.logger.Debug().Str("analysis_id", analysis.ID).Msg("Layer 4: Starting Execution analysis")
+	s.saveCheckpoint(ctx, analysis, knowledge, string(StatusPending))
 
 	// ========================================================================
 	// LAYER 4: EXECUTION (Roadmap)
@@ -93,7 +120,8 @@ func (s *Service) RunAnalysis(ctx context.Context, submissionID, enrichmentID st
 			}
 		})
 	})
-	s.saveCheckpoint(ctx, analysis, knowledge, "processing_synthesis")
+	s.logger.Debug().Str("analysis_id", analysis.ID).Msg("Starting final synthesis")
+	s.saveCheckpoint(ctx, analysis, knowledge, string(StatusPending)) // Still pending until completed
 
 	// ========================================================================
 	// CONTENT VALIDATION (Enforce PDF Layout Constraints)
@@ -134,11 +162,12 @@ func (s *Service) createAnalysisRecord(ctx context.Context, subID, enrichID stri
 		ID:           uuid.New().String(),
 		SubmissionID: subID,
 		EnrichmentID: enrichID,
-		Status:       "processing_layer_1",
+		Status:       string(StatusPending),
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
 	}
 	s.repo.Create(ctx, a)
+	s.logger.Debug().Str("analysis_id", a.ID).Msg("Layer 1: Starting Environment analysis")
 	return a
 }
 
@@ -195,7 +224,11 @@ func (s *Service) markAsComplete(ctx context.Context, a *Analysis, startTime tim
 
 func (s *Service) runPESTEL(ctx context.Context, k *ContextContainer) (*PESTELAnalysis, error) {
 	var res PESTELAnalysis
-	data := map[string]interface{}{"enrichment_data": k.EnrichmentData}
+	data := map[string]interface{}{
+		"company_data":    k.SubmissionData,
+		"enrichment_data": k.EnrichmentData,
+		"macro_context":   s.extractMacroContext(k.EnrichmentData),
+	}
 	opts := llm.NewGenerationOptions(s.frameworks["pestel"])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, llm.FrameworkPESTELPrompt, data, &res)
 	return &res, err
@@ -203,7 +236,11 @@ func (s *Service) runPESTEL(ctx context.Context, k *ContextContainer) (*PESTELAn
 
 func (s *Service) runPorter(ctx context.Context, k *ContextContainer) (*PorterAnalysis, error) {
 	var res PorterAnalysis
-	data := map[string]interface{}{"enrichment_data": k.EnrichmentData}
+	data := map[string]interface{}{
+		"company_data":    k.SubmissionData,
+		"enrichment_data": k.EnrichmentData,
+		"macro_context":   s.extractMacroContext(k.EnrichmentData),
+	}
 	opts := llm.NewGenerationOptions(s.frameworks["porter"])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, llm.FrameworkPorterPrompt, data, &res)
 	return &res, err
@@ -211,7 +248,11 @@ func (s *Service) runPorter(ctx context.Context, k *ContextContainer) (*PorterAn
 
 func (s *Service) runTamSamSom(ctx context.Context, k *ContextContainer) (*TamSamSomAnalysis, error) {
 	var res TamSamSomAnalysis
-	data := map[string]interface{}{"enrichment_data": k.EnrichmentData}
+	data := map[string]interface{}{
+		"company_data":    k.SubmissionData,
+		"enrichment_data": k.EnrichmentData,
+		"macro_context":   s.extractMacroContext(k.EnrichmentData),
+	}
 	opts := llm.NewGenerationOptions(s.frameworks["tam_sam_som"])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, llm.FrameworkTamSamSomPrompt, data, &res)
 	return &res, err
@@ -220,6 +261,7 @@ func (s *Service) runTamSamSom(ctx context.Context, k *ContextContainer) (*TamSa
 func (s *Service) runSWOT(ctx context.Context, k *ContextContainer) (*SWOTAnalysis, error) {
 	var res SWOTAnalysis
 	data := map[string]interface{}{
+		"company_data":    k.SubmissionData,
 		"enrichment_data": k.EnrichmentData,
 		"pestel_insights": k.PESTEL.Summary,
 		"porter_insights": k.Porter.Summary,
@@ -231,7 +273,11 @@ func (s *Service) runSWOT(ctx context.Context, k *ContextContainer) (*SWOTAnalys
 
 func (s *Service) runBenchmarking(ctx context.Context, k *ContextContainer) (*BenchmarkingAnalysis, error) {
 	var res BenchmarkingAnalysis
-	data := map[string]interface{}{"enrichment_data": k.EnrichmentData, "market_scale": k.TamSamSom.Summary}
+	data := map[string]interface{}{
+		"company_data":    k.SubmissionData,
+		"enrichment_data": k.EnrichmentData,
+		"market_scale":    k.TamSamSom.Summary,
+	}
 	opts := llm.NewGenerationOptions(s.frameworks["benchmarking"])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, llm.FrameworkBenchmarkingPrompt, data, &res)
 	return &res, err
@@ -239,7 +285,11 @@ func (s *Service) runBenchmarking(ctx context.Context, k *ContextContainer) (*Be
 
 func (s *Service) runBlueOcean(ctx context.Context, k *ContextContainer) (*BlueOceanAnalysis, error) {
 	var res BlueOceanAnalysis
-	data := map[string]interface{}{"enrichment_data": k.EnrichmentData, "porter_insights": k.Porter.Summary}
+	data := map[string]interface{}{
+		"company_data":    k.SubmissionData,
+		"enrichment_data": k.EnrichmentData,
+		"porter_insights": k.Porter.Summary,
+	}
 	opts := llm.NewGenerationOptions(s.frameworks["blue_ocean"])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, llm.FrameworkBlueOceanPrompt, data, &res)
 	return &res, err
@@ -247,7 +297,10 @@ func (s *Service) runBlueOcean(ctx context.Context, k *ContextContainer) (*BlueO
 
 func (s *Service) runGrowthHacking(ctx context.Context, k *ContextContainer) (*GrowthHackingAnalysis, error) {
 	var res GrowthHackingAnalysis
-	data := map[string]interface{}{"enrichment_data": k.EnrichmentData}
+	data := map[string]interface{}{
+		"company_data":    k.SubmissionData,
+		"enrichment_data": k.EnrichmentData,
+	}
 	opts := llm.NewGenerationOptions(s.frameworks["growth_hacking"])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, llm.FrameworkGrowthHackingPrompt, data, &res)
 	return &res, err
@@ -255,7 +308,12 @@ func (s *Service) runGrowthHacking(ctx context.Context, k *ContextContainer) (*G
 
 func (s *Service) runScenarios(ctx context.Context, k *ContextContainer) (*ScenarioAnalysis, error) {
 	var res ScenarioAnalysis
-	data := map[string]interface{}{"enrichment_data": k.EnrichmentData, "pestel_insights": k.PESTEL.Summary}
+	data := map[string]interface{}{
+		"company_data":    k.SubmissionData,
+		"enrichment_data": k.EnrichmentData,
+		"pestel_insights": k.PESTEL.Summary,
+		"macro_context":   s.extractMacroContext(k.EnrichmentData),
+	}
 	opts := llm.NewGenerationOptions(s.frameworks["scenarios"])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, llm.FrameworkScenariosPrompt, data, &res)
 	return &res, err
@@ -271,6 +329,7 @@ func (s *Service) runOKRs(ctx context.Context, k *ContextContainer) (*OKRAnalysi
 		Msg("🔍 DEBUG OKRs Input Data")
 
 	data := map[string]interface{}{
+		"company_data":        k.SubmissionData,
 		"enrichment_data":     k.EnrichmentData,
 		"blue_ocean_insights": k.BlueOcean.Summary,
 		"swot_weaknesses":     k.SWOT.Weaknesses,
@@ -280,7 +339,7 @@ func (s *Service) runOKRs(ctx context.Context, k *ContextContainer) (*OKRAnalysi
 
 	// DEBUG: Log what we got back
 	s.logger.Debug().
-		Int("objectives_count", len(res.Objectives)).
+		Int("quarters_count", len(res.Quarters)).
 		Str("summary", res.Summary).
 		Msg("🔍 DEBUG OKRs Output Data")
 
@@ -295,7 +354,11 @@ func (s *Service) runBSC(ctx context.Context, k *ContextContainer) (*BalancedSco
 		Str("blue_ocean_summary", k.BlueOcean.Summary).
 		Msg("🔍 DEBUG BSC Input Data")
 
-	data := map[string]interface{}{"enrichment_data": k.EnrichmentData, "blue_ocean_insights": k.BlueOcean.Summary}
+	data := map[string]interface{}{
+		"company_data":        k.SubmissionData,
+		"enrichment_data":     k.EnrichmentData,
+		"blue_ocean_insights": k.BlueOcean.Summary,
+	}
 	opts := llm.NewGenerationOptions(s.frameworks["bsc"])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, llm.FrameworkBSCPrompt, data, &res)
 
@@ -319,7 +382,11 @@ func (s *Service) runDecisionMatrix(ctx context.Context, k *ContextContainer) (*
 		Str("scenario_summary", k.Scenarios.Summary).
 		Msg("🔍 DEBUG DecisionMatrix Input Data")
 
-	data := map[string]interface{}{"enrichment_data": k.EnrichmentData, "scenario_insights": k.Scenarios.Summary}
+	data := map[string]interface{}{
+		"company_data":      k.SubmissionData,
+		"enrichment_data":   k.EnrichmentData,
+		"scenario_insights": k.Scenarios.Summary,
+	}
 	opts := llm.NewGenerationOptions(s.frameworks["decision_matrix"])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, llm.FrameworkDecisionMatrixPrompt, data, &res)
 
@@ -346,6 +413,7 @@ func (s *Service) runSynthesis(ctx context.Context, k *ContextContainer) (Analys
 		"growth":     k.GrowthHacking.Summary,
 	}
 	data := map[string]interface{}{
+		"company_data":            k.SubmissionData,
 		"enrichment_data":         k.EnrichmentData,
 		"all_framework_summaries": summaries,
 	}
@@ -353,4 +421,64 @@ func (s *Service) runSynthesis(ctx context.Context, k *ContextContainer) (Analys
 	opts := llm.NewGenerationOptions(s.frameworks["synthesis"])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, llm.SynthesisPrompt, data, &res)
 	return res, err
+}
+
+// submissionToMap converts a SubmissionData struct to a map for template injection
+func submissionToMap(s *SubmissionData) map[string]interface{} {
+	result := map[string]interface{}{
+		"company_name":       s.CompanyName,
+		"business_challenge": s.BusinessChallenge,
+	}
+
+	// Add optional fields only if present
+	if s.CompanyWebsite != nil {
+		result["company_website"] = *s.CompanyWebsite
+	}
+	if s.CompanyIndustry != nil {
+		result["company_industry"] = *s.CompanyIndustry
+	}
+	if s.CompanySize != nil {
+		result["company_size"] = *s.CompanySize
+	}
+	if s.CompanyLocation != nil {
+		result["company_location"] = *s.CompanyLocation
+	}
+	if s.TargetMarket != nil {
+		result["target_market"] = *s.TargetMarket
+	}
+	if s.AnnualRevenueMin != nil && s.AnnualRevenueMax != nil {
+		result["annual_revenue_range"] = map[string]float64{
+			"min": *s.AnnualRevenueMin,
+			"max": *s.AnnualRevenueMax,
+		}
+	}
+	if s.FundingStage != nil {
+		result["funding_stage"] = *s.FundingStage
+	}
+
+	return result
+}
+
+// extractMacroContext safely extracts macro_context from enrichment data
+// Returns the macro_context if present, or an empty map for backward compatibility
+func (s *Service) extractMacroContext(enrichmentData map[string]interface{}) map[string]interface{} {
+	if enrichmentData == nil {
+		s.logger.Debug().Msg("No enrichment data provided, returning empty macro_context")
+		return map[string]interface{}{}
+	}
+
+	// Check if macro_context exists in enrichment data
+	if macroCtx, ok := enrichmentData["macro_context"]; ok && macroCtx != nil {
+		// If it's already a map, return it
+		if macroMap, ok := macroCtx.(map[string]interface{}); ok {
+			s.logger.Debug().Msg("Macro-context found and extracted successfully")
+			return macroMap
+		}
+		s.logger.Warn().Msg("macro_context exists but is not a map, returning empty")
+	} else {
+		s.logger.Debug().Msg("No macro_context in enrichment data (backward compatibility mode)")
+	}
+
+	// Return empty map for backward compatibility with old enrichments
+	return map[string]interface{}{}
 }

@@ -204,7 +204,6 @@ func (r *PostgresRepository) Update(ctx context.Context, s *Submission) error {
 			additional_notes = :additional_notes,
 			linkedin_url = :linkedin_url,
 			twitter_handle = :twitter_handle,
-			status = :status,
 			updated_at = :updated_at
 		WHERE id = :id AND deleted_at IS NULL
 	`
@@ -268,13 +267,15 @@ func (r *PostgresRepository) GetTotalCount(ctx context.Context) (int, error) {
 	return count, nil
 }
 
-// GetActiveCount returns the count of submissions that are in progress
-// Active = not pending and not completed (enriching, enriched, analyzing, etc.)
+// GetActiveCount returns the number of submissions that are still being worked on
+// Active = analysis not yet sent to user (analysis.status != 'sent' or no analysis exists)
 func (r *PostgresRepository) GetActiveCount(ctx context.Context) (int, error) {
 	query := `
-		SELECT COUNT(*) FROM submissions
-		WHERE deleted_at IS NULL
-		AND status NOT IN ('pending', 'completed', 'failed', 'enrichment_failed', 'analysis_failed', 'report_failed')
+		SELECT COUNT(DISTINCT s.id)
+		FROM submissions s
+		LEFT JOIN analyses a ON s.id::text = a.submission_id AND a.is_latest = true
+		WHERE s.deleted_at IS NULL
+		AND (a.id IS NULL OR a.status != 'sent')
 	`
 
 	var count int
@@ -285,12 +286,15 @@ func (r *PostgresRepository) GetActiveCount(ctx context.Context) (int, error) {
 	return count, nil
 }
 
-// GetCompletedCount returns the count of completed submissions
+// GetCompletedCount returns the number of submissions with analysis sent to user
+// Completed = analysis.status = 'sent'
 func (r *PostgresRepository) GetCompletedCount(ctx context.Context) (int, error) {
 	query := `
-		SELECT COUNT(*) FROM submissions
-		WHERE deleted_at IS NULL
-		AND status = 'completed'
+		SELECT COUNT(DISTINCT s.id)
+		FROM submissions s
+		INNER JOIN analyses a ON s.id::text = a.submission_id AND a.is_latest = true
+		WHERE s.deleted_at IS NULL
+		AND a.status = 'sent'
 	`
 
 	var count int

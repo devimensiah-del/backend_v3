@@ -78,7 +78,126 @@ func (h *Handler) GetEnrichment(c *gin.Context) {
 		return
 	}
 
+	// Transform to DTO to fix field name mismatch (enrichedData -> data)
+	response := EnrichmentResponse{
+		ID:           enrichment.ID.String(),
+		SubmissionID: enrichment.SubmissionID.String(),
+		Status:       string(enrichment.Status),
+		Progress:     enrichment.Progress,
+		CurrentStep:  enrichment.CurrentStep,
+		Data:         enrichment.EnrichedData, // Maps enrichedData -> data
+		CreatedAt:    enrichment.CreatedAt,
+		UpdatedAt:    enrichment.UpdatedAt,
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"enrichment": enrichment,
+		"enrichment": response,
+	})
+}
+
+// UpdateEnrichment handles PUT /api/v1/admin/enrichment/:id
+// Admin can edit enrichment fields (status remains "finished")
+func (h *Handler) UpdateEnrichment(c *gin.Context) {
+	enrichmentID := c.Param("id")
+
+	// Parse and validate UUID
+	enrichUUID, err := parseUUID(enrichmentID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid ID",
+			Message: "Invalid enrichment ID format",
+		})
+		return
+	}
+
+	// Parse request body (partial update - any fields from EnrichedData)
+	var updateData map[string]interface{}
+	if err := c.ShouldBindJSON(&updateData); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid request",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	// Update enrichment fields via service
+	updatedEnrichment, err := h.enrichmentSvc.UpdateFields(c.Request.Context(), enrichUUID, updateData)
+	if err != nil {
+		h.logger.Error().Err(err).Str("enrichment_id", enrichmentID).Msg("Failed to update enrichment")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Update failed",
+			Message: "Failed to update enrichment fields",
+		})
+		return
+	}
+
+	// Transform to DTO
+	response := EnrichmentResponse{
+		ID:           updatedEnrichment.ID.String(),
+		SubmissionID: updatedEnrichment.SubmissionID.String(),
+		Status:       string(updatedEnrichment.Status),
+		Progress:     updatedEnrichment.Progress,
+		CurrentStep:  updatedEnrichment.CurrentStep,
+		Data:         updatedEnrichment.EnrichedData,
+		CreatedAt:    updatedEnrichment.CreatedAt,
+		UpdatedAt:    updatedEnrichment.UpdatedAt,
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"enrichment": response,
+	})
+}
+
+// ApproveEnrichment handles POST /api/v1/admin/enrichment/:id/approve
+// Changes status from "finished" → "approved" and triggers analysis creation
+func (h *Handler) ApproveEnrichment(c *gin.Context) {
+	enrichmentID := c.Param("id")
+
+	// Parse and validate UUID
+	enrichUUID, err := parseUUID(enrichmentID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid ID",
+			Message: "Invalid enrichment ID format",
+		})
+		return
+	}
+
+	// Approve enrichment (service handles status update AND job enqueueing)
+	err = h.enrichmentSvc.Approve(c.Request.Context(), enrichUUID)
+	if err != nil {
+		h.logger.Error().Err(err).Str("enrichment_id", enrichmentID).Msg("Failed to approve enrichment")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Approval failed",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	// Fetch updated enrichment
+	updatedEnrichment, err := h.enrichmentSvc.GetByID(c.Request.Context(), enrichUUID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Fetch failed",
+			Message: "Approved but failed to fetch updated enrichment",
+		})
+		return
+	}
+
+	// Transform to DTO
+	enrichmentResponse := EnrichmentResponse{
+		ID:           updatedEnrichment.ID.String(),
+		SubmissionID: updatedEnrichment.SubmissionID.String(),
+		Status:       string(updatedEnrichment.Status),
+		Progress:     updatedEnrichment.Progress,
+		CurrentStep:  updatedEnrichment.CurrentStep,
+		Data:         updatedEnrichment.EnrichedData,
+		CreatedAt:    updatedEnrichment.CreatedAt,
+		UpdatedAt:    updatedEnrichment.UpdatedAt,
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"enrichment": enrichmentResponse,
+		"message":    "Enrichment approved, analysis job enqueued",
 	})
 }

@@ -38,13 +38,15 @@ func (r *PostgresRepository) Create(ctx context.Context, analysis *Analysis) err
 			id, submission_id, enrichment_id,
 			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
 			synthesis, status, error_message, processing_time_ms,
-			version, parent_analysis_id,
+			version, parent_analysis_id, is_latest,
+			approved_at, approved_by, sent_at, sent_to, deleted_at,
 			created_at, updated_at, completed_at
 		) VALUES (
 			:id, :submission_id, :enrichment_id,
 			:swot, :pestel, :porter, :okrs, :tam_sam_som, :benchmarking, :blue_ocean, :growth_hacking, :scenarios, :bsc, :decision_matrix,
 			:synthesis, :status, :error_message, :processing_time_ms,
-			:version, :parent_analysis_id,
+			:version, :parent_analysis_id, :is_latest,
+			:approved_at, :approved_by, :sent_at, :sent_to, :deleted_at,
 			:created_at, :updated_at, :completed_at
 		)
 	`
@@ -78,6 +80,12 @@ func (r *PostgresRepository) Update(ctx context.Context, analysis *Analysis) err
 			processing_time_ms = :processing_time_ms,
 			version = :version,
 			parent_analysis_id = :parent_analysis_id,
+			is_latest = :is_latest,
+			approved_at = :approved_at,
+			approved_by = :approved_by,
+			sent_at = :sent_at,
+			sent_to = :sent_to,
+			deleted_at = :deleted_at,
 			updated_at = :updated_at,
 			completed_at = :completed_at
 		WHERE id = :id
@@ -107,10 +115,11 @@ func (r *PostgresRepository) GetByID(ctx context.Context, id string) (*Analysis,
 			id, submission_id, enrichment_id,
 			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
 			synthesis, status, error_message, processing_time_ms,
-			version, parent_analysis_id,
+			version, parent_analysis_id, is_latest,
+			approved_at, approved_by, sent_at, sent_to, deleted_at,
 			created_at, updated_at, completed_at
 		FROM analyses
-		WHERE id = $1
+		WHERE id = $1 AND deleted_at IS NULL
 	`
 
 	var analysis Analysis
@@ -138,10 +147,11 @@ func (r *PostgresRepository) GetLatestVersionBySubmissionID(ctx context.Context,
 			id, submission_id, enrichment_id,
 			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
 			synthesis, status, error_message, processing_time_ms,
-			version, parent_analysis_id,
+			version, parent_analysis_id, is_latest,
+			approved_at, approved_by, sent_at, sent_to, deleted_at,
 			created_at, updated_at, completed_at
 		FROM analyses
-		WHERE submission_id = $1
+		WHERE submission_id = $1 AND deleted_at IS NULL
 		ORDER BY version DESC, created_at DESC
 		LIMIT 1
 	`
@@ -165,10 +175,11 @@ func (r *PostgresRepository) GetAllVersionsBySubmissionID(ctx context.Context, s
 			id, submission_id, enrichment_id,
 			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
 			synthesis, status, error_message, processing_time_ms,
-			version, parent_analysis_id,
+			version, parent_analysis_id, is_latest,
+			approved_at, approved_by, sent_at, sent_to, deleted_at,
 			created_at, updated_at, completed_at
 		FROM analyses
-		WHERE submission_id = $1
+		WHERE submission_id = $1 AND deleted_at IS NULL
 		ORDER BY version DESC, created_at DESC
 	`
 
@@ -189,9 +200,11 @@ func (r *PostgresRepository) List(ctx context.Context, limit, offset int) ([]*An
 			id, submission_id, enrichment_id,
 			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
 			synthesis, status, error_message, processing_time_ms,
-			version, parent_analysis_id,
+			version, parent_analysis_id, is_latest,
+			approved_at, approved_by, sent_at, sent_to, deleted_at,
 			created_at, updated_at, completed_at
 		FROM analyses
+		WHERE deleted_at IS NULL
 		ORDER BY version DESC, created_at DESC
 		LIMIT $1 OFFSET $2
 	`
@@ -205,9 +218,9 @@ func (r *PostgresRepository) List(ctx context.Context, limit, offset int) ([]*An
 	return analyses, nil
 }
 
-// Delete removes an analysis record
+// Delete soft-deletes an analysis record by setting deleted_at timestamp
 func (r *PostgresRepository) Delete(ctx context.Context, id string) error {
-	query := `DELETE FROM analyses WHERE id = $1`
+	query := `UPDATE analyses SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL`
 
 	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
@@ -220,7 +233,7 @@ func (r *PostgresRepository) Delete(ctx context.Context, id string) error {
 	}
 
 	if rowsAffected == 0 {
-		return fmt.Errorf("analysis not found: %s", id)
+		return fmt.Errorf("analysis not found or already deleted: %s", id)
 	}
 
 	return nil

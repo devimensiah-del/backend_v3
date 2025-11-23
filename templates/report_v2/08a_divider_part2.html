@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Parte II - Onde Queremos Ir?</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        @page { size: A4 landscape; margin: 0; }
+
+        html, body {
+            width: 842px;
+            height: 595px;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+            color: #0A101D;
+            background: linear-gradient(135deg, #F8F7F4 0%, #FFFFFF 100%);
+        }
+
+        .page {
+            width: 842px;
+            height: 595px;
+            max-width: 842px;
+            max-height: 595px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .accent-decoration {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 300px;
+            height: 300px;
+            background: linear-gradient(225deg, rgba(184, 158, 104, 0.08) 0%, transparent 100%);
+            border-radius: 0 0 0 100%;
+        }
+
+        .icon-container {
+            width: 120px;
+            height: 120px;
+            margin-bottom: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            z-index: 1;
+        }
+
+        .icon-bg {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #B89E68 0%, #A18852 100%);
+            border-radius: 50%;
+            opacity: 0.1;
+        }
+
+        .icon {
+            width: 60px;
+            height: 60px;
+            stroke: #B89E68;
+            stroke-width: 2;
+            fill: none;
+            position: relative;
+            z-index: 2;
+        }
+
+        .part-label {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.25em;
+            color: #B89E68;
+            margin-bottom: 20px;
+        }
+
+        .part-title {
+            font-size: 48px;
+            font-weight: 300;
+            letter-spacing: -0.02em;
+            color: #0A101D;
+            margin-bottom: 24px;
+            text-align: center;
+        }
+
+        .part-subtitle {
+            font-size: 14px;
+            font-weight: 400;
+            color: #52525B;
+            text-align: center;
+            max-width: 600px;
+            line-height: 1.6;
+        }
+
+        .frameworks-list {
+            margin-top: 30px;
+            font-size: 11px;
+            font-weight: 500;
+            color: #71717A;
+            text-align: center;
+            letter-spacing: 0.05em;
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <div class="accent-decoration"></div>
+
+        <div class="icon-container">
+            <div class="icon-bg"></div>
+            <svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <!-- Target/Goal icon -->
+                <circle cx="12" cy="12" r="10"/>
+                <circle cx="12" cy="12" r="6"/>
+                <circle cx="12" cy="12" r="2"/>
+            </svg>
+        </div>
+
+        <div class="part-label">Parte II</div>
+        <h1 class="part-title">Onde Queremos Ir?</h1>
+        <p class="part-subtitle">Estratégia de Posicionamento</p>
+
+        <div class="frameworks-list">
+            Oceano Azul • TAM/SAM/SOM
+        </div>
+    </div>
+</body>
+</html>

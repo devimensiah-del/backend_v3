@@ -37,7 +37,7 @@ func (s *Service) Create(ctx context.Context, sub *Submission) (*Submission, err
 		sub.UpdatedAt = time.Now()
 	}
 	if sub.Status == "" {
-		sub.Status = StatusPending
+		sub.Status = StatusReceived // Submission status always "received"
 	}
 
 	// Validate
@@ -82,23 +82,6 @@ func (s *Service) GetByEmail(ctx context.Context, email string) ([]*Submission, 
 // ListAll gives the admin a list of everything, with pages and filters
 func (s *Service) ListAll(ctx context.Context, opts *ListOptions) ([]*Submission, int, error) {
 	return s.repo.List(ctx, opts)
-}
-
-// UpdateStatus changes the label on the file (e.g., "Pending" -> "Enriched")
-func (s *Service) UpdateStatus(ctx context.Context, id uuid.UUID, status Status) error {
-	submission, err := s.repo.GetByID(ctx, id)
-	if err != nil {
-		return err
-	}
-
-	submission.SetStatus(status)
-
-	if err := s.repo.Update(ctx, submission); err != nil {
-		return err
-	}
-
-	log.Info().Str("id", id.String()).Str("status", string(status)).Msg("status updated")
-	return nil
 }
 
 // Delete moves a submission to the trash can (soft delete)

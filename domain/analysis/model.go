@@ -8,12 +8,12 @@ import (
 type Status string
 
 const (
-	StatusPending    Status = "pending"
-	StatusProcessing Status = "processing"
-	StatusCompleted  Status = "completed"
-	StatusFailed     Status = "failed"
-	StatusApproved   Status = "approved"
-	StatusSent       Status = "sent"
+	StatusPending   Status = "pending"   // Initial state, waiting for worker
+	StatusCompleted Status = "completed" // Worker finished (version 1)
+	StatusApproved  Status = "approved"  // Admin approved, PDF generated
+	StatusSent      Status = "sent"      // Made available to user
+	// Note: Removed StatusProcessing and StatusFailed
+	// Failures keep status as "pending" with error_message populated
 )
 
 type Analysis struct {
@@ -21,6 +21,7 @@ type Analysis struct {
 	SubmissionID     string     `db:"submission_id" json:"submission_id"`
 	EnrichmentID     string     `db:"enrichment_id" json:"enrichment_id"`
 	Status           string     `db:"status" json:"status"`
+	ErrorMessage     *string    `db:"error_message" json:"error_message,omitempty"` // Error details if analysis failed
 	ProcessingTimeMs int64      `db:"processing_time_ms" json:"processing_time_ms"`
 	CreatedAt        time.Time  `db:"created_at" json:"created_at"`
 	UpdatedAt        time.Time  `db:"updated_at" json:"updated_at"`
@@ -29,6 +30,16 @@ type Analysis struct {
 	// Versioning fields
 	Version          int     `db:"version" json:"version"`
 	ParentAnalysisID *string `db:"parent_analysis_id" json:"parent_analysis_id,omitempty"`
+	IsLatest         bool    `db:"is_latest" json:"is_latest"`
+
+	// Approval and Send tracking
+	ApprovedAt *time.Time `db:"approved_at" json:"approved_at,omitempty"`
+	ApprovedBy *string    `db:"approved_by" json:"approved_by,omitempty"` // UUID of user who approved
+	SentAt     *time.Time `db:"sent_at" json:"sent_at,omitempty"`
+	SentTo     *string    `db:"sent_to" json:"sent_to,omitempty"` // Email address report was sent to
+
+	// Soft delete support
+	DeletedAt *time.Time `db:"deleted_at" json:"deleted_at,omitempty"`
 
 	// The 11 Frameworks (JSONB in Postgres)
 	PESTEL         PESTELAnalysis            `db:"pestel" json:"pestel"`
@@ -60,21 +71,46 @@ type PESTELAnalysis struct {
 }
 
 type PorterAnalysis struct {
+	// Traditional 5 Forces
 	CompetitiveRivalry    string `json:"competitive_rivalry"`
 	SupplierPower         string `json:"supplier_power"`
 	BuyerPower            string `json:"buyer_power"`
 	ThreatNewEntrants     string `json:"threat_new_entrants"`
 	ThreatSubstitutes     string `json:"threat_substitutes"`
+
+	// +2 Modern Forces (2025+)
+	PowerPartnershipsEcosystems string `json:"power_partnerships_ecosystems"` // Collaborative networks & platform effects
+	DisruptionAIData            string `json:"disruption_ai_data"`            // AI/Data-driven disruption potential
+
+	// Intensity Ratings (Alta/Média/Baixa) for each force
+	CompetitiveRivalryIntensity         string `json:"competitive_rivalry_intensity"`
+	SupplierPowerIntensity              string `json:"supplier_power_intensity"`
+	BuyerPowerIntensity                 string `json:"buyer_power_intensity"`
+	ThreatNewEntrantsIntensity          string `json:"threat_new_entrants_intensity"`
+	ThreatSubstitutesIntensity          string `json:"threat_substitutes_intensity"`
+	PowerPartnershipsEcosystemsIntensity string `json:"power_partnerships_ecosystems_intensity"`
+	DisruptionAIDataIntensity           string `json:"disruption_ai_data_intensity"`
+
+	// Strategic Implications (4 key actionable points)
+	StrategicImplications []string `json:"strategic_implications"`
+
 	OverallAttractiveness string `json:"overall_attractiveness"`
 	Summary               string `json:"summary"`
 }
 
+// SWOTItem represents a single SWOT item with confidence level and source attribution
+type SWOTItem struct {
+	Content    string `json:"content"`
+	Confidence string `json:"confidence"` // "Alta" | "Média" | "Baixa"
+	Source     string `json:"source"`     // "fato" | "análise de mercado" | "estimativa" | "feedback de clientes"
+}
+
 type SWOTAnalysis struct {
-	Strengths     []string `json:"strengths"`
-	Weaknesses    []string `json:"weaknesses"`
-	Opportunities []string `json:"opportunities"`
-	Threats       []string `json:"threats"`
-	Summary       string   `json:"summary"`
+	Strengths     []SWOTItem `json:"strengths"`     // Enhanced with confidence & source
+	Weaknesses    []SWOTItem `json:"weaknesses"`    // Enhanced with confidence & source
+	Opportunities []SWOTItem `json:"opportunities"` // Enhanced with confidence & source
+	Threats       []SWOTItem `json:"threats"`       // Enhanced with confidence & source
+	Summary       string     `json:"summary"`
 }
 
 type BlueOceanAnalysis struct {
@@ -94,11 +130,22 @@ type BalancedScorecardAnalysis struct {
 	Summary        string   `json:"summary"`
 }
 
-type OKRAnalysis struct {
-	Objectives []OKRObjective `json:"objectives"`
-	Summary    string         `json:"summary"`
+// QuarterlyOKR represents OKRs for a specific quarter with investment estimates
+type QuarterlyOKR struct {
+	Quarter    string   `json:"quarter"`     // "Q1 2025", "Q2 2025", "Q3 2025"
+	Objective  string   `json:"objective"`   // Main objective description
+	KeyResults []string `json:"key_results"` // KR1, KR2, KR3 (exactly 3)
+	Investment string   `json:"investment"`  // Investment estimate (e.g., "R$ 25 mil" or range "R$ 20-30k")
+	Timeline   string   `json:"timeline"`    // Duration (e.g., "3-4 meses")
 }
 
+type OKRAnalysis struct {
+	Quarters []QuarterlyOKR `json:"quarters"` // Quarterly OKR structure (Q1, Q2, Q3)
+	Summary  string         `json:"summary"`
+}
+
+// DEPRECATED: Legacy OKRObjective kept for backward compatibility
+// Use QuarterlyOKR instead for new implementations
 type OKRObjective struct {
 	Title      string   `json:"title"`
 	KeyResults []string `json:"key_results"`
@@ -111,19 +158,47 @@ type BenchmarkingAnalysis struct {
 	Summary         string   `json:"summary"`
 }
 
+// GrowthLoop represents a structured growth loop (LEAP or SCALE)
+type GrowthLoop struct {
+	Name       string   `json:"name"`       // "LEAP Loop" or "SCALE Loop"
+	Type       string   `json:"type"`       // "acquisition" or "monetization"
+	Steps      []string `json:"steps"`      // 4 steps (e.g., ["Land", "Engage", "Activate", "Propagate"])
+	Metrics    []string `json:"metrics"`    // Key metrics to track (e.g., ["CAC", "Taxa de Conversão"])
+	Bottleneck string   `json:"bottleneck"` // Identified bottleneck in the loop
+}
+
 type GrowthHackingAnalysis struct {
-	Hypotheses  []string `json:"hypotheses"`  // Fixes validator error
-	Experiments []string `json:"experiments"` // Fixes validator error
-	KeyMetrics  []string `json:"key_metrics"` // Fixes validator error
-	Summary     string   `json:"summary"`
+	LeapLoop  GrowthLoop `json:"leap_loop"`  // LEAP Loop (Acquisition): Land, Engage, Activate, Propagate
+	ScaleLoop GrowthLoop `json:"scale_loop"` // SCALE Loop (Monetization): Satisfy, Convert, Loop Back, Expand
+	Summary   string     `json:"summary"`
+
+	// DEPRECATED: Legacy fields kept for backward compatibility
+	Hypotheses  []string `json:"hypotheses,omitempty"`
+	Experiments []string `json:"experiments,omitempty"`
+	KeyMetrics  []string `json:"key_metrics,omitempty"`
+}
+
+// Scenario represents a future scenario with probability and required actions
+type Scenario struct {
+	Name            string   `json:"name"`             // "Cenário Otimista", "Cenário Realista", "Cenário Pessimista"
+	Probability     int      `json:"probability"`      // Probability percentage (e.g., 20, 60, 20)
+	Description     string   `json:"description"`      // Scenario description (max 450 chars)
+	RequiredActions []string `json:"required_actions"` // Actions to take if this scenario materializes
 }
 
 type ScenarioAnalysis struct {
-	ScenarioOptimistic  string   `json:"scenario_optimistic"`
-	ScenarioRealist     string   `json:"scenario_realist"`
-	ScenarioPessimistic string   `json:"scenario_pessimistic"`
-	EarlyWarningSignals []string `json:"early_warning_signals"` // Fixes validator error
+	Optimistic Scenario `json:"optimistic"` // Optimistic scenario (typically 20%)
+	Realist    Scenario `json:"realist"`    // Realistic scenario (typically 60%)
+	Pessimistic Scenario `json:"pessimistic"` // Pessimistic scenario (typically 20%)
+
+	MitigationTactics   []string `json:"mitigation_tactics"`    // Risk mitigation strategies
+	EarlyWarningSignals []string `json:"early_warning_signals"` // Indicators that signal scenario shifts
 	Summary             string   `json:"summary"`
+
+	// DEPRECATED: Legacy fields kept for backward compatibility
+	ScenarioOptimistic  string `json:"scenario_optimistic,omitempty"`
+	ScenarioRealist     string `json:"scenario_realist,omitempty"`
+	ScenarioPessimistic string `json:"scenario_pessimistic,omitempty"`
 }
 
 type TamSamSomAnalysis struct {
@@ -132,18 +207,56 @@ type TamSamSomAnalysis struct {
 	SOM         string   `json:"som"`
 	Assumptions []string `json:"assumptions"`
 	CAGR        string   `json:"cagr"`
+
+	// Data Quality & Partial Data Support (for "Data Insufficient" scenarios)
+	DataQuality        string   `json:"data_quality"`         // "complete" | "partial" | "insufficient"
+	NextSteps          []string `json:"next_steps"`           // Steps to gather missing data
+	ProxyIndicators    []string `json:"proxy_indicators"`     // Alternative metrics when data is insufficient
+	ExpectedOutputs    []string `json:"expected_outputs"`     // What complete analysis should include
+	MethodologicalNote string   `json:"methodological_note"`  // Explanation of methodology or data limitations
+
 	Summary     string   `json:"summary"`
+}
+
+// PriorityRecommendation represents a prioritized strategic recommendation
+type PriorityRecommendation struct {
+	Priority    int    `json:"priority"`    // 1, 2, 3 (ordered by priority)
+	Title       string `json:"title"`       // Recommendation title
+	Description string `json:"description"` // Detailed description
+	Timeline    string `json:"timeline"`    // Expected duration (e.g., "9-12 meses")
+	Budget      string `json:"budget"`      // Budget estimate (e.g., "R$150-250k")
+}
+
+// ReviewCycle defines the review and monitoring cadence
+type ReviewCycle struct {
+	Frequency             string   `json:"frequency"`               // "Trimestral", "Mensal", etc.
+	ExtraordinaryTriggers []string `json:"extraordinary_triggers"`  // Events that trigger extraordinary review
 }
 
 type DecisionMatrixAnalysis struct {
 	Alternatives        []string `json:"alternatives"`
 	Criteria            []string `json:"criteria"`
 	FinalRecommendation string   `json:"final_recommendation"`
+
+	// Enhanced Decision Support (TUC Glasses alignment)
+	RecommendedOption       string                    `json:"recommended_option"`        // Best option name
+	Score                   string                    `json:"score"`                     // Score (e.g., "7.3/10")
+	ScoreComparison         string                    `json:"score_comparison"`          // Comparison to alternatives (e.g., "+23% above second")
+	PriorityRecommendations []PriorityRecommendation  `json:"priority_recommendations"`  // Top 3 recommendations with budgets & timelines
+	ReviewCycle             ReviewCycle               `json:"review_cycle"`              // Review frequency and triggers
+	MonitoringMetrics       []string                  `json:"monitoring_metrics"`        // Metrics to track execution
+
 	Summary             string   `json:"summary"`
 }
 
 type AnalysisSynthesis struct {
 	ExecutiveSummary      string   `json:"executive_summary"`
+
+	// Enhanced Executive Summary Components (TUC Glasses alignment)
+	CentralChallenge string   `json:"central_challenge"`  // Primary strategic challenge facing the company
+	MainFindings     []string `json:"main_findings"`      // 4-point SWOT summary from executive summary
+	ImportantNotes   []string `json:"important_notes"`    // Critical observations and warnings
+
 	KeyFindings           []string `json:"key_findings"`
 	StrategicPriorities   []string `json:"strategic_priorities"`
 	Roadmap               []string `json:"roadmap"`
@@ -153,7 +266,8 @@ type AnalysisSynthesis struct {
 // ContextContainer used during processing
 type ContextContainer struct {
 	SubmissionID   string
-	EnrichmentData map[string]interface{}
+	SubmissionData map[string]interface{} // User's company data from submission
+	EnrichmentData map[string]interface{} // External intelligence data
 	// Pointers to hold interim results
 	PESTEL         *PESTELAnalysis
 	Porter         *PorterAnalysis
@@ -171,7 +285,7 @@ type ContextContainer struct {
 // Status management methods for Analysis
 
 func (a *Analysis) Start() {
-	a.Status = string(StatusProcessing)
+	// Keep status as pending, just update timestamp
 	a.UpdatedAt = time.Now()
 }
 
@@ -182,18 +296,25 @@ func (a *Analysis) Complete() {
 	a.UpdatedAt = n
 }
 
-func (a *Analysis) Approve() {
+func (a *Analysis) Approve(approvedBy *string) {
 	a.Status = string(StatusApproved)
-	a.UpdatedAt = time.Now()
+	now := time.Now()
+	a.ApprovedAt = &now
+	a.ApprovedBy = approvedBy
+	a.UpdatedAt = now
 }
 
-func (a *Analysis) Send() {
+func (a *Analysis) Send(sentTo *string) {
 	a.Status = string(StatusSent)
-	a.UpdatedAt = time.Now()
+	now := time.Now()
+	a.SentAt = &now
+	a.SentTo = sentTo
+	a.UpdatedAt = now
 }
 
-func (a *Analysis) Fail() {
-	a.Status = string(StatusFailed)
+func (a *Analysis) Fail(errorMsg string) {
+	// Keep status as pending, set error_message
+	a.ErrorMessage = &errorMsg
 	a.UpdatedAt = time.Now()
 }
 

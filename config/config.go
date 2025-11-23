@@ -43,9 +43,16 @@ type Config struct {
 	RedisPassword string
 
 	// Worker configuration
-	WorkerEnabled     bool
-	WorkerConcurrency int
-	WorkerQueues      string
+	WorkerEnabled           bool
+	WorkerConcurrency       int
+	WorkerQueues            string
+	EnrichmentTimeout       int // seconds
+	AnalysisTimeout         int // seconds
+	EnrichmentMaxRetries    int
+	AnalysisMaxRetries      int
+	JobRetryInitialDelay    int // seconds
+	JobRetryMaxDelay        int // seconds
+	DeadLetterQueueTTL      int // hours
 
 	// External Services
 	GotenbergURL      string
@@ -64,8 +71,11 @@ func Load() (*Config, error) {
 	_ = godotenv.Load() // Load .env if present
 
 	cfg := &Config{
-		Port:           getEnv("SERVER_PORT", "8080"),
-		Environment:    getEnv("ENV", "development"),
+		Port:        getEnv("SERVER_PORT", "8080"),
+		Environment: getEnv("ENV", "development"),
+		// CRITICAL for Production: Update ALLOWED_ORIGINS env var to include your production frontend
+		// Example: ALLOWED_ORIGINS="http://localhost:3000,https://yourdomain.vercel.app,https://yourdomain.com"
+		// Multiple origins separated by commas. Default only allows localhost.
 		AllowedOrigins: getEnv("ALLOWED_ORIGINS", "http://localhost:3000"),
 		DatabaseURL:    getEnv("DATABASE_URL", ""),
 
@@ -77,14 +87,23 @@ func Load() (*Config, error) {
 
 		// Redis & Worker
 		// Parse Redis connection from REDIS_URL (Railway) or fall back to REDIS_ADDR (local)
-		RedisURL:          "",
-		RedisPassword:     "",
-		WorkerEnabled:     getEnvBool("WORKER_ENABLED", true),
-		WorkerConcurrency: getEnvInt("ASYNQ_CONCURRENCY", 10),
-		WorkerQueues:      "critical:6,default:3,low:1",
+		RedisURL:             "",
+		RedisPassword:        "",
+		WorkerEnabled:        getEnvBool("WORKER_ENABLED", true),
+		WorkerConcurrency:    getEnvInt("ASYNQ_CONCURRENCY", 10),
+		WorkerQueues:         "critical:6,default:3,low:1",
+		EnrichmentTimeout:    getEnvInt("ENRICHMENT_TIMEOUT", 300),      // 5 minutes
+		AnalysisTimeout:      getEnvInt("ANALYSIS_TIMEOUT", 900),        // 15 minutes
+		EnrichmentMaxRetries: getEnvInt("ENRICHMENT_MAX_RETRIES", 3),    // 3 retries
+		AnalysisMaxRetries:   getEnvInt("ANALYSIS_MAX_RETRIES", 2),      // 2 retries
+		JobRetryInitialDelay: getEnvInt("JOB_RETRY_INITIAL_DELAY", 60),  // 1 minute
+		JobRetryMaxDelay:     getEnvInt("JOB_RETRY_MAX_DELAY", 3600),    // 1 hour
+		DeadLetterQueueTTL:   getEnvInt("DLQ_TTL_HOURS", 168),           // 7 days
 
 		// External Services
-		GotenbergURL:      getEnv("GOTENBERG_URL", "http://localhost:3000"),
+		// Note: Default Gotenberg URL assumes docker-compose service name "gotenberg"
+		// For local dev without docker: use "http://localhost:3001" (avoid port 3000 conflict with frontend)
+		GotenbergURL:      getEnv("GOTENBERG_URL", "http://gotenberg:3000"),
 		SupabaseURL:       getEnv("SUPABASE_URL", ""),
 		SupabaseAnonKey:   getEnv("SUPABASE_ANON_KEY", ""),
 		SupabaseJWTSecret: getEnv("SUPABASE_JWT_SECRET", ""),

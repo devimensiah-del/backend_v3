@@ -8,7 +8,6 @@ import (
 	"backend_v3/domain/submission"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 )
 
@@ -107,73 +106,12 @@ func (h *Handler) GetSubmissionAdmin(c *gin.Context) {
 }
 
 // UpdateSubmissionStatus handles PUT /api/v1/admin/submissions/:id/status
+// DEPRECATED: Submission status is always "received" and never changes
+// Workflow state is tracked in Enrichment and Analysis entities
 func (h *Handler) UpdateSubmissionStatus(c *gin.Context) {
-	submissionID := c.Param("id")
-
-	var req UpdateSubmissionStatusRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request", Message: err.Error()})
-		return
-	}
-
-	// Parse UUID
-	id, err := uuid.Parse(submissionID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid submission ID format"})
-		return
-	}
-
-	// Validate status (matches frontend SubmissionStatus)
-	validStatuses := map[submission.Status]bool{
-		submission.StatusPending:          true,
-		submission.StatusProcessing:       true,
-		submission.StatusEnriching:        true,
-		submission.StatusEnriched:         true,
-		submission.StatusAnalyzing:        true,
-		submission.StatusAnalyzed:         true,
-		submission.StatusReadyForReview:   true,
-		submission.StatusGeneratingReport: true,
-		submission.StatusCompleted:        true,
-		submission.StatusEnrichmentFailed: true,
-		submission.StatusAnalysisFailed:   true,
-		submission.StatusReportFailed:     true,
-		submission.StatusFailed:           true,
-	}
-
-	newStatus := submission.Status(req.Status)
-	if !validStatuses[newStatus] {
-		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Error:   "Invalid status",
-			Message: fmt.Sprintf("Status '%s' is not valid", req.Status),
-		})
-		return
-	}
-
-	// Update status
-	if err := h.submissionSvc.UpdateStatus(c.Request.Context(), id, newStatus); err != nil {
-		h.logger.Error().Err(err).Str("submission_id", submissionID).Msg("Failed to update submission status")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:   "Update failed",
-			Message: "Failed to update submission status",
-		})
-		return
-	}
-
-	// Fetch updated submission
-	updatedSub, err := h.submissionSvc.GetByID(c.Request.Context(), id)
-	if err != nil {
-		h.logger.Error().Err(err).Str("submission_id", submissionID).Msg("Failed to fetch updated submission")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:   "Update succeeded but fetch failed",
-			Message: "Status was updated but could not retrieve updated submission",
-		})
-		return
-	}
-
-	// Frontend expects wrapped response: { submission: {...} }
-	resp := buildSubmissionDetailResponse(updatedSub, h, c.Request.Context(), id, submissionID)
-	c.JSON(http.StatusOK, gin.H{
-		"submission": resp,
+	c.JSON(http.StatusBadRequest, ErrorResponse{
+		Error:   "Operation not allowed",
+		Message: "Submission status is always 'received' and cannot be changed. Workflow state is tracked in enrichment and analysis entities.",
 	})
 }
 
@@ -234,7 +172,7 @@ func (h *Handler) RetryAnalysis(c *gin.Context) {
 	}
 
 	// Validate submission exists
-	sub, err := h.submissionSvc.GetByID(c.Request.Context(), subUUID)
+	_, err = h.submissionSvc.GetByID(c.Request.Context(), subUUID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Submission not found"})
 		return
@@ -250,15 +188,7 @@ func (h *Handler) RetryAnalysis(c *gin.Context) {
 		return
 	}
 
-	// Update status to analyzing with error checking
-	if err := h.submissionSvc.UpdateStatus(c.Request.Context(), sub.ID, submission.StatusAnalyzing); err != nil {
-		h.logger.Error().Err(err).Str("submission_id", submissionID).Msg("Failed to update status before analysis retry")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:   "Status update failed",
-			Message: "Could not update submission status",
-		})
-		return
-	}
+	// NOTE: Removed submission status update - submission status always "received"
 
 	// Create analysis job payload
 	payload := map[string]string{

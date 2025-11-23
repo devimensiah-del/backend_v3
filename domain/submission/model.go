@@ -50,25 +50,12 @@ type Submission struct {
 }
 
 // Status represents the submission workflow status
+// Submission status NEVER changes after creation - always "received"
+// All workflow state is tracked in Enrichment and Analysis entities
 type Status string
 
 const (
-	// Workflow States (matches frontend SubmissionStatus)
-	StatusPending          Status = "pending"
-	StatusProcessing       Status = "processing"        // Generic processing state
-	StatusEnriching        Status = "enriching"         // Worker 1 Active
-	StatusEnriched         Status = "enriched"          // Worker 1 Done
-	StatusAnalyzing        Status = "analyzing"         // Worker 2 Active
-	StatusAnalyzed         Status = "analyzed"          // Worker 2 Done (Internal)
-	StatusReadyForReview   Status = "ready_for_review"  // Waiting for Admin Publish
-	StatusGeneratingReport Status = "generating_report" // PDF generation in progress
-	StatusCompleted        Status = "completed"         // PDF Generated & Email Sent
-
-	// Failure States (Must match DB constraints)
-	StatusEnrichmentFailed Status = "enrichment_failed"
-	StatusAnalysisFailed   Status = "analysis_failed"
-	StatusReportFailed     Status = "report_failed"
-	StatusFailed           Status = "failed" // Generic Failure
+	StatusReceived Status = "received" // Only status - set on creation, never changes
 )
 
 // NewSubmission creates a new submission with default values
@@ -87,7 +74,7 @@ func NewSubmission(
 		ContactEmail:      contactEmail,
 		BusinessChallenge: businessChallenge,
 		UserID:            userID,
-		Status:            StatusPending,
+		Status:            StatusReceived,
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
@@ -113,20 +100,4 @@ func (s *Submission) Validate() error {
 // IsDeleted returns true if the submission has been soft deleted
 func (s *Submission) IsDeleted() bool {
 	return s.DeletedAt != nil
-}
-
-// CanEnrich returns true if the submission can be enriched
-func (s *Submission) CanEnrich() bool {
-	return s.Status == StatusPending || s.Status == StatusFailed
-}
-
-// CanAnalyze returns true if the submission can be analyzed
-func (s *Submission) CanAnalyze() bool {
-	return s.Status == StatusEnriched
-}
-
-// SetStatus updates the status and updated_at timestamp
-func (s *Submission) SetStatus(status Status) {
-	s.Status = status
-	s.UpdatedAt = time.Now()
 }

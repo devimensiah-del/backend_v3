@@ -140,20 +140,24 @@ func main() {
 		enrichRepo,
 		subRepo,
 		llmClient,
-		cfg.EnrichmentModel,
+		asynqClient,
+		cfg.Frameworks["enrichment"],
 	)
-	// Inject framework-specific enrichment config
-	enrichSvc.SetEnrichmentConfig(cfg.Frameworks["enrichment"])
 	log.Info().
 		Str("model", cfg.Frameworks["enrichment"].Model).
 		Float64("temperature", cfg.Frameworks["enrichment"].Temperature).
 		Msg("Enrichment service initialized")
 
 	// Analysis (The Strategy Team)
+	// Create submission repository adapter for analysis service
+	submissionRepoAdapter := analysis.NewSubmissionRepositoryAdapter(subRepo)
+
 	analysisSvc := analysis.NewService(
 		analysisRepo,
+		submissionRepoAdapter,
 		llmClient,
 		log.Logger,
+		asynqClient,
 		cfg.AnalysisModel,
 		cfg.SynthesisModel,
 	)
@@ -177,8 +181,7 @@ func main() {
 	// 7. BACKGROUND WORKER
 	log.Info().Msg("Initializing background job worker...")
 	worker := jobs.NewWorker(
-		cfg.RedisURL,
-		cfg.RedisPassword,
+		cfg,
 		subSvc,
 		enrichSvc,
 		analysisSvc,

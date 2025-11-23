@@ -2,11 +2,14 @@ package analysis
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 
 	"backend_v3/config"
 	"backend_v3/llm"
 
 	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
 	"github.com/rs/zerolog"
 )
 
@@ -16,11 +19,33 @@ type LLMClient interface {
 	GenerateStructuredWithOptions(ctx context.Context, opts llm.GenerationOptions, prompt string, data interface{}, targetSchema interface{}) error
 }
 
+// SubmissionRepository defines the interface for accessing submission data
+// We only need GetByID for fetching submission context
+type SubmissionRepository interface {
+	GetByID(ctx context.Context, id uuid.UUID) (*SubmissionData, error)
+}
+
+// SubmissionData represents the essential submission fields needed for analysis
+type SubmissionData struct {
+	CompanyName       string
+	CompanyWebsite    *string
+	CompanyIndustry   *string
+	CompanySize       *string
+	CompanyLocation   *string
+	BusinessChallenge string
+	TargetMarket      *string
+	AnnualRevenueMin  *float64
+	AnnualRevenueMax  *float64
+	FundingStage      *string
+}
+
 // Service handles all business analysis operations
 type Service struct {
-	repo   Repository
-	llm    LLMClient
-	logger zerolog.Logger
+	repo          Repository
+	submissionRepo SubmissionRepository
+	llm           LLMClient
+	logger        zerolog.Logger
+	queueClient   *asynq.Client // For job orchestration
 
 	// Deprecated fields (kept for backward compatibility)
 	analystModel   string
@@ -33,15 +58,19 @@ type Service struct {
 // NewService creates a new analysis service instance
 func NewService(
 	repo Repository,
+	submissionRepo SubmissionRepository,
 	llm LLMClient,
 	logger zerolog.Logger,
+	queueClient *asynq.Client,
 	analystModel string, // DEPRECATED: use frameworks map
 	synthesisModel string, // DEPRECATED: use frameworks map
 ) *Service {
 	return &Service{
 		repo:           repo,
+		submissionRepo: submissionRepo,
 		llm:            llm,
 		logger:         logger.With().Str("service", "analysis").Logger(),
+		queueClient:    queueClient,
 		analystModel:   analystModel,
 		synthesisModel: synthesisModel,
 		frameworks:     make(map[string]config.FrameworkConfig), // Will be populated by main.go
@@ -189,16 +218,16 @@ func (s *Service) applyPorterEdits(porter *PorterAnalysis, edits map[string]inte
 
 func (s *Service) applySWOTEdits(swot *SWOTAnalysis, edits map[string]interface{}) {
 	if strengths, ok := edits["strengths"].([]interface{}); ok {
-		swot.Strengths = interfaceSliceToStringSlice(strengths)
+		swot.Strengths = interfaceSliceToSWOTItemSlice(strengths)
 	}
 	if weaknesses, ok := edits["weaknesses"].([]interface{}); ok {
-		swot.Weaknesses = interfaceSliceToStringSlice(weaknesses)
+		swot.Weaknesses = interfaceSliceToSWOTItemSlice(weaknesses)
 	}
 	if opportunities, ok := edits["opportunities"].([]interface{}); ok {
-		swot.Opportunities = interfaceSliceToStringSlice(opportunities)
+		swot.Opportunities = interfaceSliceToSWOTItemSlice(opportunities)
 	}
 	if threats, ok := edits["threats"].([]interface{}); ok {
-		swot.Threats = interfaceSliceToStringSlice(threats)
+		swot.Threats = interfaceSliceToSWOTItemSlice(threats)
 	}
 	if summary, ok := edits["summary"].(string); ok {
 		swot.Summary = summary
@@ -216,7 +245,197 @@ func interfaceSliceToStringSlice(slice []interface{}) []string {
 	return result
 }
 
+// Helper function to convert []interface{} to []SWOTItem
+// Handles both old format ([]string) and new format ([]SWOTItem with confidence/source)
+func interfaceSliceToSWOTItemSlice(slice []interface{}) []SWOTItem {
+	result := make([]SWOTItem, 0, len(slice))
+	for _, v := range slice {
+		// Check if it's the new format (map with content, confidence, source)
+		if itemMap, ok := v.(map[string]interface{}); ok {
+			item := SWOTItem{}
+			if content, ok := itemMap["content"].(string); ok {
+				item.Content = content
+			}
+			if confidence, ok := itemMap["confidence"].(string); ok {
+				item.Confidence = confidence
+			}
+			if source, ok := itemMap["source"].(string); ok {
+				item.Source = source
+			}
+			result = append(result, item)
+		} else if str, ok := v.(string); ok {
+			// Backward compatibility: old format was just strings
+			result = append(result, SWOTItem{
+				Content:    str,
+				Confidence: "Média", // Default confidence for legacy data
+				Source:     "análise de mercado", // Default source
+			})
+		}
+	}
+	return result
+}
+
 // generateAnalysisID generates a new UUID for analysis
 func generateAnalysisID() string {
 	return uuid.New().String()
+}
+
+// UpdateFields updates analysis framework fields (admin edit)
+// Status remains unchanged
+func (s *Service) UpdateFields(ctx context.Context, analysisID string, updateData map[string]interface{}) (*Analysis, error) {
+	// Get current analysis
+	currentAnalysis, err := s.repo.GetByID(ctx, analysisID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Apply edits to analysis
+	s.applyEditsToAnalysis(currentAnalysis, updateData)
+
+	// Update via repository
+	if err := s.repo.Update(ctx, currentAnalysis); err != nil {
+		return nil, err
+	}
+
+	s.logger.Info().
+		Str("analysis_id", analysisID).
+		Msg("Updated analysis fields")
+
+	return currentAnalysis, nil
+}
+
+// Approve changes status from "completed" → "approved" and triggers PDF generation
+func (s *Service) Approve(ctx context.Context, analysisID string) error {
+	// Get analysis
+	analysis, err := s.repo.GetByID(ctx, analysisID)
+	if err != nil {
+		return err
+	}
+
+	// Validate status is "completed"
+	if analysis.Status != string(StatusCompleted) {
+		return fmt.Errorf("analysis must be in 'completed' status to approve, current status: %s", analysis.Status)
+	}
+
+	// Update status to approved
+	analysis.Status = string(StatusApproved)
+
+	// Update via repository
+	if err := s.repo.Update(ctx, analysis); err != nil {
+		return fmt.Errorf("failed to update analysis status: %w", err)
+	}
+
+	s.logger.Info().
+		Str("analysis_id", analysisID).
+		Msg("Analysis approved, triggering PDF generation")
+
+	// Enqueue PDF generation job
+	payload := map[string]string{
+		"submission_id": analysis.SubmissionID,
+		"analysis_id":   analysisID,
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		s.logger.Error().Err(err).Msg("Failed to marshal PDF job payload")
+		return fmt.Errorf("failed to create PDF job: %w", err)
+	}
+
+	task := asynq.NewTask("report", payloadBytes)
+	if _, err := s.queueClient.Enqueue(task); err != nil {
+		s.logger.Error().Err(err).Msg("Failed to enqueue PDF generation job")
+		return fmt.Errorf("failed to enqueue PDF job: %w", err)
+	}
+
+	s.logger.Info().
+		Str("analysis_id", analysisID).
+		Str("submission_id", analysis.SubmissionID).
+		Msg("PDF generation job enqueued successfully")
+
+	return nil
+}
+
+// Send changes status from "approved" → "sent", records notification details, and triggers user notification
+func (s *Service) Send(ctx context.Context, analysisID string, userEmail string) error {
+	// Get analysis
+	analysis, err := s.repo.GetByID(ctx, analysisID)
+	if err != nil {
+		return err
+	}
+
+	// Validate status is "approved"
+	if analysis.Status != string(StatusApproved) {
+		return fmt.Errorf("analysis must be in 'approved' status to send, current status: %s", analysis.Status)
+	}
+
+	// TODO: Validate PDF exists (requires report service integration)
+	// For now, we'll assume PDF generation was successful since status is "approved"
+
+	// Update status to sent
+	analysis.Status = string(StatusSent)
+	sentTo := userEmail
+	analysis.SentTo = &sentTo
+
+	// Update via repository
+	if err := s.repo.Update(ctx, analysis); err != nil {
+		return fmt.Errorf("failed to update analysis status: %w", err)
+	}
+
+	s.logger.Info().
+		Str("analysis_id", analysisID).
+		Str("sent_to", userEmail).
+		Msg("Analysis marked as sent, triggering user notification")
+
+	// Enqueue user notification job
+	notificationPayload := map[string]string{
+		"submission_id": analysis.SubmissionID,
+		"analysis_id":   analysisID,
+		"email":         userEmail,
+		"type":          "analysis_ready",
+	}
+
+	notificationBytes, err := json.Marshal(notificationPayload)
+	if err != nil {
+		s.logger.Error().Err(err).Msg("Failed to marshal notification payload")
+		// Don't fail the whole operation if notification fails - analysis is already marked as sent
+		return nil
+	}
+
+	notificationTask := asynq.NewTask("notification", notificationBytes)
+	if _, err := s.queueClient.Enqueue(notificationTask); err != nil {
+		s.logger.Error().Err(err).Msg("Failed to enqueue notification job")
+		// Don't fail the whole operation - analysis is already marked as sent
+	} else {
+		s.logger.Info().
+			Str("analysis_id", analysisID).
+			Str("email", userEmail).
+			Msg("User notification job enqueued successfully")
+	}
+
+	return nil
+}
+
+// MarkAsFailed updates analysis with error message
+// Called by worker ErrorHandler after Asynq exhausts max retries
+// Status remains "pending" with error_message populated
+func (s *Service) MarkAsFailed(ctx context.Context, submissionID string, errorMsg string) error {
+	analysis, err := s.repo.GetBySubmissionID(ctx, submissionID)
+	if err != nil {
+		return fmt.Errorf("failed to get analysis: %w", err)
+	}
+
+	// Set error message (status stays "pending")
+	analysis.ErrorMessage = &errorMsg
+
+	if err := s.repo.Update(ctx, analysis); err != nil {
+		return fmt.Errorf("failed to update analysis error message: %w", err)
+	}
+
+	s.logger.Error().
+		Str("analysis_id", analysis.ID).
+		Str("submission_id", submissionID).
+		Str("error", errorMsg).
+		Msg("Analysis marked with error message")
+
+	return nil
 }

@@ -69,10 +69,12 @@ type AdditionalInfoData struct {
 
 // ==================== ADMIN REQUEST TYPES ====================
 
-type UpdateSubmissionStatusRequest struct {
-	Status        string `json:"status" binding:"required"`
-	StatusMessage string `json:"statusMessage"`
-}
+// DEPRECATED: Removed per "Single Status Rule" - Submissions always have status "received"
+// Status is derived from Enrichment and Analysis status, not directly updated
+// type UpdateSubmissionStatusRequest struct {
+// 	Status        string `json:"status" binding:"required"`
+// 	StatusMessage string `json:"statusMessage"`
+// }
 
 // ==================== RESPONSE TYPES ====================
 
@@ -215,4 +217,33 @@ type UserProfile struct {
 	IsActive  bool      `json:"isActive" db:"is_active"`
 	CreatedAt time.Time `json:"createdAt" db:"created_at"`
 	UpdatedAt time.Time `json:"updatedAt" db:"updated_at"`
+}
+
+// ==================== ENRICHMENT RESPONSE TYPES ====================
+
+// EnrichmentResponse maps domain Enrichment to frontend-expected structure
+// CRITICAL FIX: Backend domain model uses "enrichedData" but frontend expects "data"
+type EnrichmentResponse struct {
+	ID           string                 `json:"id"`
+	SubmissionID string                 `json:"submissionId"`
+	Status       string                 `json:"status"`
+	Progress     int                    `json:"progress"`
+	CurrentStep  string                 `json:"currentStep"`
+	Data         map[string]interface{} `json:"data"` // Renamed from EnrichedData for frontend compatibility
+	CreatedAt    time.Time              `json:"createdAt"`
+	UpdatedAt    time.Time              `json:"updatedAt"`
+}
+
+// ==================== ANALYSIS RESPONSE TYPES ====================
+
+// AnalysisResponse maps domain Analysis to frontend-expected structure
+type AnalysisResponse struct {
+	ID           string                 `json:"id"`
+	SubmissionID string                 `json:"submissionId"`
+	Status       string                 `json:"status"`
+	Version      int                    `json:"version"`
+	ParentID     *string                `json:"parentId,omitempty"`
+	Analysis     map[string]interface{} `json:"analysis"` // Contains all framework data
+	CreatedAt    time.Time              `json:"createdAt"`
+	UpdatedAt    time.Time              `json:"updatedAt"`
 }

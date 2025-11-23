@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>OKRs Trimestrais 2025</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        @page { size: A4 landscape; margin: 0; }
+
+        html, body {
+            width: 842px;
+            height: 595px;
+            overflow: hidden;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            color: #0A101D;
+            background: #FFFFFF;
+        }
+
+        .page {
+            width: 842px;
+            height: 595px;
+            max-width: 842px;
+            max-height: 595px;
+            overflow: hidden;
+            padding: 32px 40px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 16px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #E5E0D6;
+        }
+
+        .page-number { font-size: 10px; font-weight: 600; color: #B89E68; }
+        .company-name-header { font-size: 10px; color: #71717A; }
+
+        .page-title { font-size: 22px; font-weight: 300; color: #0A101D; margin-bottom: 4px; }
+        .page-subtitle { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.15em; color: #B89E68; margin-bottom: 16px; }
+
+        .quarters-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 14px;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .quarter-card {
+            border: 1px solid #E5E0D6;
+            padding: 14px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .quarter-card.q1 { border-top: 4px solid #3B82F6; }
+        .quarter-card.q2 { border-top: 4px solid #8B5CF6; }
+        .quarter-card.q3 { border-top: 4px solid #EC4899; }
+
+        .quarter-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #E5E0D6;
+        }
+
+        .quarter-badge {
+            font-size: 9px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        .quarter-badge.q1 { color: #3B82F6; }
+        .quarter-badge.q2 { color: #8B5CF6; }
+        .quarter-badge.q3 { color: #EC4899; }
+
+        .timeline {
+            font-size: 7px;
+            color: #71717A;
+            font-weight: 600;
+        }
+
+        .objective-section {
+            margin-bottom: 10px;
+        }
+
+        .objective-label {
+            font-size: 7px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #71717A;
+            margin-bottom: 4px;
+        }
+
+        .objective-text {
+            font-size: 9px;
+            font-weight: 600;
+            line-height: 1.35;
+            color: #0A101D;
+            margin-bottom: 8px;
+        }
+
+        .kr-list {
+            list-style: none;
+            margin-bottom: 10px;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .kr-item {
+            font-size: 8px;
+            line-height: 1.4;
+            color: #374151;
+            margin-bottom: 5px;
+            padding-left: 12px;
+            position: relative;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .kr-item::before {
+            content: 'KR';
+            position: absolute;
+            left: 0;
+            font-size: 6px;
+            font-weight: 700;
+            color: #B89E68;
+        }
+
+        .investment-box {
+            background: #F7F6F4;
+            padding: 8px;
+            border-radius: 4px;
+            margin-top: auto;
+        }
+
+        .investment-label {
+            font-size: 6px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #71717A;
+            margin-bottom: 3px;
+        }
+
+        .investment-value {
+            font-size: 10px;
+            font-weight: 700;
+            color: #B89E68;
+        }
+
+        .footer {
+            display: flex;
+            justify-content: space-between;
+            padding-top: 12px;
+            border-top: 1px solid #E5E0D6;
+            font-size: 8px;
+            color: #71717A;
+            margin-top: 12px;
+        }
+
+        .note {
+            font-size: 7px;
+            color: #71717A;
+            font-style: italic;
+            text-align: center;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <div class="header">
+            <div class="page-number">13</div>
+            <div class="company-name-header">{{ .CompanyName }}</div>
+        </div>
+
+        <h1 class="page-title">OKRs Propostos</h1>
+        <div class="page-subtitle">Objetivos e Resultados-Chave Trimestrais 2025</div>
+
+        <div class="quarters-grid">
+            {{ range .OKRs.Quarters }}
+            <div class="quarter-card {{ .Quarter | lower | replace " " "" | slice 0 2 }}">
+                <div class="quarter-header">
+                    <div class="quarter-badge {{ .Quarter | lower | replace " " "" | slice 0 2 }}">{{ .Quarter }}</div>
+                    <div class="timeline">{{ .Timeline }}</div>
+                </div>
+
+                <div class="objective-section">
+                    <div class="objective-label">Objetivo</div>
+                    <div class="objective-text">{{ .Objective }}</div>
+                </div>
+
+                <ul class="kr-list">
+                    {{ range .KeyResults }}
+                    <li class="kr-item">{{ . }}</li>
+                    {{ end }}
+                </ul>
+
+                <div class="investment-box">
+                    <div class="investment-label">Investimento Estimado</div>
+                    <div class="investment-value">{{ .Investment }}</div>
+                </div>
+            </div>
+            {{ end }}
+        </div>
+
+        <div class="note">
+            * OKRs devem ser revisados e ajustados trimestralmente com base em resultados e mudanças de mercado
+        </div>
+
+        <div class="footer">
+            <div>IMENSIAH — Relatório de Inteligência Estratégica</div>
+            <div>{{ .Date }}</div>
+        </div>
+    </div>
+</body>
+</html>

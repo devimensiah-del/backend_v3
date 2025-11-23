@@ -9,6 +9,15 @@ import (
 	"time"
 )
 
+// SupabaseStorageClient uploads files to Supabase Storage
+//
+// CRITICAL REQUIREMENT: The target bucket MUST be set to "Public" in Supabase Dashboard
+// - Navigate to: Storage > [bucket_name] > Settings > Public bucket = ON
+// - If the bucket is private, the returned public URLs will fail with 403 Forbidden
+//
+// Alternative for Private Buckets:
+// - Use Supabase's createSignedUrl() API to generate time-limited URLs
+// - Requires implementing /storage/v1/object/sign/{bucket}/{path} endpoint
 type SupabaseStorageClient struct {
 	ProjectURL string // https://xyz.supabase.co
 	Bucket     string // "reports"

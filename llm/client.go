@@ -33,6 +33,11 @@ type Client struct {
 
 // NewClient creates a new LLM client
 func NewClient(apiKey string) *Client {
+	return NewClientWithBaseURL(apiKey, "https://openrouter.ai/api/v1")
+}
+
+// NewClientWithBaseURL creates a new LLM client with a custom base URL (useful for testing)
+func NewClientWithBaseURL(apiKey, baseURL string) *Client {
 	cbSettings := gobreaker.Settings{
 		Name:        "llm-client",
 		MaxRequests: 2,
@@ -45,7 +50,7 @@ func NewClient(apiKey string) *Client {
 
 	return &Client{
 		apiKey:  apiKey,
-		baseURL: "https://openrouter.ai/api/v1",
+		baseURL: baseURL,
 		httpClient: &http.Client{
 			Timeout: 120 * time.Second,
 		},

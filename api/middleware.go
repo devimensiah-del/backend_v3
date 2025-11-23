@@ -21,14 +21,25 @@ func CORSMiddleware(allowedOrigins string, logger zerolog.Logger) gin.HandlerFun
 		requestOrigin := c.Request.Header.Get("Origin")
 		path := c.Request.URL.Path
 
-		// CRITICAL FIX: Allow health checks and monitoring endpoints to bypass CORS
+		// CRITICAL FIX: Allow health checks and monitoring endpoints with permissive CORS
 		// Railway, Docker, Kubernetes health checkers don't send Origin headers
+		// BUT browser-based monitoring dashboards DO send Origin, so we must set headers
 		if path == "/health" || path == "/metrics" || path == "/ready" || path == "/live" {
 			logger.Debug().
 				Str("path", path).
 				Str("method", c.Request.Method).
 				Str("user_agent", c.Request.UserAgent()).
-				Msg("Health/monitoring endpoint - skipping CORS")
+				Msg("Health/monitoring endpoint - allowing all origins")
+
+			// Set permissive CORS headers for public monitoring endpoints
+			c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+			c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+			if c.Request.Method == "OPTIONS" {
+				c.AbortWithStatus(http.StatusNoContent)
+				return
+			}
 			c.Next()
 			return
 		}

@@ -67,6 +67,7 @@ func SetupRouter(handler *Handler, logger zerolog.Logger, jwtSecret string, allo
 		protectedAPI.GET("/submissions", handler.ListUserSubmissions)
 		protectedAPI.GET("/submissions/:id", handler.GetSubmission)
 		protectedAPI.GET("/submissions/:id/enrichment", handler.GetEnrichment)
+		protectedAPI.GET("/submissions/:id/analysis", handler.GetAnalysis)
 		protectedAPI.GET("/submissions/:id/report/preview", handler.PreviewReport)
 		protectedAPI.POST("/submissions/:id/report/publish", handler.PublishReport)
 	}
@@ -76,12 +77,24 @@ func SetupRouter(handler *Handler, logger zerolog.Logger, jwtSecret string, allo
 	adminAPI.Use(AuthMiddleware(jwtSecret, db))
 	adminAPI.Use(AdminAuthMiddleware())
 	{
+		// Submission management
 		adminAPI.GET("/submissions", handler.ListSubmissions)
 		adminAPI.GET("/submissions/:id", handler.GetSubmissionAdmin)
-		adminAPI.PUT("/submissions/:id/status", handler.UpdateSubmissionStatus)
+		// REMOVED: PUT /submissions/:id/status - Violates "Single Status Rule"
+		// Submissions always have status "received". Status is derived from Enrichment/Analysis.
 		adminAPI.POST("/submissions/:id/retry-enrichment", handler.RetryEnrichment)
 		adminAPI.POST("/submissions/:id/retry-analysis", handler.RetryAnalysis)
 		adminAPI.GET("/analytics", handler.GetAnalytics)
+
+		// Enrichment management
+		adminAPI.PUT("/enrichment/:id", handler.UpdateEnrichment)
+		adminAPI.POST("/enrichment/:id/approve", handler.ApproveEnrichment)
+
+		// Analysis management
+		adminAPI.PUT("/analysis/:id", handler.UpdateAnalysis)
+		adminAPI.POST("/analysis/:id/version", handler.CreateAnalysisVersion)
+		adminAPI.POST("/analysis/:id/approve", handler.ApproveAnalysis)
+		adminAPI.POST("/analysis/:id/send", handler.SendAnalysis)
 	}
 
 	return router

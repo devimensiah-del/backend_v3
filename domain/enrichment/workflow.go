@@ -1,6 +1,8 @@
 package enrichment
 
 import (
+	"backend_v3/adapter/dns"
+	"backend_v3/adapter/scraper"
 	"backend_v3/domain/submission"
 	"backend_v3/llm"
 	"context"
@@ -13,377 +15,258 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// EnrichSubmission implements 3-layer progressive data collection workflow.
-// Layer 1: Immediate (<2s) - Domain metadata, IP location, basic info
-// Layer 2: Structured (3-6s) - Legal name, CNPJ, sector, employees, revenue
-// Layer 3: AI Inference (6-10s) - Business summary, digital maturity, competitors, gaps
+// EnrichSubmission - The "Transient Data" Pipeline
 func (s *Service) EnrichSubmission(ctx context.Context, submissionID uuid.UUID) (*Enrichment, error) {
 	startTime := time.Now()
 
-	// 1. SETUP
+	// 1. SETUP WORKSPACE
 	sub, enrichment, err := s.setupWorkspace(ctx, submissionID)
 	if err != nil {
 		return nil, err
 	}
+	// If enrichment is nil, it means it's locked/already done, so we skip
 	if enrichment == nil {
+		log.Info().Str("sub_id", submissionID.String()).Msg("Enrichment skipped (Locked or Completed)")
 		return nil, nil
-	} // Locked by user
-
-	// Initialize profile structure
-	profile := StrategicProfile{
-		ProfileVersion:  "3.0",
-		CompletedLayers: 0,
 	}
 
-	// 2. LAYER 1: IMMEDIATE DATA COLLECTION (<2s)
-	s.updateStatus(ctx, enrichment, "Collecting immediate data (Layer 1)...", 10)
-	layer1Start := time.Now()
+	// 2. GATHER TRANSIENT DATA (Memory Only - No DB Save)
+	s.updateStatus(ctx, enrichment, "Scanning digital footprint (Transient)...", 10)
+	technicalData := s.gatherTransientData(ctx, sub)
 
-	layer1, err := s.collectLayer1(ctx, sub)
+	// Convert technical data to JSON string for the Prompt Context
+	techContextBytes, _ := json.Marshal(technicalData)
+	techContextString := string(techContextBytes)
+
+	// 3. DETECT GAPS
+	missingFields := s.detectMissingFields(sub)
+
+	// 4. AGENT EXECUTION
+	s.updateStatus(ctx, enrichment, "Agent is synthesizing Intelligence Profile...", 40)
+
+	prompt := llm.UnifiedEnrichmentPrompt
+	prompt = strings.ReplaceAll(prompt, "{{COMPANY_NAME}}", sub.CompanyName)
+	prompt = strings.ReplaceAll(prompt, "{{USER_CONTEXT}}", s.compileUserDossier(sub))
+	prompt = strings.ReplaceAll(prompt, "{{TECHNICAL_CONTEXT}}", techContextString)
+	prompt = strings.ReplaceAll(prompt, "{{MISSING_FIELDS}}", missingFields)
+
+	agentReq := llm.Request{
+		Model:        s.enrichmentCfg.Model,
+		SystemPrompt: "You are a JSON-only Corporate Intelligence Agent.",
+		Messages:     []llm.Message{{Role: "user", Content: prompt}},
+		// IMPORTANT: Ensure your client.go maps "search" to the provider's specific tool (e.g., google_search)
+		Tools:       []string{"search"},
+		Temperature: s.enrichmentCfg.Temperature, // Use config temp
+		MaxTokens:   s.enrichmentCfg.MaxTokens,   // Use config tokens
+	}
+
+	// Call LLM
+	resp, err := s.llmClient.Call(ctx, &agentReq)
 	if err != nil {
-		log.Warn().Err(err).Msg("Layer 1 collection failed, continuing with partial data")
-	} else {
-		profile.Layer1 = *layer1
-		profile.CompletedLayers = 1
+		return nil, s.handleCrash(ctx, sub, enrichment, err)
 	}
 
-	log.Debug().Dur("duration", time.Since(layer1Start)).Msg("Layer 1 completed")
+	// 5. PARSE & SAVE
+	s.updateStatus(ctx, enrichment, "Finalizing profile...", 90)
 
-	// 3. LAYER 2: STRUCTURED BUSINESS DATA (3-6s)
-	s.updateStatus(ctx, enrichment, "Fetching structured business data (Layer 2)...", 30)
-	layer2Start := time.Now()
+	var finalProfile map[string]interface{}
+	cleanJson := s.cleanJsonBlock(resp.Content)
 
-	layer2, err := s.collectLayer2(ctx, sub)
-	if err != nil {
-		log.Warn().Err(err).Msg("Layer 2 collection failed, continuing with partial data")
-	} else {
-		profile.Layer2 = *layer2
-		profile.CompletedLayers = 2
+	if err := json.Unmarshal([]byte(cleanJson), &finalProfile); err != nil {
+		log.Error().Err(err).Str("content", resp.Content).Msg("JSON Parse Failed")
+		finalProfile = map[string]interface{}{
+			"error": "json_parsing_failed",
+			"raw":   resp.Content,
+		}
 	}
 
-	log.Debug().Dur("duration", time.Since(layer2Start)).Msg("Layer 2 completed")
+	enrichment.EnrichedData = JSONMap(finalProfile)
+	enrichment.SourcesStatus = s.combineSources(technicalData.Sources, resp.Sources)
 
-	// 4. LAYER 3: AI STRATEGIC INFERENCE (6-10s)
-	s.updateStatus(ctx, enrichment, "Generating AI strategic intelligence (Layer 3)...", 60)
-	layer3Start := time.Now()
+	// Save final state
+	s.saveProfile(enrichment, nil)
 
-	layer3, err := s.collectLayer3(ctx, sub, &profile)
-	if err != nil {
-		log.Warn().Err(err).Msg("Layer 3 collection failed, continuing with partial data")
-	} else {
-		profile.Layer3 = *layer3
-		profile.CompletedLayers = 3
-	}
-
-	log.Debug().Dur("duration", time.Since(layer3Start)).Msg("Layer 3 completed")
-
-	// 5. SAVE COMPLETE PROFILE
-	profile.TotalDuration = int(time.Since(startTime).Milliseconds())
-	s.updateStatus(ctx, enrichment, "Structuring intelligence profile...", 90)
-	s.saveProfile(enrichment, &profile)
-
-	// 6. FINALIZE
+	log.Info().Dur("duration", time.Since(startTime)).Msg("Enrichment Pipeline Success")
 	return s.markAsComplete(ctx, sub, enrichment)
 }
 
-// collectLayer1 gathers immediate data (<2s): domain metadata, IP location, basic info
-func (s *Service) collectLayer1(ctx context.Context, sub *submission.Submission) (*Layer1Data, error) {
-	layer1 := &Layer1Data{
-		CollectedAt: time.Now().Format(time.RFC3339),
-		Sources:     []string{},
-	}
+// --- HELPER METHODS ---
 
-	// Extract domain from website if available
-	domain := ""
-	if sub.CompanyWebsite != nil && *sub.CompanyWebsite != "" {
-		domain = *sub.CompanyWebsite
-		// Simple domain extraction (remove protocol and path)
-		domain = strings.TrimPrefix(domain, "http://")
-		domain = strings.TrimPrefix(domain, "https://")
-		domain = strings.Split(domain, "/")[0]
-	}
-
-	if domain != "" {
-		// Simulate domain metadata collection (replace with actual WHOIS API)
-		layer1.DomainMetadata = DomainMetadata{
-			Domain: domain,
-			// Real implementation would call WHOIS API here
-		}
-		layer1.Sources = append(layer1.Sources, "whois")
-
-		// Simulate IP location (replace with actual IP-API call)
-		layer1.IPLocation = IPLocation{
-			Country: "Brasil", // Default for now
-		}
-		layer1.Sources = append(layer1.Sources, "ip-api")
-
-		// Simulate basic metadata scraping (replace with actual scraper)
-		layer1.BasicInfo = BasicInfo{
-			Title:       sub.CompanyName,
-			Description: fmt.Sprintf("Empresa no setor de %s", safeString(sub.CompanyIndustry)),
-		}
-		layer1.Sources = append(layer1.Sources, "metadata-scraper")
-	}
-
-	return layer1, nil
-}
-
-// collectLayer2 gathers structured data (3-6s): legal name, CNPJ, sector, employees, revenue
-func (s *Service) collectLayer2(ctx context.Context, sub *submission.Submission) (*Layer2Data, error) {
-	layer2 := &Layer2Data{
-		CollectedAt: time.Now().Format(time.RFC3339),
-		Sources:     []string{},
-	}
-
-	// Simulate CNPJ lookup (replace with actual ReceitaWS/OpenCNPJ API)
-	// Real implementation would call ReceitaWS API
-	layer2.LegalInfo = LegalInfo{
-		LegalName: sub.CompanyName,
-		// CNPJ lookup would happen here
-	}
-	layer2.Sources = append(layer2.Sources, "receitaws")
-
-	// Business info from industry and other data
-	if sub.CompanyIndustry != nil {
-		layer2.BusinessInfo = BusinessInfo{
-			Sector: *sub.CompanyIndustry,
-		}
-	}
-
-	// Location info
-	layer2.LocationInfo = LocationInfo{
-		City:  "São Paulo", // Would be extracted from CNPJ data
-		State: "SP",
-	}
-	layer2.Sources = append(layer2.Sources, "opencnpj", "google-places")
-
-	return layer2, nil
-}
-
-// collectLayer3 performs AI-powered strategic inference (6-10s)
-func (s *Service) collectLayer3(ctx context.Context, sub *submission.Submission, profile *StrategicProfile) (*Layer3Data, error) {
-	// Configure AI agent
-	model := s.enrichmentCfg.Model
-	if model == "" {
-		model = s.model
-	}
-	temperature := s.enrichmentCfg.Temperature
-	if temperature == 0 {
-		temperature = 0.5
-	}
-	maxTokens := s.enrichmentCfg.MaxTokens
-	if maxTokens == 0 {
-		maxTokens = 8000
-	}
-
-	agent := AgentProfile{
-		Role:        "Strategic Intelligence Analyst",
-		Model:       model,
-		Temperature: temperature,
-		MaxTokens:   maxTokens,
-		Tools:       []string{"search", "url_context"},
-	}
-
-	// Build context from Layer 1 and Layer 2
-	contextData := s.buildContextForLayer3(sub, profile)
-
-	// Use updated prompt for Layer 3
-	prompt := llm.Layer3InferencePrompt
-	prompt = strings.ReplaceAll(prompt, "{{COMPANY_NAME}}", sub.CompanyName)
-	prompt = strings.ReplaceAll(prompt, "{{CONTEXT_DATA}}", contextData)
-
-	// Execute AI analysis
-	agentFindings, err := s.deployAgent(ctx, agent, prompt, sub)
+func (s *Service) setupWorkspace(ctx context.Context, submissionID uuid.UUID) (*submission.Submission, *Enrichment, error) {
+	// 1. Get Submission
+	sub, err := s.submissionRepo.GetByID(ctx, submissionID)
 	if err != nil {
-		return nil, err
+		return nil, nil, fmt.Errorf("submission not found: %w", err)
 	}
 
-	// Parse Layer 3 response
-	layer3 := &Layer3Data{
-		CollectedAt: time.Now().Format(time.RFC3339),
-		Sources:     []string{"llm-analysis"},
-	}
-
-	// Extract sources from agent findings
-	for _, source := range agentFindings.Sources {
-		layer3.Sources = append(layer3.Sources, source.URL)
-	}
-
-	// Parse AI response into Layer3 structure
-	cleanJson := strings.TrimPrefix(strings.TrimSuffix(agentFindings.Content, "```"), "```json")
-	if err := json.Unmarshal([]byte(cleanJson), layer3); err != nil {
-		// Fallback: try to parse into a generic map
-		var rawMap map[string]interface{}
-		if err2 := json.Unmarshal([]byte(cleanJson), &rawMap); err2 != nil {
-			return nil, fmt.Errorf("failed to parse Layer 3 response: %w", err)
-		}
-		// Manual mapping if structured parsing fails
-		log.Warn().Msg("Layer 3 parsing fell back to raw map, using defaults")
-	}
-
-	return layer3, nil
-}
-
-// buildContextForLayer3 compiles data from Layer 1 and Layer 2 for AI inference
-func (s *Service) buildContextForLayer3(sub *submission.Submission, profile *StrategicProfile) string {
-	var sb strings.Builder
-
-	sb.WriteString("--- LAYER 1: IMMEDIATE DATA ---\n")
-	if profile.Layer1.DomainMetadata.Domain != "" {
-		sb.WriteString(fmt.Sprintf("Domain: %s\n", profile.Layer1.DomainMetadata.Domain))
-	}
-	if profile.Layer1.IPLocation.Country != "" {
-		sb.WriteString(fmt.Sprintf("Location: %s\n", profile.Layer1.IPLocation.Country))
-	}
-	if profile.Layer1.BasicInfo.Description != "" {
-		sb.WriteString(fmt.Sprintf("Description: %s\n", profile.Layer1.BasicInfo.Description))
-	}
-
-	sb.WriteString("\n--- LAYER 2: STRUCTURED DATA ---\n")
-	if profile.Layer2.LegalInfo.LegalName != "" {
-		sb.WriteString(fmt.Sprintf("Legal Name: %s\n", profile.Layer2.LegalInfo.LegalName))
-	}
-	if profile.Layer2.BusinessInfo.Sector != "" {
-		sb.WriteString(fmt.Sprintf("Sector: %s\n", profile.Layer2.BusinessInfo.Sector))
-	}
-	if profile.Layer2.LocationInfo.City != "" {
-		sb.WriteString(fmt.Sprintf("City: %s, %s\n", profile.Layer2.LocationInfo.City, profile.Layer2.LocationInfo.State))
-	}
-
-	sb.WriteString("\n--- USER PROVIDED DATA ---\n")
-	sb.WriteString(fmt.Sprintf("Company Name: %s\n", sub.CompanyName))
-	if sub.CompanyWebsite != nil {
-		sb.WriteString(fmt.Sprintf("Website: %s\n", *sub.CompanyWebsite))
-	}
-	sb.WriteString(fmt.Sprintf("Business Challenge: %s\n", sub.BusinessChallenge))
-
-	return sb.String()
-}
-
-func safeString(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
-}
-
-// =================================================================================
-// UNDERWATER MECHANICS
-// =================================================================================
-
-type AgentProfile struct {
-	Role        string
-	Model       string
-	Temperature float64
-	MaxTokens   int
-	Tools       []string
-}
-
-func (s *Service) setupWorkspace(ctx context.Context, id uuid.UUID) (*submission.Submission, *Enrichment, error) {
-	sub, err := s.submissionRepo.GetByID(ctx, id)
+	// 2. Check if Enrichment exists
+	enrichment, err := s.repo.GetBySubmissionID(ctx, submissionID)
 	if err != nil {
-		return nil, nil, err
-	}
-
-	enrichment, err := s.repo.GetBySubmissionID(ctx, id)
-	if err != nil {
-		enrichment = NewEnrichment(id)
+		// Create new if not found
+		enrichment = NewEnrichment(submissionID)
 		if err := s.repo.Create(ctx, enrichment); err != nil {
-			return nil, nil, err
+			return nil, nil, fmt.Errorf("failed to create enrichment record: %w", err)
 		}
 	}
+
+	// 3. Check Lock
+	if enrichment.IsLocked || enrichment.Status == StatusApproved {
+		return sub, nil, nil // Return nil enrichment to signal "skip"
+	}
+
+	// 4. Start processing
 	enrichment.Start()
 	if err := s.repo.UpdateSystem(ctx, enrichment); err != nil {
 		return nil, nil, err
 	}
-	sub.SetStatus(submission.StatusEnriching)
-	s.submissionRepo.Update(ctx, sub)
+
 	return sub, enrichment, nil
 }
 
-func (s *Service) deployAgent(ctx context.Context, profile AgentProfile, promptTemplate string, sub *submission.Submission) (*llm.Response, error) {
-	userDossier := s.compileUserDossier(sub)
-
-	// Replace template variables with actual data
-	finalPrompt := strings.ReplaceAll(promptTemplate, "{{COMPANY_NAME}}", sub.CompanyName)
-	finalPrompt = strings.ReplaceAll(finalPrompt, "{{USER_CONTEXT}}", userDossier)
-
-	req := &llm.Request{
-		Model:        profile.Model,
-		SystemPrompt: profile.Role,
-		Messages:     []llm.Message{{Role: "user", Content: finalPrompt}},
-		Tools:        profile.Tools,
-		MaxURLs:      10,
-		Temperature:  profile.Temperature,
-		MaxTokens:    profile.MaxTokens,
-	}
-	return s.llmClient.Call(ctx, req)
-}
-
-func (s *Service) saveProfile(e *Enrichment, profile *StrategicProfile) {
-	// Convert profile to JSONMap for storage
-	data, err := json.Marshal(profile)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to marshal profile")
-		return
-	}
-
-	var storageMap map[string]interface{}
-	if err := json.Unmarshal(data, &storageMap); err != nil {
-		log.Error().Err(err).Msg("Failed to unmarshal to storage map")
-		return
-	}
-
-	e.EnrichedData = JSONMap(storageMap)
-
-	// Track sources from all layers
-	e.SourcesStatus = make(JSONMap)
-	for _, source := range profile.Layer1.Sources {
-		e.SourcesStatus[source] = "success"
-	}
-	for _, source := range profile.Layer2.Sources {
-		e.SourcesStatus[source] = "success"
-	}
-	for _, source := range profile.Layer3.Sources {
-		e.SourcesStatus[source] = "success"
-	}
-}
-
-func (s *Service) compileUserDossier(sub *submission.Submission) string {
-	var sb strings.Builder
-	sb.WriteString("--- DADOS FORNECIDOS PELO USUÁRIO ---\n")
-	sb.WriteString(fmt.Sprintf("Nome: %s\n", sub.CompanyName))
-	if sub.CompanyWebsite != nil {
-		sb.WriteString(fmt.Sprintf("Site: %s (Fonte Primária)\n", *sub.CompanyWebsite))
-	}
-	if sub.CompanyIndustry != nil {
-		sb.WriteString(fmt.Sprintf("Setor: %s\n", *sub.CompanyIndustry))
-	}
-	sb.WriteString(fmt.Sprintf("Desafio: %s\n", sub.BusinessChallenge))
-	return sb.String()
-}
-
-func (s *Service) updateStatus(ctx context.Context, e *Enrichment, step string, progress int) {
-	e.UpdateProgress(step, progress)
-	s.repo.UpdateSystem(ctx, e)
-}
-
-func (s *Service) markAsComplete(ctx context.Context, sub *submission.Submission, e *Enrichment) (*Enrichment, error) {
-	// Use Finish() instead of Complete() - status changes to "finished"
-	e.Finish()
-	if err := s.repo.UpdateSystem(ctx, e); err != nil {
-		return nil, nil
-	}
-	sub.SetStatus(submission.StatusEnriched)
-	s.submissionRepo.Update(ctx, sub)
-	return e, nil
+func (s *Service) updateStatus(ctx context.Context, e *Enrichment, msg string, pct int) {
+	e.UpdateProgress(msg, pct)
+	_ = s.repo.UpdateSystem(ctx, e) // Ignore error, not critical
 }
 
 func (s *Service) handleCrash(ctx context.Context, sub *submission.Submission, e *Enrichment, err error) error {
-	log.Error().Err(err).Msg("Enrichment Agent Crashed")
+	log.Error().Err(err).Str("sub_id", sub.ID.String()).Msg("Enrichment Crashed")
 	e.Fail(err)
-	s.repo.UpdateSystem(ctx, e)
-	sub.SetStatus(submission.StatusEnrichmentFailed)
-	s.submissionRepo.Update(ctx, sub)
+	_ = s.repo.UpdateSystem(ctx, e)
 	return err
+}
+
+func (s *Service) markAsComplete(ctx context.Context, sub *submission.Submission, e *Enrichment) (*Enrichment, error) {
+	e.Finish()
+	if err := s.repo.UpdateSystem(ctx, e); err != nil {
+		return nil, err
+	}
+	return e, nil
+}
+
+func (s *Service) saveProfile(e *Enrichment, err error) {
+	if err != nil {
+		e.Fail(err)
+	}
+	_ = context.Background()
+}
+
+func (s *Service) compileUserDossier(sub *submission.Submission) string {
+	dossier := fmt.Sprintf("Nome: %s\n", sub.CompanyName)
+	if sub.CompanyWebsite != nil {
+		dossier += fmt.Sprintf("Site: %s\n", *sub.CompanyWebsite)
+	}
+	if sub.BusinessChallenge != "" {
+		dossier += fmt.Sprintf("Desafio: %s\n", sub.BusinessChallenge)
+	}
+	return dossier
+}
+
+// --- TRANSIENT DATA COLLECTOR ---
+
+type DomainMetadata struct {
+	Domain      string   `json:"domain"`
+	NameServers []string `json:"name_servers"`
+}
+
+type IPLocation struct {
+	Country string `json:"country"`
+	City    string `json:"city"`
+}
+
+// TransientData holds the temporary technical data before AI synthesis
+type TransientData struct {
+	DomainInfo DomainMetadata   `json:"domain_info"`
+	MetaTags   scraper.MetaData `json:"meta_tags"` // Use the scraper type directly
+	IPLocation IPLocation       `json:"ip_location"`
+	Sources    []string         `json:"sources_used"`
+}
+
+func (s *Service) gatherTransientData(ctx context.Context, sub *submission.Submission) TransientData {
+	data := TransientData{
+		Sources: []string{},
+	}
+
+	// 1. Domain Analysis
+	if sub.CompanyWebsite != nil && *sub.CompanyWebsite != "" {
+		domain := *sub.CompanyWebsite
+		dnsInfo := dns.Analyze(ctx, domain)
+
+		data.DomainInfo = DomainMetadata{
+			Domain:      domain,
+			NameServers: dnsInfo.NameServers,
+		}
+		if dnsInfo.HasMX {
+			data.Sources = append(data.Sources, "dns_validation_active")
+		} else {
+			data.Sources = append(data.Sources, "dns_validation_no_email")
+		}
+
+		// 2. Metadata Scraping
+		scrapeCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+		defer cancel()
+
+		meta, err := s.scraper.Scrape(scrapeCtx, domain)
+		if err == nil {
+			data.MetaTags = meta
+			data.Sources = append(data.Sources, "website_scraper")
+		} else {
+			log.Warn().Err(err).Str("domain", domain).Msg("Scraping failed, proceeding with AI only")
+			data.Sources = append(data.Sources, "scraper_failed")
+		}
+	}
+
+	// 3. Location
+	if sub.CompanyLocation != nil && *sub.CompanyLocation != "" {
+		data.IPLocation = IPLocation{
+			Country: *sub.CompanyLocation,
+			City:    "User Provided",
+		}
+		data.Sources = append(data.Sources, "user_input")
+	}
+
+	return data
+}
+
+func (s *Service) detectMissingFields(sub *submission.Submission) string {
+	var missing []string
+
+	if sub.CompanyWebsite == nil || *sub.CompanyWebsite == "" {
+		missing = append(missing, "- WEBSITE/DOMÍNIO (Crítico: Encontre o site oficial)")
+	}
+	if sub.CompanyLocation == nil || *sub.CompanyLocation == "" {
+		missing = append(missing, "- LOCALIZAÇÃO (Sede: Cidade/País)")
+	}
+	if sub.CompanyIndustry == nil || *sub.CompanyIndustry == "" {
+		missing = append(missing, "- SETOR DE ATUAÇÃO (CNAE/Indústria)")
+	}
+	if sub.AnnualRevenueMin == nil {
+		missing = append(missing, "- FATURAMENTO ANUAL (Estime via porte/setor)")
+	}
+	if sub.TargetMarket == nil || *sub.TargetMarket == "" {
+		missing = append(missing, "- PÚBLICO ALVO (B2B/B2C, Perfil de Cliente)")
+	}
+
+	if len(missing) == 0 {
+		return "Nenhum dado crítico omitido pelo usuário. Foque em validar a veracidade e aprofundar a estratégia."
+	}
+	return strings.Join(missing, "\n")
+}
+
+func (s *Service) combineSources(technical []string, ai []llm.Source) JSONMap {
+	combined := make(JSONMap)
+	for _, src := range technical {
+		combined[src] = "success"
+	}
+	for _, src := range ai {
+		combined[src.URL] = "ai_search_result"
+	}
+	return combined
+}
+
+func (s *Service) cleanJsonBlock(content string) string {
+	content = strings.TrimSpace(content)
+	content = strings.TrimPrefix(content, "```json")
+	content = strings.TrimPrefix(content, "```")
+	content = strings.TrimSuffix(content, "```")
+	return content
 }

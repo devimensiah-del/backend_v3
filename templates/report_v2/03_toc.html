@@ -5,20 +5,27 @@
     <title>Table of Contents</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        @page { size: A4 portrait; margin: 0; }
+        @page { size: A4 landscape; margin: 0; }
+
+        html, body {
+            width: 842px;
+            height: 595px;
+            overflow: hidden;
+        }
 
         body {
-            width: 595px;
-            height: 842px;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             color: #0A101D;
             background: #FFFFFF;
         }
 
         .page {
-            width: 595px;
-            height: 842px;
-            padding: 40px;
+            width: 842px;
+            height: 595px;
+            max-width: 842px;
+            max-height: 595px;
+            overflow: hidden;
+            padding: 32px 40px;
             display: flex;
             flex-direction: column;
         }
@@ -27,8 +34,8 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 32px;
-            padding-bottom: 16px;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
             border-bottom: 1px solid #E5E0D6;
         }
 
@@ -47,35 +54,35 @@
         }
 
         .page-title {
-            font-size: 28px;
+            font-size: 24px;
             font-weight: 300;
             color: #0A101D;
-            margin-bottom: 8px;
+            margin-bottom: 6px;
             letter-spacing: -0.01em;
         }
 
         .page-subtitle {
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.15em;
             color: #B89E68;
-            margin-bottom: 40px;
+            margin-bottom: 20px;
         }
 
         /* TOC Sections */
         .toc-section {
-            margin-bottom: 32px;
+            margin-bottom: 16px;
         }
 
         .section-heading {
-            font-size: 10px;
+            font-size: 9px;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.15em;
             color: #B89E68;
-            margin-bottom: 16px;
-            padding-bottom: 8px;
+            margin-bottom: 10px;
+            padding-bottom: 6px;
             border-bottom: 2px solid #B89E68;
         }
 
@@ -87,9 +94,9 @@
             display: flex;
             justify-content: space-between;
             align-items: baseline;
-            padding: 10px 0;
+            padding: 6px 0;
             border-bottom: 1px dotted #E5E0D6;
-            font-size: 11px;
+            font-size: 10px;
         }
 
         .toc-item-name {
@@ -100,7 +107,7 @@
         .toc-item-page {
             color: #71717A;
             font-weight: 600;
-            font-size: 10px;
+            font-size: 9px;
         }
 
         .footer {
@@ -136,75 +143,105 @@
             </ul>
         </div>
 
-        <!-- Strategic Analysis -->
+        <!-- Part I: Where Are We? -->
         <div class="toc-section">
-            <div class="section-heading">Análise Estratégica</div>
+            <div class="section-heading">Parte I — Onde Estamos?</div>
             <ul class="toc-list">
                 <li class="toc-item">
-                    <span class="toc-item-name">Análise PESTEL</span>
-                    <span class="toc-item-page">04</span>
-                </li>
-                <li class="toc-item">
-                    <span class="toc-item-name">5 Forças de Porter</span>
+                    <span class="toc-item-name">Análise PESTEL (Político, Econômico, Social)</span>
                     <span class="toc-item-page">05</span>
                 </li>
                 <li class="toc-item">
-                    <span class="toc-item-name">Análise SWOT</span>
+                    <span class="toc-item-name">Análise PESTEL (Tecnológico, Ambiental, Legal)</span>
                     <span class="toc-item-page">06</span>
                 </li>
                 <li class="toc-item">
-                    <span class="toc-item-name">Dimensionamento de Mercado TAM-SAM-SOM</span>
+                    <span class="toc-item-name">7 Forças de Porter</span>
                     <span class="toc-item-page">07</span>
                 </li>
                 <li class="toc-item">
-                    <span class="toc-item-name">Estratégia Oceano Azul</span>
+                    <span class="toc-item-name">Análise SWOT</span>
                     <span class="toc-item-page">08</span>
                 </li>
             </ul>
         </div>
 
-        <!-- Execution Framework -->
+        <!-- Part II: Where Do We Want to Go? -->
         <div class="toc-section">
-            <div class="section-heading">Framework de Execução</div>
+            <div class="section-heading">Parte II — Onde Queremos Ir?</div>
             <ul class="toc-list">
                 <li class="toc-item">
-                    <span class="toc-item-name">OKRs e Metas</span>
-                    <span class="toc-item-page">09</span>
-                </li>
-                <li class="toc-item">
-                    <span class="toc-item-name">Balanced Scorecard</span>
+                    <span class="toc-item-name">Dimensionamento de Mercado TAM-SAM-SOM</span>
                     <span class="toc-item-page">10</span>
                 </li>
                 <li class="toc-item">
-                    <span class="toc-item-name">Benchmarking Competitivo</span>
+                    <span class="toc-item-name">Estratégia Oceano Azul</span>
                     <span class="toc-item-page">11</span>
                 </li>
+            </ul>
+        </div>
+
+        <!-- Part III: How to Get There? -->
+        <div class="toc-section">
+            <div class="section-heading">Parte III — Como Chegar Lá?</div>
+            <ul class="toc-list">
                 <li class="toc-item">
-                    <span class="toc-item-name">Projeções Financeiras</span>
-                    <span class="toc-item-page">12</span>
-                </li>
-                <li class="toc-item">
-                    <span class="toc-item-name">Estratégia de Crescimento</span>
+                    <span class="toc-item-name">OKRs Trimestrais</span>
                     <span class="toc-item-page">13</span>
                 </li>
                 <li class="toc-item">
-                    <span class="toc-item-name">Avaliação de Riscos</span>
+                    <span class="toc-item-name">Growth Hacking Loops</span>
                     <span class="toc-item-page">14</span>
                 </li>
             </ul>
         </div>
 
-        <!-- Recommendations -->
+        <!-- Part IV: What to Do Now? -->
         <div class="toc-section">
-            <div class="section-heading">Recomendações</div>
+            <div class="section-heading">Parte IV — O Que Fazer Agora?</div>
             <ul class="toc-list">
                 <li class="toc-item">
-                    <span class="toc-item-name">Roadmap Estratégico</span>
-                    <span class="toc-item-page">15</span>
+                    <span class="toc-item-name">Análise de Cenários</span>
+                    <span class="toc-item-page">16</span>
                 </li>
                 <li class="toc-item">
-                    <span class="toc-item-name">Apêndice</span>
-                    <span class="toc-item-page">16</span>
+                    <span class="toc-item-name">Recomendações & Ciclo de Revisão</span>
+                    <span class="toc-item-page">17</span>
+                </li>
+            </ul>
+        </div>
+
+        <!-- Appendix -->
+        <div class="toc-section">
+            <div class="section-heading">Apêndices</div>
+            <ul class="toc-list">
+                <li class="toc-item">
+                    <span class="toc-item-name">Modelo de Negócios Canvas</span>
+                    <span class="toc-item-page">18</span>
+                </li>
+                <li class="toc-item">
+                    <span class="toc-item-name">Análise Competitiva Detalhada</span>
+                    <span class="toc-item-page">19</span>
+                </li>
+                <li class="toc-item">
+                    <span class="toc-item-name">Projeções Financeiras</span>
+                    <span class="toc-item-page">20</span>
+                </li>
+                <li class="toc-item">
+                    <span class="toc-item-name">Estratégia Go-to-Market</span>
+                    <span class="toc-item-page">21</span>
+                </li>
+                <li class="toc-item">
+                    <span class="toc-item-name">Avaliação de Riscos</span>
+                    <span class="toc-item-page">22</span>
+                </li>
+                <li class="toc-item">
+                    <span class="toc-item-name">Roadmap de Implementação</span>
+                    <span class="toc-item-page">23</span>
+                </li>
+                <li class="toc-item">
+                    <span class="toc-item-name">Apêndice Técnico</span>
+                    <span class="toc-item-page">24</span>
                 </li>
             </ul>
         </div>

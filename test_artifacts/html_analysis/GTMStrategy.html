@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Growth Strategy</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        @page { size: A4 landscape; margin: 0; }
+
+        html, body {
+            width: 842px;
+            height: 595px;
+            overflow: hidden;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            color: #0A101D;
+            background: #FFFFFF;
+        }
+
+        .page {
+            width: 842px;
+            height: 595px;
+            max-width: 842px;
+            max-height: 595px;
+            overflow: hidden;
+            padding: 32px 40px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 16px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #E5E0D6;
+        }
+
+        .page-number { font-size: 10px; font-weight: 600; color: #B89E68; }
+        .company-name-header { font-size: 10px; color: #71717A; }
+
+        .page-title { font-size: 22px; font-weight: 300; color: #0A101D; margin-bottom: 4px; }
+        .page-subtitle { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.15em; color: #B89E68; margin-bottom: 16px; }
+
+        .section {
+            margin-bottom: 14px;
+        }
+
+        .section-title {
+            font-size: 10px;
+            font-weight: 700;
+            color: #0A101D;
+            margin-bottom: 10px;
+            padding: 6px 10px;
+            background: #F7F6F4;
+            border-left: 4px solid #B89E68;
+        }
+
+        .item-list {
+            list-style: none;
+        }
+
+        .item {
+            font-size: 9px;
+            line-height: 1.4;
+            color: #111827;
+            margin-bottom: 8px;
+            padding-left: 14px;
+            position: relative;
+        }
+
+        .item::before {
+            content: '→';
+            position: absolute;
+            left: 0;
+            color: #B89E68;
+            font-weight: 700;
+        }
+
+        .metrics-section .section-title {
+            border-left-color: #10b981;
+        }
+
+        .metrics-section .item::before {
+            color: #10b981;
+        }
+
+        .footer {
+            display: flex;
+            justify-content: space-between;
+            padding-top: 12px;
+            border-top: 1px solid #E5E0D6;
+            font-size: 8px;
+            color: #71717A;
+            margin-top: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <div class="header">
+            <div class="page-number">13</div>
+            <div class="company-name-header">Coimma</div>
+        </div>
+
+        <h1 class="page-title">Estratégia de Crescimento</h1>
+        <div class="page-subtitle">Go-to-Market & Growth Hacking</div>
+
+        <div class="section">
+            <div class="section-title">Hipóteses de Crescimento</div>
+            <ul class="item-list">
+                
+                <li class="item">Conteúdo técnico sobre pecuária de precisão atrai leads qualificados</li>
+                
+                <li class="item">Webinars mensais aumentam a conversão de leads para vendas em 25%</li>
+                
+                <li class="item">Presença em feiras do agronegócio gera 50&#43; leads qualificados por evento</li>
+                
+            </ul>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Experimentos e Iniciativas</div>
+            <ul class="item-list">
+                
+                <li class="item">Testar blog técnico por 3 meses com 2 posts semanais sobre automação</li>
+                
+                <li class="item">Realizar 6 webinars mensais sobre rastreabilidade e gestão de rebanhos</li>
+                
+                <li class="item">Participar de 3 feiras regionais no Q1 2025 (Expointer, Agrishow, Fenasucro)</li>
+                
+                <li class="item">Implementar programa de referência com incentivo de 10% para clientes</li>
+                
+            </ul>
+        </div>
+
+        <div class="section metrics-section">
+            <div class="section-title">Métricas-Chave</div>
+            <ul class="item-list">
+                
+                <li class="item">Leads orgânicos gerados por conteúdo (meta: 100 leads/mês)</li>
+                
+                <li class="item">Taxa de conversão webinar → demo (meta: 15%)</li>
+                
+                <li class="item">Custo por lead em feiras (meta: &lt; R$ 200)</li>
+                
+                <li class="item">Net Promoter Score (NPS) (meta: &gt; 50)</li>
+                
+                <li class="item">Monthly Recurring Revenue de serviços (meta: 10% do faturamento)</li>
+                
+            </ul>
+        </div>
+
+        <div class="footer">
+            <div>IMENSIAH — Relatório de Inteligência Estratégica</div>
+            <div>November 2025</div>
+        </div>
+    </div>
+</body>
+</html>

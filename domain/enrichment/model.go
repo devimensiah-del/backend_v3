@@ -32,148 +32,103 @@ func (m *JSONMap) Scan(value interface{}) error {
 }
 
 // =================================================================
-// NEW: 3-Layer Progressive Data Collection Structure
-// Layer 1: Immediate (<2s) - Basic metadata
-// Layer 2: Structured (3-6s) - Legal/business data
-// Layer 3: AI Inference (6-10s) - Strategic intelligence
+// UNIFIED INTELLIGENCE PROFILE
+// This matches the output of the UnifiedEnrichmentPrompt
 // =================================================================
 
-// Layer1Data - Immediate data collection (<2s)
-type Layer1Data struct {
-	DomainMetadata DomainMetadata `json:"domainMetadata"`
-	IPLocation     IPLocation     `json:"ipLocation"`
-	BasicInfo      BasicInfo      `json:"basicInfo"`
-	CollectedAt    string         `json:"collectedAt"`
-	Sources        []string       `json:"sources"` // whois, metadata scraper, ip-api
+type UnifiedProfile struct {
+	ProfileOverview      ProfileOverview      `json:"profile_overview"`
+	MarketPosition       MarketPosition       `json:"market_position"`
+	Financials           Financials           `json:"financials"`
+	CompetitiveLandscape CompetitiveLandscape `json:"competitive_landscape"`
+	StrategicAssessment  StrategicAssessment  `json:"strategic_assessment"`
+	MacroContext         *MacroContext        `json:"macro_context,omitempty"` // NEW: Macro-economic and industry context
 }
 
-type DomainMetadata struct {
-	Domain      string   `json:"domain"`
-	Registrar   string   `json:"registrar,omitempty"`
-	CreatedDate string   `json:"createdDate,omitempty"`
-	ExpiresDate string   `json:"expiresDate,omitempty"`
-	DomainAge   int      `json:"domainAge,omitempty"` // in years
-	NameServers []string `json:"nameServers,omitempty"`
+type ProfileOverview struct {
+	LegalName      string `json:"legal_name"`
+	Website        string `json:"website"`
+	FoundationYear string `json:"foundation_year"`
+	Headquarters   string `json:"headquarters"`
 }
 
-type IPLocation struct {
-	IP       string `json:"ip,omitempty"`
-	Country  string `json:"country"`
-	Region   string `json:"region,omitempty"`
-	City     string `json:"city,omitempty"`
-	ISP      string `json:"isp,omitempty"`
-	Timezone string `json:"timezone,omitempty"`
+type MarketPosition struct {
+	Sector           string `json:"sector"`
+	TargetAudience   string `json:"target_audience"`
+	ValueProposition string `json:"value_proposition"`
 }
 
-type BasicInfo struct {
-	Title       string   `json:"title,omitempty"`       // From meta tags
-	Description string   `json:"description,omitempty"` // From meta tags
-	Keywords    []string `json:"keywords,omitempty"`    // From meta tags
-	Language    string   `json:"language,omitempty"`
+type Financials struct {
+	EmployeesRange  string `json:"employees_range"`
+	RevenueEstimate string `json:"revenue_estimate"`
+	BusinessModel   string `json:"business_model"`
 }
 
-// Layer2Data - Structured business data (3-6s)
-type Layer2Data struct {
-	LegalInfo    LegalInfo    `json:"legalInfo"`
-	BusinessInfo BusinessInfo `json:"businessInfo"`
-	LocationInfo LocationInfo `json:"locationInfo"`
-	CollectedAt  string       `json:"collectedAt"`
-	Sources      []string     `json:"sources"` // ReceitaWS, OpenCNPJ, Google Places
+type CompetitiveLandscape struct {
+	Competitors       []string `json:"competitors"`
+	MarketShareStatus string   `json:"market_share_status"`
 }
 
-type LegalInfo struct {
-	LegalName    string `json:"legalName"`
-	CNPJ         string `json:"cnpj,omitempty"`
-	TradeName    string `json:"tradeName,omitempty"`
-	LegalStatus  string `json:"legalStatus,omitempty"`  // Active, Inactive, etc.
-	LegalNature  string `json:"legalNature,omitempty"`  // SA, LTDA, etc.
-	Founded      string `json:"founded,omitempty"`
-	TaxSituation string `json:"taxSituation,omitempty"`
-}
-
-type BusinessInfo struct {
-	Sector           string   `json:"sector"`                     // Primary CNAE
-	SecondarySectors []string `json:"secondarySectors,omitempty"` // Secondary CNAEs
-	EmployeeCount    string   `json:"employeeCount,omitempty"`    // Range or exact
-	RevenueRange     string   `json:"revenueRange,omitempty"`     // Estimated
-	CompanySize      string   `json:"companySize,omitempty"`      // MEI, ME, EPP, etc.
-}
-
-type LocationInfo struct {
-	Address     string  `json:"address"`
-	City        string  `json:"city"`
-	State       string  `json:"state"`
-	ZipCode     string  `json:"zipCode,omitempty"`
-	Phone       string  `json:"phone,omitempty"`
-	Email       string  `json:"email,omitempty"`
-	Coordinates *LatLng `json:"coordinates,omitempty"`
-}
-
-type LatLng struct {
-	Lat float64 `json:"lat"`
-	Lng float64 `json:"lng"`
-}
-
-// Layer3Data - AI-powered strategic inference (6-10s)
-type Layer3Data struct {
-	BusinessSummary  BusinessSummary  `json:"businessSummary"`
-	DigitalMaturity  DigitalMaturity  `json:"digitalMaturity"`
-	CompetitiveIntel CompetitiveIntel `json:"competitiveIntel"`
-	StrategicGaps    StrategicGaps    `json:"strategicGaps"`
-	CollectedAt      string           `json:"collectedAt"`
-	Sources          []string         `json:"sources"` // LLM analysis sources
-}
-
-type BusinessSummary struct {
-	Description      string   `json:"description"`             // AI-generated business description
-	ValueProposition string   `json:"valueProposition"`        // Core value prop
-	TargetMarket     string   `json:"targetMarket"`            // Primary customer segment
-	KeyProducts      []string `json:"keyProducts,omitempty"`   // Main offerings
-	BrandTone        string   `json:"brandTone"`               // Professional, innovative, etc.
-	UniqueFactors    []string `json:"uniqueFactors,omitempty"` // Differentiators
-}
-
-type DigitalMaturity struct {
-	OverallScore       int      `json:"overallScore"`              // 1-10
-	WebsiteQuality     int      `json:"websiteQuality"`            // 1-10
-	SEOPresence        int      `json:"seoPresence"`               // 1-10
-	SocialMedia        int      `json:"socialMedia"`               // 1-10
-	OnlineReviews      int      `json:"onlineReviews"`             // 1-10
-	EcommerceCapability int      `json:"ecommerceCapability"`       // 1-10
-	Observations       []string `json:"observations,omitempty"`    // Key findings
-}
-
-type CompetitiveIntel struct {
-	Industry       string   `json:"industry"`               // Detailed industry classification
-	Competitors    []string `json:"competitors"`            // 3-5 main competitors
-	MarketPosition string   `json:"marketPosition"`         // Leader, challenger, niche
-	Differentiator string   `json:"keyDifferentiator"`      // Main competitive advantage
-	ThreatLevel    string   `json:"threatLevel,omitempty"`  // High, medium, low
-}
-
-type StrategicGaps struct {
-	OperationalGaps []string `json:"operationalGaps"`  // Process/capability gaps
-	TechnologyGaps  []string `json:"technologyGaps"`   // Tech stack gaps
-	MarketingGaps   []string `json:"marketingGaps"`    // Marketing/brand gaps
-	TalentGaps      []string `json:"talentGaps,omitempty"` // HR/skill gaps
-	Opportunities   []string `json:"opportunities"`    // Quick win opportunities
-	PriorityActions []string `json:"priorityActions"`  // Recommended actions
-}
-
-// StrategicProfile - Combined view of all 3 layers
-type StrategicProfile struct {
-	Layer1 Layer1Data `json:"layer1"` // Immediate data
-	Layer2 Layer2Data `json:"layer2"` // Structured data
-	Layer3 Layer3Data `json:"layer3"` // AI inference
-
-	// Metadata
-	ProfileVersion  string `json:"profileVersion"`  // e.g., "3.0"
-	TotalDuration   int    `json:"totalDuration"`   // milliseconds
-	CompletedLayers int    `json:"completedLayers"` // 1, 2, or 3
+type StrategicAssessment struct {
+	DigitalMaturity int      `json:"digital_maturity"`
+	Strengths       []string `json:"strengths"`
+	Weaknesses      []string `json:"weaknesses"`
 }
 
 // =================================================================
-// Database Entity (Unchanged from Schema 004)
+// MACRO-ECONOMIC & INDUSTRY CONTEXT
+// NEW: Addresses the "Brazil blind spot" by capturing real-time
+// macro-economic data, industry trends, and regulatory landscape
+// =================================================================
+
+type MacroContext struct {
+	EconomicIndicators  EconomicIndicators  `json:"economic_indicators"`
+	IndustryTrends      IndustryTrends      `json:"industry_trends"`
+	RegulatoryLandscape RegulatoryLandscape `json:"regulatory_landscape"`
+	MarketSignals       MarketSignals       `json:"market_signals"`
+	DataSources         []string            `json:"data_sources"` // URLs/sources used
+	LastUpdated         string              `json:"last_updated"` // Timestamp
+}
+
+type EconomicIndicators struct {
+	Country              string   `json:"country"`               // e.g., "Brazil"
+	GDPGrowth            string   `json:"gdp_growth"`            // e.g., "+2.5% (2025 forecast)"
+	InflationRate        string   `json:"inflation_rate"`        // e.g., "IPCA: 4.8% a.a."
+	InterestRate         string   `json:"interest_rate"`         // e.g., "SELIC: 11.75%"
+	ExchangeRate         string   `json:"exchange_rate"`         // e.g., "USD/BRL: 5.20"
+	UnemploymentRate     string   `json:"unemployment_rate"`     // e.g., "7.2%"
+	PoliticalStability   string   `json:"political_stability"`   // e.g., "Moderate risk due to reforms"
+	EconomicOutlook      string   `json:"economic_outlook"`      // Brief summary
+	RecentPolicyChanges  []string `json:"recent_policy_changes"` // e.g., ["Tax reform 2025", "New carbon policies"]
+}
+
+type IndustryTrends struct {
+	IndustrySector       string   `json:"industry_sector"`        // e.g., "Agribusiness Technology"
+	GrowthRate           string   `json:"growth_rate"`            // e.g., "+12% CAGR (2024-2028)"
+	KeyTrends            []string `json:"key_trends"`             // e.g., ["IoT adoption", "Sustainability focus", "Digital transformation"]
+	TechnologyAdoption   string   `json:"technology_adoption"`    // e.g., "High adoption of cloud/AI in sector"
+	MarketConcentration  string   `json:"market_concentration"`   // e.g., "Fragmented - no dominant player"
+	BarriersToEntry      string   `json:"barriers_to_entry"`      // e.g., "Medium - requires tech expertise and capital"
+	MergersAcquisitions  []string `json:"mergers_acquisitions"`   // Recent M&A activity
+}
+
+type RegulatoryLandscape struct {
+	RecentRegulations    []string `json:"recent_regulations"`    // e.g., ["Lei do Agro 2025", "New environmental compliance"]
+	UpcomingChanges      []string `json:"upcoming_changes"`      // e.g., ["Carbon tax proposal", "Data privacy law update"]
+	ComplianceRequirements string `json:"compliance_requirements"` // Key compliance needs
+	IndustryStandards    []string `json:"industry_standards"`    // Relevant standards (ISO, etc.)
+}
+
+type MarketSignals struct {
+	CommodityPrices      []string `json:"commodity_prices"`       // e.g., ["Steel prices up 12% YoY", "Copper prices stable"]
+	SupplyChainStatus    string   `json:"supply_chain_status"`    // e.g., "Moderate delays in electronics components"
+	ConsumerSentiment    string   `json:"consumer_sentiment"`     // e.g., "Cautious due to inflation concerns"
+	CompetitorActivity   []string `json:"competitor_activity"`    // e.g., ["Competitor X launched new product", "Competitor Y expanded to new region"]
+	EmergingThreats      []string `json:"emerging_threats"`       // e.g., ["New low-cost entrant from China", "Substitute technology gaining traction"]
+}
+
+// =================================================================
+// Database Entity
 // =================================================================
 
 type Enrichment struct {
@@ -186,7 +141,7 @@ type Enrichment struct {
 
 	IsLocked bool `json:"isLocked" db:"is_locked"`
 
-	// We map the StrategicProfile into this JSONMap for storage
+	// Generic JSON storage for flexibility
 	SourcesStatus JSONMap `json:"sourcesStatus,omitempty" db:"sources_status"`
 	EnrichedData  JSONMap `json:"enrichedData,omitempty" db:"enriched_data"`
 
@@ -203,15 +158,13 @@ type Enrichment struct {
 type Status string
 
 const (
-	StatusPending    Status = "pending"
-	StatusProcessing Status = "processing"
-	StatusFinished   Status = "finished"
-	StatusFailed     Status = "failed"
-	StatusApproved   Status = "approved"
+	StatusPending  Status = "pending"  // Queued, worker not started
+	StatusFinished Status = "finished" // Worker completed enrichment
+	StatusApproved Status = "approved" // Admin approved, ready for analysis
+	// Note: Removed StatusProcessing and StatusFailed
+	// Failures keep status as "pending" with error_message populated
 )
 
-// Constructors and Methods (Start, UpdateProgress, etc.) remain identical...
-// (Omitting strictly for brevity, paste previous standard methods here)
 func NewEnrichment(submissionID uuid.UUID) *Enrichment {
 	now := time.Now()
 	return &Enrichment{
@@ -228,9 +181,9 @@ func NewEnrichment(submissionID uuid.UUID) *Enrichment {
 	}
 }
 
-// ... Add Start(), UpdateProgress(), Complete(), Fail() from previous chat ...
 func (e *Enrichment) Start() {
-	e.Status = StatusProcessing
+	// NOTE: Removed status transition to "processing" - status stays "pending"
+	// Worker starts execution without changing status
 	n := time.Now()
 	e.StartedAt = &n
 	e.UpdatedAt = n
@@ -244,19 +197,16 @@ func (e *Enrichment) Finish() {
 	e.UpdatedAt = n
 }
 
-func (e *Enrichment) Approve() {
-	e.Status = StatusApproved
+func (e *Enrichment) UpdateProgress(step string, pct int) {
+	e.CurrentStep = step
+	e.Progress = pct
 	e.UpdatedAt = time.Now()
 }
 
 func (e *Enrichment) Fail(err error) {
-	e.Status = StatusFailed
+	// NOTE: Keep status as "pending" for retryable failures
+	// Error message indicates the failure reason
+	e.Status = StatusPending
 	e.ErrorMessage = err.Error()
-	e.UpdatedAt = time.Now()
-}
-
-func (e *Enrichment) UpdateProgress(step string, pct int) {
-	e.CurrentStep = step
-	e.Progress = pct
 	e.UpdatedAt = time.Now()
 }

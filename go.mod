@@ -12,12 +12,16 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/redis/go-redis/v9 v9.7.0
 	github.com/rs/zerolog v1.34.0
+	github.com/stretchr/testify v1.9.0
 )
 
 require (
 	github.com/bytedance/sonic/loader v0.1.1 // indirect
 	github.com/cloudwego/base64x v0.1.4 // indirect
 	github.com/cloudwego/iasm v0.2.0 // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
 )
 
 require (
@@ -47,7 +51,7 @@ require (
 	github.com/ugorji/go/codec v1.2.12 // indirect
 	golang.org/x/arch v0.8.0 // indirect
 	golang.org/x/crypto v0.23.0 // indirect
-	golang.org/x/net v0.25.0 // indirect
+	golang.org/x/net v0.25.0
 	golang.org/x/sys v0.27.0 // indirect
 	golang.org/x/text v0.15.0 // indirect
 	golang.org/x/time v0.8.0 // indirect

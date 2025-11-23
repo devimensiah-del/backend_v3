@@ -22,11 +22,11 @@ func (v *ContentValidator) ValidateAndNormalize(analysis *Analysis) {
 	v.trimStringArray(&analysis.PESTEL.Environmental, 3, "PESTEL.Environmental")
 	v.trimStringArray(&analysis.PESTEL.Legal, 3, "PESTEL.Legal")
 
-	// SWOT: Max 4 items per quadrant
-	v.trimStringArray(&analysis.SWOT.Strengths, 4, "SWOT.Strengths")
-	v.trimStringArray(&analysis.SWOT.Weaknesses, 4, "SWOT.Weaknesses")
-	v.trimStringArray(&analysis.SWOT.Opportunities, 4, "SWOT.Opportunities")
-	v.trimStringArray(&analysis.SWOT.Threats, 4, "SWOT.Threats")
+	// SWOT: Max 4 items per quadrant (now using SWOTItem structure)
+	v.trimSWOTItemArray(&analysis.SWOT.Strengths, 4, "SWOT.Strengths")
+	v.trimSWOTItemArray(&analysis.SWOT.Weaknesses, 4, "SWOT.Weaknesses")
+	v.trimSWOTItemArray(&analysis.SWOT.Opportunities, 4, "SWOT.Opportunities")
+	v.trimSWOTItemArray(&analysis.SWOT.Threats, 4, "SWOT.Threats")
 
 	// Blue Ocean: Max 3 per ERRC category
 	v.trimStringArray(&analysis.BlueOcean.Eliminate, 3, "BlueOcean.Eliminate")
@@ -40,10 +40,10 @@ func (v *ContentValidator) ValidateAndNormalize(analysis *Analysis) {
 	v.trimStringArray(&analysis.BSC.Internal, 2, "BSC.Internal")
 	v.trimStringArray(&analysis.BSC.LearningGrowth, 2, "BSC.LearningGrowth")
 
-	// OKRs: Max 2 objectives
-	if len(analysis.OKRs.Objectives) > 2 {
-		v.logger.Warn().Msg("OKRs exceeded 2 objectives, trimming")
-		analysis.OKRs.Objectives = analysis.OKRs.Objectives[:2]
+	// OKRs: Exactly 3 quarters (Q1, Q2, Q3)
+	if len(analysis.OKRs.Quarters) > 3 {
+		v.logger.Warn().Msg("OKRs exceeded 3 quarters, trimming to Q1-Q3")
+		analysis.OKRs.Quarters = analysis.OKRs.Quarters[:3]
 	}
 
 	// Benchmarking: Max 3 each
@@ -51,11 +51,27 @@ func (v *ContentValidator) ValidateAndNormalize(analysis *Analysis) {
 	v.trimStringArray(&analysis.Benchmarking.PerformanceGaps, 3, "Benchmarking.Gaps")
 	v.trimStringArray(&analysis.Benchmarking.BestPractices, 3, "Benchmarking.Practices")
 
-	// Growth Hacking: Max 3 each
-	// These fields now exist in types.go
-	v.trimStringArray(&analysis.GrowthHacking.Hypotheses, 3, "GrowthHacking.Hypotheses")
-	v.trimStringArray(&analysis.GrowthHacking.Experiments, 3, "GrowthHacking.Experiments")
-	v.trimStringArray(&analysis.GrowthHacking.KeyMetrics, 3, "GrowthHacking.KeyMetrics")
+	// Growth Hacking: Validate LEAP and SCALE loops (deprecated fields are optional)
+	// Validate LEAP Loop (Acquisition) - 4 steps expected
+	if len(analysis.GrowthHacking.LeapLoop.Steps) > 4 {
+		v.logger.Warn().Msg("LEAP Loop exceeded 4 steps, trimming")
+		analysis.GrowthHacking.LeapLoop.Steps = analysis.GrowthHacking.LeapLoop.Steps[:4]
+	}
+	// Validate SCALE Loop (Monetization) - 4 steps expected
+	if len(analysis.GrowthHacking.ScaleLoop.Steps) > 4 {
+		v.logger.Warn().Msg("SCALE Loop exceeded 4 steps, trimming")
+		analysis.GrowthHacking.ScaleLoop.Steps = analysis.GrowthHacking.ScaleLoop.Steps[:4]
+	}
+	// Backward compatibility: Validate deprecated fields if present
+	if analysis.GrowthHacking.Hypotheses != nil {
+		v.trimStringArray(&analysis.GrowthHacking.Hypotheses, 3, "GrowthHacking.Hypotheses")
+	}
+	if analysis.GrowthHacking.Experiments != nil {
+		v.trimStringArray(&analysis.GrowthHacking.Experiments, 3, "GrowthHacking.Experiments")
+	}
+	if analysis.GrowthHacking.KeyMetrics != nil {
+		v.trimStringArray(&analysis.GrowthHacking.KeyMetrics, 3, "GrowthHacking.KeyMetrics")
+	}
 
 	// Scenarios: Early Warnings
 	v.trimStringArray(&analysis.Scenarios.EarlyWarningSignals, 3, "Scenarios.EarlyWarningSignals")
@@ -71,6 +87,21 @@ func (v *ContentValidator) trimStringArray(arr *[]string, maxItems int, fieldNam
 			Int("original", len(*arr)).
 			Int("trimmed_to", maxItems).
 			Msg("Content exceeded limits, trimming array")
+		*arr = (*arr)[:maxItems]
+	}
+}
+
+// trimSWOTItemArray trims a SWOTItem array to maxItems
+func (v *ContentValidator) trimSWOTItemArray(arr *[]SWOTItem, maxItems int, fieldName string) {
+	if arr == nil {
+		return
+	}
+	if len(*arr) > maxItems {
+		v.logger.Warn().
+			Str("field", fieldName).
+			Int("original", len(*arr)).
+			Int("trimmed_to", maxItems).
+			Msg("Content exceeded limits, trimming SWOTItem array")
 		*arr = (*arr)[:maxItems]
 	}
 }
