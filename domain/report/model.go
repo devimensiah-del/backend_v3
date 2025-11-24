@@ -84,11 +84,6 @@ type ReportMetadata struct {
 	CompletedAt         *time.Time `json:"completed_at"`
 }
 
-// GetPDFURL returns the stored PDF URL (implements analysis.ReportSummary)
-func (r *Report) GetPDFURL() string {
-	return r.PDFURL
-}
-
 // PageTemplate defines the structure for HTML page generation
 // Frontend developers: This shows what data each page contains
 type PageTemplate struct {
@@ -97,11 +92,6 @@ type PageTemplate struct {
 	Data       map[string]interface{} `json:"data"`     // Page-specific data
 	Styles     string                 `json:"styles"`   // CSS styles for the page
 	Template   string                 `json:"template"` // HTML template name
-}
-
-// GetPDFURL returns the stored PDF URL (implements analysis.ReportSummary)
-func (r *Report) GetPDFURL() string {
-	return r.PDFURL
 }
 
 // PDFGenerationRequest contains parameters for PDF generation
@@ -113,11 +103,6 @@ type PDFGenerationRequest struct {
 	Metadata   map[string]string `json:"metadata"`    // PDF metadata (author, title, etc.)
 }
 
-// GetPDFURL returns the stored PDF URL (implements analysis.ReportSummary)
-func (r *Report) GetPDFURL() string {
-	return r.PDFURL
-}
-
 // PDFOptions defines PDF generation parameters
 type PDFOptions struct {
 	Format              string  `json:"format"`                // A4, Letter, Legal
@@ -127,11 +112,6 @@ type PDFOptions struct {
 	DisplayHeaderFooter bool    `json:"display_header_footer"` // Show page numbers
 	Scale               float64 `json:"scale"`                 // Scale factor (0.1 to 2)
 	PreferCSSPageSize   bool    `json:"prefer_css_page_size"`  // Use CSS @page size
-}
-
-// GetPDFURL returns the stored PDF URL (implements analysis.ReportSummary)
-func (r *Report) GetPDFURL() string {
-	return r.PDFURL
 }
 
 // DefaultPDFOptions returns sensible defaults for PDF generation
@@ -147,11 +127,6 @@ func DefaultPDFOptions() PDFOptions {
 	}
 }
 
-// GetPDFURL returns the stored PDF URL (implements analysis.ReportSummary)
-func (r *Report) GetPDFURL() string {
-	return r.PDFURL
-}
-
 // ReportProgress tracks report generation progress
 // Frontend developers: Use this for real-time progress updates
 type ReportProgress struct {
@@ -164,11 +139,6 @@ type ReportProgress struct {
 	LastUpdated     time.Time `json:"last_updated"`
 }
 
-// GetPDFURL returns the stored PDF URL (implements analysis.ReportSummary)
-func (r *Report) GetPDFURL() string {
-	return r.PDFURL
-}
-
 // ReportSummary provides a high-level overview for dashboards
 type ReportSummary struct {
 	TotalReports       int              `json:"total_reports"`
@@ -178,11 +148,6 @@ type ReportSummary struct {
 	AverageGenTime     int64            `json:"average_gen_time_ms"` // Average generation time
 	TotalPDFsGenerated int              `json:"total_pdfs_generated"`
 	RecentReports      []ReportMetadata `json:"recent_reports"` // Last 10 reports
-}
-
-// GetPDFURL returns the stored PDF URL (implements analysis.ReportSummary)
-func (r *Report) GetPDFURL() string {
-	return r.PDFURL
 }
 
 // Scan implements sql.Scanner for JSONB compatibility (if needed for metadata)
