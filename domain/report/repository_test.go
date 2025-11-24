@@ -40,25 +40,25 @@ func TestPostgresRepository_Create(t *testing.T) {
 		CoverPage:                "<html>Cover</html>",
 		ExecutiveSummary:         "<html>Executive Summary</html>",
 		TableOfContents:          "<html>TOC</html>",
-		PESTELPage:              "<html>PESTEL</html>",
-		PorterPage:              "<html>Porter</html>",
-		SWOTPage:                "<html>SWOT</html>",
-		TamSamSomPage:           "<html>TAM-SAM-SOM</html>",
-		BlueOceanPage:           "<html>Blue Ocean</html>",
-		OKRPage:                 "<html>OKRs</html>",
-		BSCPage:                 "<html>BSC</html>",
-		BenchmarkingPage:        "<html>Benchmarking</html>",
+		PESTELPage:               "<html>PESTEL</html>",
+		PorterPage:               "<html>Porter</html>",
+		SWOTPage:                 "<html>SWOT</html>",
+		TamSamSomPage:            "<html>TAM-SAM-SOM</html>",
+		BlueOceanPage:            "<html>Blue Ocean</html>",
+		OKRPage:                  "<html>OKRs</html>",
+		BSCPage:                  "<html>BSC</html>",
+		BenchmarkingPage:         "<html>Benchmarking</html>",
 		FinancialProjectionsPage: "<html>Financial Projections</html>",
-		GrowthHackingPage:       "<html>Growth Hacking</html>",
-		RiskAssessmentPage:      "<html>Risk Assessment</html>",
-		DecisionMatrixPage:      "<html>Decision Matrix</html>",
-		AppendixPage:            "<html>Appendix</html>",
+		GrowthHackingPage:        "<html>Growth Hacking</html>",
+		RiskAssessmentPage:       "<html>Risk Assessment</html>",
+		DecisionMatrixPage:       "<html>Decision Matrix</html>",
+		AppendixPage:             "<html>Appendix</html>",
 
 		// Deprecated pages (empty)
-		BCGMatrixPage:          "",
-		ValuePropositionPage:   "",
+		BCGMatrixPage:           "",
+		ValuePropositionPage:    "",
 		StrategicPrioritiesPage: "",
-		RisksAndMitigationPage: "",
+		RisksAndMitigationPage:  "",
 
 		// PDF info
 		PDFURL:              "https://storage.example.com/report.pdf",
@@ -82,7 +82,7 @@ func TestPostgresRepository_Create(t *testing.T) {
 			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), // tam, ocean, okr
 			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), // bsc, bench, financial
 			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), // growth, risk, decision
-			sqlmock.AnyArg(), // appendix
+			sqlmock.AnyArg(),                                                       // appendix
 			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), // deprecated pages
 			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), // pdf_url, pdf_generated_at, pdf_status
 			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), // status, error, gen_time, total_pages
@@ -305,19 +305,19 @@ func TestPostgresRepository_Update(t *testing.T) {
 		CoverPage:                "<html>Updated Cover</html>",
 		ExecutiveSummary:         "<html>Updated Exec</html>",
 		TableOfContents:          "<html>Updated TOC</html>",
-		PESTELPage:              "<html>Updated PESTEL</html>",
-		PorterPage:              "<html>Updated Porter</html>",
-		SWOTPage:                "<html>Updated SWOT</html>",
-		TamSamSomPage:           "<html>Updated TAM</html>",
-		BlueOceanPage:           "<html>Updated Ocean</html>",
-		OKRPage:                 "<html>Updated OKR</html>",
-		BSCPage:                 "<html>Updated BSC</html>",
-		BenchmarkingPage:        "<html>Updated Bench</html>",
+		PESTELPage:               "<html>Updated PESTEL</html>",
+		PorterPage:               "<html>Updated Porter</html>",
+		SWOTPage:                 "<html>Updated SWOT</html>",
+		TamSamSomPage:            "<html>Updated TAM</html>",
+		BlueOceanPage:            "<html>Updated Ocean</html>",
+		OKRPage:                  "<html>Updated OKR</html>",
+		BSCPage:                  "<html>Updated BSC</html>",
+		BenchmarkingPage:         "<html>Updated Bench</html>",
 		FinancialProjectionsPage: "<html>Updated Financial</html>",
-		GrowthHackingPage:       "<html>Updated Growth</html>",
-		RiskAssessmentPage:      "<html>Updated Risk</html>",
-		DecisionMatrixPage:      "<html>Updated Decision</html>",
-		AppendixPage:            "<html>Updated Appendix</html>",
+		GrowthHackingPage:        "<html>Updated Growth</html>",
+		RiskAssessmentPage:       "<html>Updated Risk</html>",
+		DecisionMatrixPage:       "<html>Updated Decision</html>",
+		AppendixPage:             "<html>Updated Appendix</html>",
 
 		PDFURL:              "https://storage.example.com/updated.pdf",
 		PDFGeneratedAt:      &now,

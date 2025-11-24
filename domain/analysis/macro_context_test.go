@@ -154,13 +154,13 @@ func TestMacroContext_FullJSONStructure(t *testing.T) {
 				"industry_standards":      []interface{}{"ISO 9001", "ISO 14001"},
 			},
 			"market_signals": map[string]interface{}{
-				"commodity_prices":   []interface{}{"Steel +12% YoY"},
+				"commodity_prices":    []interface{}{"Steel +12% YoY"},
 				"supply_chain_status": "Moderate delays",
 				"consumer_sentiment":  "Cautious",
 				"competitor_activity": []interface{}{"Competitor X new product"},
 				"emerging_threats":    []interface{}{"Low-cost Chinese entrant"},
 			},
-			"data_sources":  []interface{}{"url1", "url2"},
+			"data_sources": []interface{}{"url1", "url2"},
 			"last_updated": "2025-11-22",
 		},
 	}

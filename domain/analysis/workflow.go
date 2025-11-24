@@ -163,6 +163,8 @@ func (s *Service) createAnalysisRecord(ctx context.Context, subID, enrichID stri
 		SubmissionID: subID,
 		EnrichmentID: enrichID,
 		Status:       string(StatusPending),
+		Version:      1,
+		IsLatest:     true,
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
 	}

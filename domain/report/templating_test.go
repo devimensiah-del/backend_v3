@@ -138,22 +138,22 @@ func TestMissingDataHandling_EmptyFrameworks(t *testing.T) {
 
 		// Empty PESTEL
 		PESTEL: analysis.PESTELAnalysis{
-			Political:      []string{},
-			Economic:       []string{},
-			Social:         []string{},
-			Technological:  []string{},
-			Environmental:  []string{},
-			Legal:          []string{},
-			Summary:        "",
+			Political:     []string{},
+			Economic:      []string{},
+			Social:        []string{},
+			Technological: []string{},
+			Environmental: []string{},
+			Legal:         []string{},
+			Summary:       "",
 		},
 
 		// Empty SWOT
 		SWOT: analysis.SWOTAnalysis{
-			Strengths:    []analysis.SWOTItem{},
-			Weaknesses:   []analysis.SWOTItem{},
+			Strengths:     []analysis.SWOTItem{},
+			Weaknesses:    []analysis.SWOTItem{},
 			Opportunities: []analysis.SWOTItem{},
-			Threats:      []analysis.SWOTItem{},
-			Summary:      "",
+			Threats:       []analysis.SWOTItem{},
+			Summary:       "",
 		},
 
 		// Empty OKRs

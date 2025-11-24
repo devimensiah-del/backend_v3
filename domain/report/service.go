@@ -355,10 +355,10 @@ func (s *Service) renderPage(templateName string, globalData *ReportData, specif
 	// Templates are now self-contained - parse individually
 	// Using report_v2 for TUC Glasses aligned templates
 	templatePaths := []string{
-		"templates/report_v2/" + templateName,                     // Production / From root
-		"backend_v3/templates/report_v2/" + templateName,          // From parent dir
-		"../templates/report_v2/" + templateName,                  // From tests in subdirs
-		"../../templates/report_v2/" + templateName,               // From deep test dirs
+		"templates/report_v2/" + templateName,            // Production / From root
+		"backend_v3/templates/report_v2/" + templateName, // From parent dir
+		"../templates/report_v2/" + templateName,         // From tests in subdirs
+		"../../templates/report_v2/" + templateName,      // From deep test dirs
 	}
 
 	var tmpl *template.Template
@@ -369,7 +369,7 @@ func (s *Service) renderPage(templateName string, globalData *ReportData, specif
 		"add":      func(a, b int) int { return a + b },
 		"lower":    func(s string) string { return strings.ToLower(s) },
 		"replace":  func(s, old, new string) string { return strings.ReplaceAll(s, old, new) },
-		"slice":    func(start, end int, s string) string {
+		"slice": func(start, end int, s string) string {
 			if start < 0 {
 				start = 0
 			}

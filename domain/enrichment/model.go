@@ -182,7 +182,6 @@ const (
 	StatusPending   Status = "pending"   // Queued, worker not started
 	StatusCompleted Status = "completed" // Worker completed enrichment
 	StatusApproved  Status = "approved"  // Admin approved, ready for analysis
-	// Note: Removed StatusProcessing and StatusFailed
 	// Failures keep status as "pending" with error_message populated
 )
 

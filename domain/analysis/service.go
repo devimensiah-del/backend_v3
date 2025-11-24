@@ -39,6 +39,16 @@ type SubmissionData struct {
 	FundingStage      *string
 }
 
+// ReportLookup defines the minimal dependency needed to verify PDF existence
+type ReportLookup interface {
+	GetBySubmissionID(ctx context.Context, submissionID string) (ReportSummary, error)
+}
+
+// ReportSummary captures only the fields analysis needs to validate sending
+type ReportSummary interface {
+	GetPDFURL() string
+}
+
 // Service handles all business analysis operations
 type Service struct {
 	repo           Repository
@@ -46,6 +56,7 @@ type Service struct {
 	llm            LLMClient
 	logger         zerolog.Logger
 	queueClient    *asynq.Client // For job orchestration
+	reportLookup   ReportLookup  // Optional: used to verify PDF before Send
 
 	// Deprecated fields (kept for backward compatibility)
 	analystModel   string
@@ -80,6 +91,11 @@ func NewService(
 // SetFrameworks updates the framework configurations (called by main.go)
 func (s *Service) SetFrameworks(frameworks map[string]config.FrameworkConfig) {
 	s.frameworks = frameworks
+}
+
+// SetReportLookup wires a report lookup dependency (used for PDF existence checks)
+func (s *Service) SetReportLookup(lookup ReportLookup) {
+	s.reportLookup = lookup
 }
 
 // GetByID retrieves an analysis by ID
@@ -372,12 +388,12 @@ func (s *Service) Send(ctx context.Context, analysisID string, userEmail string)
 	}
 
 	// Validate report exists with a PDF (best-effort guard)
-	if s.reportService != nil {
-		rep, repErr := s.reportService.GetBySubmissionID(ctx, analysis.SubmissionID)
+	if s.reportLookup != nil {
+		rep, repErr := s.reportLookup.GetBySubmissionID(ctx, analysis.SubmissionID)
 		if repErr != nil {
 			return fmt.Errorf("analysis approved but report not found: %w", repErr)
 		}
-		if rep.PDFURL == "" {
+		if rep.GetPDFURL() == "" {
 			return fmt.Errorf("analysis approved but PDF não está disponível ainda")
 		}
 	}

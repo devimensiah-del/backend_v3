@@ -27,6 +27,25 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// reportLookupAdapter implements analysis.ReportLookup without creating package cycles
+type reportLookupAdapter struct {
+	svc *report.Service
+}
+
+type reportSummary struct {
+	rep *report.Report
+}
+
+func (r reportSummary) GetPDFURL() string { return r.rep.PDFURL }
+
+func (a reportLookupAdapter) GetBySubmissionID(ctx context.Context, submissionID string) (analysis.ReportSummary, error) {
+	rep, err := a.svc.GetBySubmissionID(ctx, submissionID)
+	if err != nil {
+		return nil, err
+	}
+	return reportSummary{rep: rep}, nil
+}
+
 func main() {
 	// Add panic recovery at the top level
 	defer func() {
@@ -180,6 +199,7 @@ func main() {
 		log.Logger,
 	)
 	log.Info().Msg("Report service initialized")
+	analysisSvc.SetReportLookup(reportLookupAdapter{svc: reportSvc})
 
 	// 7. BACKGROUND WORKER
 	log.Info().Msg("Initializing background job worker...")
@@ -229,8 +249,8 @@ func main() {
 		cfg.SupabaseJWTSecret, // For AuthMiddleware
 		cfg.AllowedOrigins,    // For CORSMiddleware
 		cfg.Environment == "production",
-		db,         // For role lookup in AuthMiddleware
-		rClient,    // Redis client for health and caching
+		db,      // For role lookup in AuthMiddleware
+		rClient, // Redis client for health and caching
 		asynqClient,
 		cfg.SupabaseURL,
 		cfg.SupabaseAnonKey,   // For auth API calls

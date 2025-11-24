@@ -253,8 +253,8 @@ func TestRetryDelayFormula(t *testing.T) {
 		{4, 80 * time.Second},
 		{5, 160 * time.Second},
 		{6, 320 * time.Second},
-		{7, 600 * time.Second}, // Exceeds max, should cap
-		{8, 600 * time.Second}, // Already capped
+		{7, 600 * time.Second},  // Exceeds max, should cap
+		{8, 600 * time.Second},  // Already capped
 		{15, 600 * time.Second}, // Far beyond max (but not overflow)
 	}
 

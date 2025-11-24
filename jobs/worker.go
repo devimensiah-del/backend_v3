@@ -22,6 +22,7 @@ import (
 const (
 	TypeEnrichment = "enrichment_job"
 	TypeAnalysis   = "analysis_job"
+	TypeReport     = "report"
 )
 
 // Job Payload Types
@@ -32,6 +33,11 @@ type EnrichmentJobPayload struct {
 type AnalysisJobPayload struct {
 	SubmissionID string `json:"submission_id"`
 	EnrichmentID string `json:"enrichment_id"`
+}
+
+type ReportJobPayload struct {
+	SubmissionID string `json:"submission_id"`
+	AnalysisID   string `json:"analysis_id"`
 }
 
 type Worker struct {
@@ -119,6 +125,7 @@ func NewWorker(
 	// Register handlers with retry configuration
 	w.mux.HandleFunc(TypeEnrichment, w.HandleEnrichmentJob)
 	w.mux.HandleFunc(TypeAnalysis, w.HandleAnalysisJob)
+	w.mux.HandleFunc(TypeReport, w.HandleReportJob)
 
 	return w
 }
@@ -317,6 +324,69 @@ func (w *Worker) HandleAnalysisJob(ctx context.Context, task *asynq.Task) error 
 		Dur("duration", time.Since(startTime)).
 		Int64("duration_ms", time.Since(startTime).Milliseconds()).
 		Msg("Analysis job completed successfully")
+
+	return nil
+}
+
+func (w *Worker) HandleReportJob(ctx context.Context, task *asynq.Task) error {
+	startTime := time.Now()
+
+	taskID := task.ResultWriter().TaskID()
+	retryCount, _ := asynq.GetRetryCount(ctx)
+	maxRetry, _ := asynq.GetMaxRetry(ctx)
+
+	jobLogger := w.logger.With().
+		Str("job_type", TypeReport).
+		Str("task_id", taskID).
+		Int("retry_count", retryCount).
+		Int("max_retries", maxRetry).
+		Logger()
+
+	var payload ReportJobPayload
+	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
+		jobLogger.Error().Err(err).Msg("Failed to unmarshal report job payload")
+		return fmt.Errorf("invalid payload format: %w", err)
+	}
+
+	// Validate submission UUID (analysisID is string UUID but Publish expects string)
+	if _, err := uuid.Parse(payload.SubmissionID); err != nil {
+		jobLogger.Error().Err(err).Str("submission_id", payload.SubmissionID).Msg("Invalid submission UUID format")
+		return asynq.SkipRetry
+	}
+	if _, err := uuid.Parse(payload.AnalysisID); err != nil {
+		jobLogger.Error().Err(err).Str("analysis_id", payload.AnalysisID).Msg("Invalid analysis UUID format")
+		return asynq.SkipRetry
+	}
+
+	jobLogger.Info().
+		Str("sub_id", payload.SubmissionID).
+		Str("analysis_id", payload.AnalysisID).
+		Msg("Report generation job started")
+
+	if w.reportService == nil {
+		err := fmt.Errorf("report service not configured")
+		jobLogger.Error().Err(err).Msg("Cannot generate report")
+		return err
+	}
+
+	if _, err := w.reportService.Publish(ctx, payload.SubmissionID, payload.AnalysisID); err != nil {
+		jobLogger.Error().
+			Err(err).
+			Str("sub_id", payload.SubmissionID).
+			Dur("duration", time.Since(startTime)).
+			Msg("Report generation failed")
+
+		if isRetryableError(err) {
+			return fmt.Errorf("retryable error: %w", err)
+		}
+		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
+	}
+
+	jobLogger.Info().
+		Str("sub_id", payload.SubmissionID).
+		Dur("duration", time.Since(startTime)).
+		Int64("duration_ms", time.Since(startTime).Milliseconds()).
+		Msg("Report generation completed successfully")
 
 	return nil
 }

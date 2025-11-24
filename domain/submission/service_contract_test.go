@@ -12,15 +12,19 @@ type memRepo struct {
 	last *Submission
 }
 
-func (m *memRepo) Create(ctx context.Context, s *Submission) error                           { m.last = s; return nil }
-func (m *memRepo) GetByID(ctx context.Context, id uuid.UUID) (*Submission, error)            { return m.last, nil }
-func (m *memRepo) GetByEmail(ctx context.Context, email string) ([]*Submission, error)       { return nil, nil }
-func (m *memRepo) List(ctx context.Context, opts *ListOptions) ([]*Submission, int, error)   { return nil, 0, nil }
-func (m *memRepo) Update(ctx context.Context, s *Submission) error                           { m.last = s; return nil }
-func (m *memRepo) Delete(ctx context.Context, id uuid.UUID) error                            { return nil }
-func (m *memRepo) GetTotalCount(ctx context.Context) (int, error)                            { return 0, nil }
-func (m *memRepo) GetActiveCount(ctx context.Context) (int, error)                           { return 0, nil }
-func (m *memRepo) GetCompletedCount(ctx context.Context) (int, error)                        { return 0, nil }
+func (m *memRepo) Create(ctx context.Context, s *Submission) error                { m.last = s; return nil }
+func (m *memRepo) GetByID(ctx context.Context, id uuid.UUID) (*Submission, error) { return m.last, nil }
+func (m *memRepo) GetByEmail(ctx context.Context, email string) ([]*Submission, error) {
+	return nil, nil
+}
+func (m *memRepo) List(ctx context.Context, opts *ListOptions) ([]*Submission, int, error) {
+	return nil, 0, nil
+}
+func (m *memRepo) Update(ctx context.Context, s *Submission) error    { m.last = s; return nil }
+func (m *memRepo) Delete(ctx context.Context, id uuid.UUID) error     { return nil }
+func (m *memRepo) GetTotalCount(ctx context.Context) (int, error)     { return 0, nil }
+func (m *memRepo) GetActiveCount(ctx context.Context) (int, error)    { return 0, nil }
+func (m *memRepo) GetCompletedCount(ctx context.Context) (int, error) { return 0, nil }
 func (m *memRepo) ListWithAnalytics(ctx context.Context, opts *ListOptions) ([]*Submission, int, error) {
 	return nil, 0, nil
 }
@@ -30,9 +34,9 @@ func TestCreateSetsReceivedStatus(t *testing.T) {
 	svc := NewService(repo, nil)
 
 	sub := &Submission{
-		CompanyName:     "Test Co",
-		ContactName:     "Alice",
-		ContactEmail:    "alice@test.co",
+		CompanyName:       "Test Co",
+		ContactName:       "Alice",
+		ContactEmail:      "alice@test.co",
 		BusinessChallenge: "Grow",
 		CreatedAt:         time.Time{},
 		UpdatedAt:         time.Time{},

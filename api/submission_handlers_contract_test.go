@@ -22,7 +22,9 @@ import (
 
 type fakeSubmissionRepo struct{ sub *submission.Submission }
 
-func (f *fakeSubmissionRepo) Create(ctx context.Context, s *submission.Submission) error { panic("not used") }
+func (f *fakeSubmissionRepo) Create(ctx context.Context, s *submission.Submission) error {
+	panic("not used")
+}
 func (f *fakeSubmissionRepo) GetByID(ctx context.Context, id uuid.UUID) (*submission.Submission, error) {
 	return f.sub, nil
 }
@@ -32,11 +34,13 @@ func (f *fakeSubmissionRepo) GetByEmail(ctx context.Context, email string) ([]*s
 func (f *fakeSubmissionRepo) List(ctx context.Context, opts *submission.ListOptions) ([]*submission.Submission, int, error) {
 	panic("not used")
 }
-func (f *fakeSubmissionRepo) Update(ctx context.Context, s *submission.Submission) error { panic("not used") }
-func (f *fakeSubmissionRepo) Delete(ctx context.Context, id uuid.UUID) error             { panic("not used") }
-func (f *fakeSubmissionRepo) GetTotalCount(ctx context.Context) (int, error)             { panic("not used") }
-func (f *fakeSubmissionRepo) GetActiveCount(ctx context.Context) (int, error)            { panic("not used") }
-func (f *fakeSubmissionRepo) GetCompletedCount(ctx context.Context) (int, error)         { panic("not used") }
+func (f *fakeSubmissionRepo) Update(ctx context.Context, s *submission.Submission) error {
+	panic("not used")
+}
+func (f *fakeSubmissionRepo) Delete(ctx context.Context, id uuid.UUID) error     { panic("not used") }
+func (f *fakeSubmissionRepo) GetTotalCount(ctx context.Context) (int, error)     { panic("not used") }
+func (f *fakeSubmissionRepo) GetActiveCount(ctx context.Context) (int, error)    { panic("not used") }
+func (f *fakeSubmissionRepo) GetCompletedCount(ctx context.Context) (int, error) { panic("not used") }
 
 type noopEnrichmentGetter struct{}
 
@@ -66,19 +70,19 @@ func TestGetSubmissionContractShape(t *testing.T) {
 	now := time.Now().UTC()
 
 	sub := &submission.Submission{
-		ID:               subID,
-		CompanyName:      "Test Co",
-		CNPJ:             stringToPtr("12.345.678/0001-90"),
-		CompanyWebsite:   stringToPtr("https://test.co"),
-		CompanyIndustry:  stringToPtr("Tech"),
-		CompanySize:      stringToPtr("10-50"),
-		CompanyLocation:  stringToPtr("NYC"),
-		ContactName:      "Alice",
-		ContactEmail:     "alice@test.co",
-		Status:           submission.StatusReceived,
-		UserID:           &userID,
-		CreatedAt:        now,
-		UpdatedAt:        now,
+		ID:              subID,
+		CompanyName:     "Test Co",
+		CNPJ:            stringToPtr("12.345.678/0001-90"),
+		CompanyWebsite:  stringToPtr("https://test.co"),
+		CompanyIndustry: stringToPtr("Tech"),
+		CompanySize:     stringToPtr("10-50"),
+		CompanyLocation: stringToPtr("NYC"),
+		ContactName:     "Alice",
+		ContactEmail:    "alice@test.co",
+		Status:          submission.StatusReceived,
+		UserID:          &userID,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 
 	repo := &fakeSubmissionRepo{sub: sub}
