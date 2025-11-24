@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 // JSONMap handles the JSONB interaction with Postgres
@@ -157,16 +158,11 @@ type Enrichment struct {
 	IsLocked bool `json:"isLocked" db:"is_locked"`
 
 	// Generic JSON storage for flexibility
-	SourcesStatus JSONMap `json:"sourcesStatus,omitempty" db:"sources_status"`
-	SourcesUsed   *string `json:"sourcesUsed,omitempty" db:"sources_used"` // PostgreSQL ARRAY type, nullable
-	EnrichedData  JSONMap `json:"enrichedData,omitempty" db:"data"`
+	SourcesStatus JSONMap        `json:"sourcesStatus,omitempty" db:"sources_status"`
+	SourcesUsed   pq.StringArray `json:"sourcesUsed,omitempty" db:"sources_used"` // PostgreSQL text[] array
+	EnrichedData  JSONMap        `json:"enrichedData,omitempty" db:"data"`
 
-	EnrichmentScore  *float64   `json:"enrichmentScore,omitempty" db:"enrichment_score"`
-	ProcessingTimeMs *int64     `json:"processingTimeMs,omitempty" db:"processing_time_ms"`
-	ApprovedAt       *time.Time `json:"approvedAt,omitempty" db:"approved_at"`
-	ApprovedBy       *uuid.UUID `json:"approvedBy,omitempty" db:"approved_by"`
-
-	StartedAt    *time.Time `json:"startedAt,omitempty" db:"started_at"`
+	StartedAt *time.Time `json:"startedAt,omitempty" db:"started_at"`
 	CompletedAt  *time.Time `json:"completedAt,omitempty" db:"completed_at"`
 	ErrorMessage string     `json:"errorMessage,omitempty" db:"error_message"`
 	RetryCount   int        `json:"retryCount" db:"retry_count"`
@@ -179,10 +175,9 @@ type Enrichment struct {
 type Status string
 
 const (
-	StatusPending   Status = "pending"   // Queued, worker not started
-	StatusCompleted Status = "completed" // Worker completed enrichment
+	StatusPending   Status = "pending"   // Initial state, worker processing
+	StatusCompleted Status = "completed" // Worker finished enrichment successfully
 	StatusApproved  Status = "approved"  // Admin approved, ready for analysis
-	// Failures keep status as "pending" with error_message populated
 )
 
 func NewEnrichment(submissionID uuid.UUID) *Enrichment {
@@ -195,6 +190,7 @@ func NewEnrichment(submissionID uuid.UUID) *Enrichment {
 		CurrentStep:   "Queued for enrichment",
 		IsLocked:      false,
 		SourcesStatus: make(JSONMap),
+		SourcesUsed:   pq.StringArray{},
 		EnrichedData:  make(JSONMap),
 		CreatedAt:     now,
 		UpdatedAt:     now,
@@ -202,8 +198,7 @@ func NewEnrichment(submissionID uuid.UUID) *Enrichment {
 }
 
 func (e *Enrichment) Start() {
-	// NOTE: Removed status transition to "processing" - status stays "pending"
-	// Worker starts execution without changing status
+	// Status stays "pending" while processing - only changes to "completed" when done
 	n := time.Now()
 	e.StartedAt = &n
 	e.UpdatedAt = n
@@ -214,6 +209,7 @@ func (e *Enrichment) Finish() {
 	n := time.Now()
 	e.CompletedAt = &n
 	e.Progress = 100
+	e.CurrentStep = "Enrichment complete"
 	e.UpdatedAt = n
 }
 
@@ -224,9 +220,8 @@ func (e *Enrichment) UpdateProgress(step string, pct int) {
 }
 
 func (e *Enrichment) Fail(err error) {
-	// NOTE: Keep status as "pending" for retryable failures
-	// Error message indicates the failure reason
-	e.Status = StatusPending
+	// Status stays "pending" on failure - error is stored in ErrorMessage
+	// Admin can retry or manually update
 	e.ErrorMessage = err.Error()
 	e.UpdatedAt = time.Now()
 }

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -21,6 +22,11 @@ type Repository interface {
 	Update(ctx context.Context, s *Submission) error
 	Delete(ctx context.Context, id uuid.UUID) error
 
+	// Cross-table lookup used for idempotency checks before queueing enrichment jobs
+	GetEnrichmentStatus(ctx context.Context, submissionID uuid.UUID) (*EnrichmentStatusRow, error)
+	// ReserveEnrichment inserts an enrichment placeholder if one does not already exist (idempotent)
+	ReserveEnrichment(ctx context.Context, submissionID uuid.UUID) (bool, error)
+
 	// Analytics methods
 	GetTotalCount(ctx context.Context) (int, error)
 	GetActiveCount(ctx context.Context) (int, error)
@@ -33,6 +39,13 @@ type PostgresRepository struct {
 	db *sqlx.DB
 }
 
+// EnrichmentStatusRow mirrors the minimal columns needed for idempotency checks.
+type EnrichmentStatusRow struct {
+	Status      string     `db:"status"`
+	StartedAt   *time.Time `db:"started_at"`
+	CompletedAt *time.Time `db:"completed_at"`
+}
+
 // NewRepository creates a new PostgreSQL repository
 func NewRepository(db *sqlx.DB) Repository {
 	return &PostgresRepository{db: db}
@@ -42,13 +55,13 @@ func NewRepository(db *sqlx.DB) Repository {
 func (r *PostgresRepository) Create(ctx context.Context, s *Submission) error {
 	query := `
 		INSERT INTO submissions (
-			id, company_name, company_website, company_industry, company_size, company_location,
+			id, company_name, cnpj, company_website, company_industry, company_size, company_location,
 			contact_name, contact_email, contact_phone, contact_position,
 			target_market, annual_revenue_min, annual_revenue_max, funding_stage,
 			business_challenge, additional_notes, linkedin_url, twitter_handle,
 			status, user_id, created_at, updated_at
 		) VALUES (
-			:id, :company_name, :company_website, :company_industry, :company_size, :company_location,
+			:id, :company_name, :cnpj, :company_website, :company_industry, :company_size, :company_location,
 			:contact_name, :contact_email, :contact_phone, :contact_position,
 			:target_market, :annual_revenue_min, :annual_revenue_max, :funding_stage,
 			:business_challenge, :additional_notes, :linkedin_url, :twitter_handle,
@@ -98,6 +111,49 @@ func (r *PostgresRepository) GetByEmail(ctx context.Context, email string) ([]*S
 	return submissions, nil
 }
 
+// GetEnrichmentStatus returns the latest enrichment status for a submission (if any).
+func (r *PostgresRepository) GetEnrichmentStatus(ctx context.Context, submissionID uuid.UUID) (*EnrichmentStatusRow, error) {
+	query := `
+		SELECT status, started_at, completed_at
+		FROM enrichments
+		WHERE submission_id = $1
+		ORDER BY created_at DESC
+		LIMIT 1
+	`
+
+	var row EnrichmentStatusRow
+	if err := r.db.GetContext(ctx, &row, query, submissionID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, sql.ErrNoRows
+		}
+		return nil, fmt.Errorf("failed to lookup enrichment status: %w", err)
+	}
+
+	return &row, nil
+}
+
+// ReserveEnrichment inserts a placeholder enrichment row to guarantee one-per-submission semantics.
+// Returns true if a new row was created, false if it already existed.
+func (r *PostgresRepository) ReserveEnrichment(ctx context.Context, submissionID uuid.UUID) (bool, error) {
+	query := `
+		INSERT INTO enrichments (submission_id)
+		VALUES ($1)
+		ON CONFLICT (submission_id) DO NOTHING
+	`
+
+	result, err := r.db.ExecContext(ctx, query, submissionID)
+	if err != nil {
+		return false, fmt.Errorf("failed to reserve enrichment: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	return rows > 0, nil
+}
+
 // List retrieves submissions with pagination and filtering
 func (r *PostgresRepository) List(ctx context.Context, opts *ListOptions) ([]*Submission, int, error) {
 	// Set defaults
@@ -122,15 +178,14 @@ func (r *PostgresRepository) List(ctx context.Context, opts *ListOptions) ([]*Su
 		"status":       true,
 	}
 
-	orderBy := "created_at" // Default safe fallback
-	if allowedSorts[opts.OrderBy] {
-		orderBy = opts.OrderBy
+	orderBy := opts.OrderBy
+	if !allowedSorts[orderBy] {
+		return nil, 0, fmt.Errorf("invalid orderBy value: %s", orderBy)
 	}
 
-	// SECURITY FIX: Whitelist order direction
-	orderDir := "DESC"
-	if opts.Order == "ASC" {
-		orderDir = "ASC"
+	orderDir := strings.ToUpper(opts.Order)
+	if orderDir != "ASC" && orderDir != "DESC" {
+		return nil, 0, fmt.Errorf("invalid order value: %s", opts.Order)
 	}
 
 	// Build query
@@ -188,6 +243,7 @@ func (r *PostgresRepository) Update(ctx context.Context, s *Submission) error {
 	query := `
 		UPDATE submissions SET
 			company_name = :company_name,
+			cnpj = :cnpj,
 			company_website = :company_website,
 			company_industry = :company_industry,
 			company_size = :company_size,
@@ -273,7 +329,7 @@ func (r *PostgresRepository) GetActiveCount(ctx context.Context) (int, error) {
 	query := `
 		SELECT COUNT(DISTINCT s.id)
 		FROM submissions s
-		LEFT JOIN analyses a ON s.id::text = a.submission_id AND a.is_latest = true
+		LEFT JOIN analyses a ON s.id = a.submission_id
 		WHERE s.deleted_at IS NULL
 		AND (a.id IS NULL OR a.status != 'sent')
 	`
@@ -292,7 +348,7 @@ func (r *PostgresRepository) GetCompletedCount(ctx context.Context) (int, error)
 	query := `
 		SELECT COUNT(DISTINCT s.id)
 		FROM submissions s
-		INNER JOIN analyses a ON s.id::text = a.submission_id AND a.is_latest = true
+		INNER JOIN analyses a ON s.id = a.submission_id
 		WHERE s.deleted_at IS NULL
 		AND a.status = 'sent'
 	`

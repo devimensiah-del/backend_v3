@@ -40,11 +40,11 @@ func (r *PostgresRepository) Create(ctx context.Context, e *Enrichment) error {
 	query := `
 		INSERT INTO enrichments (
 			id, submission_id, status, progress, current_step, is_locked,
-			sources_status, data, started_at, completed_at,
+			sources_status, sources_used, data, started_at, completed_at,
 			error_message, retry_count, max_retries, created_at, updated_at
 		) VALUES (
 			:id, :submission_id, :status, :progress, :current_step, :is_locked,
-			:sources_status, :data, :started_at, :completed_at,
+			:sources_status, :sources_used, :data, :started_at, :completed_at,
 			:error_message, :retry_count, :max_retries, :created_at, :updated_at
 		)
 	`
@@ -102,23 +102,25 @@ func (r *PostgresRepository) GetBySubmissionID(ctx context.Context, submissionID
 
 // UpdateSystem updates enrichment ONLY if it is NOT locked by a user
 // This is used by the Background Worker
+// CRITICAL: The AND is_locked = FALSE clause prevents the worker from overwriting user edits
 func (r *PostgresRepository) UpdateSystem(ctx context.Context, e *Enrichment) error {
 	e.UpdatedAt = time.Now()
 
-	// We explicitly add "AND is_locked = false" to the WHERE clause
 	query := `
 		UPDATE enrichments SET
 			status = :status,
 			progress = :progress,
 			current_step = :current_step,
 			sources_status = :sources_status,
+			sources_used = :sources_used,
 			data = :data,
 			started_at = :started_at,
 			completed_at = :completed_at,
 			error_message = :error_message,
 			retry_count = :retry_count,
 			updated_at = :updated_at
-		WHERE id = :id AND is_locked = FALSE
+		WHERE id = :id
+		AND is_locked = FALSE
 	`
 
 	result, err := r.db.NamedExecContext(ctx, query, e)
@@ -132,9 +134,9 @@ func (r *PostgresRepository) UpdateSystem(ctx context.Context, e *Enrichment) er
 		return fmt.Errorf("failed to get rows affected: %w", err)
 	}
 
-	// If 0 rows affected, enrichment is locked by user
+	// If 0 rows affected, enrichment is locked by user OR not found
 	if rows == 0 {
-		return fmt.Errorf("enrichment is locked by user - cannot update (progress: %d%%)", e.Progress)
+		return fmt.Errorf("enrichment is locked by user or not found - cannot update (progress: %d%%)", e.Progress)
 	}
 
 	return nil
@@ -149,9 +151,11 @@ func (r *PostgresRepository) UpdateUser(ctx context.Context, e *Enrichment) erro
 	query := `
 		UPDATE enrichments SET
 			data = :data,
+			sources_used = :sources_used,
 			is_locked = TRUE,
 			updated_at = :updated_at
 		WHERE id = :id
+		AND status != 'approved'
 	`
 
 	result, err := r.db.NamedExecContext(ctx, query, e)
@@ -183,6 +187,7 @@ func (r *PostgresRepository) ForceUpdateAndUnlock(ctx context.Context, e *Enrich
 			progress = :progress,
 			current_step = :current_step,
 			sources_status = :sources_status,
+			sources_used = :sources_used,
 			data = :data,
 			started_at = :started_at,
 			completed_at = :completed_at,

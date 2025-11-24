@@ -134,22 +134,27 @@ func (h *SubmissionHandlers) CreateSubmission(c *gin.Context) {
 		return
 	}
 
-	// -------------------------------------------------------------------------
-	// AUTO-TRIGGER ENRICHMENT WORKFLOW
-	// -------------------------------------------------------------------------
+	ctx := c.Request.Context()
 
-	// 1. Create Enrichment Record (Status: Pending)
-	enrichmentRecord := enrichment.NewEnrichment(sub.ID)
-	if err := h.EnrichmentService.Create(c.Request.Context(), enrichmentRecord); err != nil {
-		h.Logger.Error().Err(err).Str("sub_id", sub.ID.String()).Msg("Failed to create enrichment record")
-		// We don't fail the request, but we log it. The user might see "Analysis not started".
+	// -------------------------------------------------------------------------
+	// AUTO-TRIGGER ENRICHMENT WORKFLOW WITH IDEMPOTENCY GUARDS
+	// -------------------------------------------------------------------------
+	existing, err := h.EnrichmentService.GetBySubmissionID(ctx, sub.ID)
+	if err == nil {
+		// Enrichment already exists - skip duplicate enqueue
+		// Valid statuses: pending, completed, approved
+		h.Logger.Info().Str("sub_id", sub.ID.String()).Str("status", string(existing.Status)).Msg("Enrichment already exists - skipping duplicate enqueue")
 	} else {
-		// 2. Enqueue Enrichment Job
-		payload, _ := json.Marshal(map[string]interface{}{
-			"submission_id": sub.ID.String(),
-		})
-		task := asynq.NewTask("enrichment_job", payload)
-		if _, err := h.AsynqClient.Enqueue(task, asynq.MaxRetry(3)); err != nil {
+		if err != nil && err.Error() != "enrichment not found" {
+			h.Logger.Error().Err(err).Str("sub_id", sub.ID.String()).Msg("Failed to lookup enrichment; creating new record anyway")
+		}
+		// If not found, create a fresh record for the UI and enqueue the worker.
+		enrichmentRecord := enrichment.NewEnrichment(sub.ID)
+		if createErr := h.EnrichmentService.Create(ctx, enrichmentRecord); createErr != nil {
+			h.Logger.Error().Err(createErr).Str("sub_id", sub.ID.String()).Msg("Failed to create enrichment record")
+		}
+
+		if err := h.SubmissionService.TriggerEnrichmentProcess(ctx, sub); err != nil {
 			h.Logger.Error().Err(err).Str("sub_id", sub.ID.String()).Msg("Failed to enqueue enrichment job")
 		} else {
 			h.Logger.Info().Str("sub_id", sub.ID.String()).Msg("Enrichment workflow auto-triggered")

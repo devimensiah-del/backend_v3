@@ -18,9 +18,10 @@ import (
 // GenerationOptions holds model-specific parameters for LLM generation
 // Supports heterogeneous model routing with framework-specific configurations
 type GenerationOptions struct {
-	Model       string
-	Temperature float64
-	MaxTokens   int
+	Model         string
+	Temperature   float64
+	MaxTokens     int
+	FallbackModel string // Used if primary model fails (rate limit, unavailable, timeout)
 }
 
 // Client wraps OpenRouter API with retry logic and circuit breaker
@@ -58,11 +59,16 @@ func NewClientWithBaseURL(apiKey, baseURL string) *Client {
 	}
 }
 
-// GenerateStructuredWithOptions is the new "Magic Method" for framework-specific model routing.
-// Supports heterogeneous model configurations with different temperatures and max_tokens per framework.
+// GenerateStructuredWithOptions is the "Magic Method" for framework-specific model routing.
+// Supports heterogeneous model configurations with automatic fallback on failure.
+//
+// Fallback Strategy:
+//  1. Try primary model (opts.Model)
+//  2. On retryable error (rate limit, timeout, 5xx), try fallback model (opts.FallbackModel)
+//  3. Return error only if both fail
 func (c *Client) GenerateStructuredWithOptions(ctx context.Context, opts GenerationOptions, promptTemplate string, data interface{}, targetSchema interface{}) error {
 
-	// 1. Prepare the Context
+	// 1. Prepare the Context (same for primary and fallback)
 	finalPrompt := promptTemplate
 
 	dataMap, isMap := data.(map[string]interface{})
@@ -82,20 +88,25 @@ func (c *Client) GenerateStructuredWithOptions(ctx context.Context, opts Generat
 		finalPrompt += fmt.Sprintf("\n\nContext Data:\n%s", string(valBytes))
 	}
 
-	// 2. Create Request using GenerationOptions (framework-specific config)
-	req := &Request{
-		Model:        opts.Model,
-		SystemPrompt: "You are a JSON-only API. Return strictly valid JSON matching the requested schema.",
-		Messages: []Message{
-			{Role: "user", Content: finalPrompt},
-		},
-		Temperature: opts.Temperature,
-		MaxTokens:   opts.MaxTokens,
-	}
+	// 2. Try Primary Model
+	resp, err := c.callWithModel(ctx, opts.Model, opts.Temperature, opts.MaxTokens, finalPrompt)
 
-	// 3. Call API
-	resp, err := c.Call(ctx, req)
-	if err != nil {
+	// 3. On failure, try Fallback Model (if configured and error is retryable)
+	if err != nil && opts.FallbackModel != "" && opts.FallbackModel != opts.Model {
+		if isRetryable(err) {
+			// Log the fallback attempt
+			fmt.Printf("[LLM] Primary model %s failed (%v), trying fallback %s\n", opts.Model, err, opts.FallbackModel)
+
+			resp, err = c.callWithModel(ctx, opts.FallbackModel, opts.Temperature, opts.MaxTokens, finalPrompt)
+			if err != nil {
+				return fmt.Errorf("both primary (%s) and fallback (%s) models failed: %w", opts.Model, opts.FallbackModel, err)
+			}
+			fmt.Printf("[LLM] Fallback model %s succeeded\n", opts.FallbackModel)
+		} else {
+			// Non-retryable error (e.g., invalid JSON response) - don't try fallback
+			return err
+		}
+	} else if err != nil {
 		return err
 	}
 
@@ -113,6 +124,21 @@ func (c *Client) GenerateStructuredWithOptions(ctx context.Context, opts Generat
 	return nil
 }
 
+// callWithModel makes an LLM call with a specific model configuration
+func (c *Client) callWithModel(ctx context.Context, model string, temperature float64, maxTokens int, prompt string) (*Response, error) {
+	req := &Request{
+		Model:        model,
+		SystemPrompt: "You are a JSON-only API. Return strictly valid JSON matching the requested schema.",
+		Messages: []Message{
+			{Role: "user", Content: prompt},
+		},
+		Temperature: temperature,
+		MaxTokens:   maxTokens,
+	}
+
+	return c.Call(ctx, req)
+}
+
 // GenerateStructured (DEPRECATED) - kept for backward compatibility.
 // Use GenerateStructuredWithOptions for framework-specific routing.
 func (c *Client) GenerateStructured(ctx context.Context, model string, promptTemplate string, data interface{}, targetSchema interface{}) error {
@@ -124,12 +150,13 @@ func (c *Client) GenerateStructured(ctx context.Context, model string, promptTem
 	return c.GenerateStructuredWithOptions(ctx, opts, promptTemplate, data, targetSchema)
 }
 
-// Helper to convert FrameworkConfig to GenerationOptions
+// NewGenerationOptions converts FrameworkConfig to GenerationOptions (includes fallback)
 func NewGenerationOptions(cfg config.FrameworkConfig) GenerationOptions {
 	return GenerationOptions{
-		Model:       cfg.Model,
-		Temperature: cfg.Temperature,
-		MaxTokens:   cfg.MaxTokens,
+		Model:         cfg.Model,
+		Temperature:   cfg.Temperature,
+		MaxTokens:     cfg.MaxTokens,
+		FallbackModel: cfg.FallbackModel,
 	}
 }
 

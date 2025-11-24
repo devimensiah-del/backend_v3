@@ -12,17 +12,12 @@ import (
 	"backend_v3/domain/enrichment"
 	"backend_v3/domain/report"
 	"backend_v3/domain/submission"
+	jobtypes "backend_v3/jobs/types"
 
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
-)
-
-const (
-	TypeEnrichment = "enrichment_job"
-	TypeAnalysis   = "analysis_job"
-	TypeReport     = "report"
 )
 
 // Job Payload Types
@@ -123,9 +118,9 @@ func NewWorker(
 	w.mux = asynq.NewServeMux()
 
 	// Register handlers with retry configuration
-	w.mux.HandleFunc(TypeEnrichment, w.HandleEnrichmentJob)
-	w.mux.HandleFunc(TypeAnalysis, w.HandleAnalysisJob)
-	w.mux.HandleFunc(TypeReport, w.HandleReportJob)
+	w.mux.HandleFunc(jobtypes.TypeEnrichment, w.HandleEnrichmentJob)
+	w.mux.HandleFunc(jobtypes.TypeAnalysis, w.HandleAnalysisJob)
+	w.mux.HandleFunc(jobtypes.TypeReport, w.HandleReportJob)
 
 	return w
 }
@@ -179,7 +174,7 @@ func (w *Worker) HandleEnrichmentJob(ctx context.Context, task *asynq.Task) erro
 
 	// Structured logger with correlation ID
 	jobLogger := w.logger.With().
-		Str("job_type", TypeEnrichment).
+		Str("job_type", jobtypes.TypeEnrichment).
 		Str("task_id", taskID).
 		Str("correlation_id", taskID).
 		Int("retry_count", retryCount).
@@ -187,10 +182,11 @@ func (w *Worker) HandleEnrichmentJob(ctx context.Context, task *asynq.Task) erro
 		Logger()
 
 	// 1. Parse payload
+	// SAFETY: Wrap unmarshal errors with SkipRetry - malformed payloads can NEVER succeed
 	var payload EnrichmentJobPayload
 	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
-		jobLogger.Error().Err(err).Msg("Failed to unmarshal enrichment job payload")
-		return fmt.Errorf("invalid payload format: %w", err)
+		jobLogger.Error().Err(err).Msg("Failed to unmarshal enrichment job payload - skipping retry (poison pill)")
+		return fmt.Errorf("%w: invalid payload format: %v", asynq.SkipRetry, err)
 	}
 
 	// 2. Validate UUID (fix panic risk)
@@ -261,7 +257,7 @@ func (w *Worker) HandleAnalysisJob(ctx context.Context, task *asynq.Task) error 
 
 	// Structured logger with correlation ID
 	jobLogger := w.logger.With().
-		Str("job_type", TypeAnalysis).
+		Str("job_type", jobtypes.TypeAnalysis).
 		Str("task_id", taskID).
 		Str("correlation_id", taskID).
 		Int("retry_count", retryCount).
@@ -269,10 +265,11 @@ func (w *Worker) HandleAnalysisJob(ctx context.Context, task *asynq.Task) error 
 		Logger()
 
 	// 1. Parse payload
+	// SAFETY: Wrap unmarshal errors with SkipRetry - malformed payloads can NEVER succeed
 	var payload AnalysisJobPayload
 	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
-		jobLogger.Error().Err(err).Msg("Failed to unmarshal analysis job payload")
-		return fmt.Errorf("invalid payload format: %w", err)
+		jobLogger.Error().Err(err).Msg("Failed to unmarshal analysis job payload - skipping retry (poison pill)")
+		return fmt.Errorf("%w: invalid payload format: %v", asynq.SkipRetry, err)
 	}
 
 	// 2. Validate UUIDs
@@ -336,16 +333,17 @@ func (w *Worker) HandleReportJob(ctx context.Context, task *asynq.Task) error {
 	maxRetry, _ := asynq.GetMaxRetry(ctx)
 
 	jobLogger := w.logger.With().
-		Str("job_type", TypeReport).
+		Str("job_type", jobtypes.TypeReport).
 		Str("task_id", taskID).
 		Int("retry_count", retryCount).
 		Int("max_retries", maxRetry).
 		Logger()
 
+	// SAFETY: Wrap unmarshal errors with SkipRetry - malformed payloads can NEVER succeed
 	var payload ReportJobPayload
 	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
-		jobLogger.Error().Err(err).Msg("Failed to unmarshal report job payload")
-		return fmt.Errorf("invalid payload format: %w", err)
+		jobLogger.Error().Err(err).Msg("Failed to unmarshal report job payload - skipping retry (poison pill)")
+		return fmt.Errorf("%w: invalid payload format: %v", asynq.SkipRetry, err)
 	}
 
 	// Validate submission UUID (analysisID is string UUID but Publish expects string)
@@ -420,7 +418,7 @@ func (w *Worker) markJobAsFailed(ctx context.Context, task *asynq.Task, err erro
 	errorMsg := err.Error()
 
 	switch task.Type() {
-	case TypeEnrichment:
+	case jobtypes.TypeEnrichment:
 		var payload EnrichmentJobPayload
 		if unmarshalErr := json.Unmarshal(task.Payload(), &payload); unmarshalErr != nil {
 			w.logger.Error().Err(unmarshalErr).Msg("Failed to unmarshal payload for marking failed")
@@ -444,7 +442,7 @@ func (w *Worker) markJobAsFailed(ctx context.Context, task *asynq.Task, err erro
 				Msg("Enrichment marked as failed in database")
 		}
 
-	case TypeAnalysis:
+	case jobtypes.TypeAnalysis:
 		var payload AnalysisJobPayload
 		if unmarshalErr := json.Unmarshal(task.Payload(), &payload); unmarshalErr != nil {
 			w.logger.Error().Err(unmarshalErr).Msg("Failed to unmarshal payload for marking failed")
@@ -573,10 +571,10 @@ func (w *Worker) enqueueJob(typeName string, payload interface{}) error {
 	opts = append(opts, asynq.TaskID(taskID))
 	opts = append(opts, asynq.Retention(24*time.Hour))
 
-	if typeName == TypeEnrichment {
+	if typeName == jobtypes.TypeEnrichment {
 		opts = append(opts, asynq.MaxRetry(w.cfg.EnrichmentMaxRetries))
 		opts = append(opts, asynq.Timeout(time.Duration(w.cfg.EnrichmentTimeout)*time.Second))
-	} else if typeName == TypeAnalysis {
+	} else if typeName == jobtypes.TypeAnalysis {
 		opts = append(opts, asynq.MaxRetry(w.cfg.AnalysisMaxRetries))
 		opts = append(opts, asynq.Timeout(time.Duration(w.cfg.AnalysisTimeout)*time.Second))
 	}
@@ -603,7 +601,7 @@ func NewEnrichmentTask(payload EnrichmentJobPayload) (*asynq.Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	return asynq.NewTask(TypeEnrichment, data), nil
+	return asynq.NewTask(jobtypes.TypeEnrichment, data), nil
 }
 
 // NewAnalysisTask creates a new analysis task
@@ -612,5 +610,5 @@ func NewAnalysisTask(payload AnalysisJobPayload) (*asynq.Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	return asynq.NewTask(TypeAnalysis, data), nil
+	return asynq.NewTask(jobtypes.TypeAnalysis, data), nil
 }

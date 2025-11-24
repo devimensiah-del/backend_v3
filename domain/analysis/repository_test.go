@@ -38,8 +38,6 @@ func createTestAnalysisForRepo() *Analysis {
 		SubmissionID: submissionID,
 		EnrichmentID: enrichmentID,
 		Status:       string(StatusCompleted),
-		Version:      1,
-		IsLatest:     true,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 		CompletedAt:  &now,
@@ -217,9 +215,6 @@ func TestRepository_Create_WithAll11Frameworks(t *testing.T) {
 			testAnalysis.Status,
 			testAnalysis.ErrorMessage,
 			testAnalysis.ProcessingTimeMs,
-			testAnalysis.Version,
-			testAnalysis.ParentAnalysisID,
-			testAnalysis.IsLatest,
 			testAnalysis.ApprovedAt,
 			testAnalysis.ApprovedBy,
 			testAnalysis.SentAt,
@@ -301,9 +296,6 @@ func TestRepository_Update_Success(t *testing.T) {
 			testAnalysis.Status,
 			testAnalysis.ErrorMessage,
 			testAnalysis.ProcessingTimeMs,
-			testAnalysis.Version,
-			testAnalysis.ParentAnalysisID,
-			testAnalysis.IsLatest,
 			testAnalysis.ApprovedAt,
 			testAnalysis.ApprovedBy,
 			testAnalysis.SentAt,
@@ -396,141 +388,6 @@ func TestRepository_BeginTx_CommitRollback(t *testing.T) {
 }
 
 // =============================================================================
-// TESTS: GetLatestVersionBySubmissionID
-// =============================================================================
-
-func TestRepository_GetLatestVersionBySubmissionID_OrdersByVersionDESC(t *testing.T) {
-	db, mock := setupMockDB(t)
-	defer db.Close()
-
-	repo := NewPostgresRepository(db)
-	submissionID := uuid.New().String()
-	testAnalysis := createTestAnalysisForRepo()
-	testAnalysis.SubmissionID = submissionID
-	testAnalysis.Version = 3
-	testAnalysis.IsLatest = true
-
-	rows := sqlmock.NewRows([]string{
-		"id", "submission_id", "enrichment_id",
-		"swot", "pestel", "porter", "okrs", "tam_sam_som", "benchmarking",
-		"blue_ocean", "growth_hacking", "scenarios", "bsc", "decision_matrix",
-		"synthesis", "status", "error_message", "processing_time_ms",
-		"version", "parent_analysis_id", "is_latest",
-		"approved_at", "approved_by", "sent_at", "sent_to", "deleted_at",
-		"created_at", "updated_at", "completed_at",
-	}).AddRow(
-		testAnalysis.ID, testAnalysis.SubmissionID, testAnalysis.EnrichmentID,
-		marshal(testAnalysis.SWOT), marshal(testAnalysis.PESTEL), marshal(testAnalysis.Porter),
-		marshal(testAnalysis.OKRs), marshal(testAnalysis.TamSamSom), marshal(testAnalysis.Benchmarking),
-		marshal(testAnalysis.BlueOcean), marshal(testAnalysis.GrowthHacking), marshal(testAnalysis.Scenarios),
-		marshal(testAnalysis.BSC), marshal(testAnalysis.DecisionMatrix),
-		marshal(testAnalysis.Synthesis), testAnalysis.Status, testAnalysis.ErrorMessage,
-		testAnalysis.ProcessingTimeMs, testAnalysis.Version, testAnalysis.ParentAnalysisID,
-		testAnalysis.IsLatest, testAnalysis.ApprovedAt, testAnalysis.ApprovedBy,
-		testAnalysis.SentAt, testAnalysis.SentTo, testAnalysis.DeletedAt,
-		testAnalysis.CreatedAt, testAnalysis.UpdatedAt, testAnalysis.CompletedAt,
-	)
-
-	mock.ExpectQuery(`SELECT (.+) FROM analyses WHERE submission_id = \$1 AND deleted_at IS NULL ORDER BY version DESC, created_at DESC LIMIT 1`).
-		WithArgs(submissionID).
-		WillReturnRows(rows)
-
-	result, err := repo.GetLatestVersionBySubmissionID(context.Background(), submissionID)
-
-	assert.NoError(t, err)
-	assert.NotNil(t, result)
-	assert.Equal(t, 3, result.Version)
-	assert.True(t, result.IsLatest)
-	assert.NoError(t, mock.ExpectationsWereMet())
-}
-
-// =============================================================================
-// TESTS: GetAllVersionsBySubmissionID
-// =============================================================================
-
-func TestRepository_GetAllVersionsBySubmissionID_ReturnsAllVersions(t *testing.T) {
-	db, mock := setupMockDB(t)
-	defer db.Close()
-
-	repo := NewPostgresRepository(db)
-	submissionID := uuid.New().String()
-
-	v1 := createTestAnalysisForRepo()
-	v1.SubmissionID = submissionID
-	v1.Version = 1
-
-	v2 := createTestAnalysisForRepo()
-	v2.SubmissionID = submissionID
-	v2.Version = 2
-	v2.ParentAnalysisID = &v1.ID
-
-	v3 := createTestAnalysisForRepo()
-	v3.SubmissionID = submissionID
-	v3.Version = 3
-	v3.IsLatest = true
-	v3.ParentAnalysisID = &v2.ID
-
-	rows := sqlmock.NewRows([]string{
-		"id", "submission_id", "enrichment_id",
-		"swot", "pestel", "porter", "okrs", "tam_sam_som", "benchmarking",
-		"blue_ocean", "growth_hacking", "scenarios", "bsc", "decision_matrix",
-		"synthesis", "status", "error_message", "processing_time_ms",
-		"version", "parent_analysis_id", "is_latest",
-		"approved_at", "approved_by", "sent_at", "sent_to", "deleted_at",
-		"created_at", "updated_at", "completed_at",
-	}).
-		AddRow(
-			v3.ID, v3.SubmissionID, v3.EnrichmentID,
-			marshal(v3.SWOT), marshal(v3.PESTEL), marshal(v3.Porter),
-			marshal(v3.OKRs), marshal(v3.TamSamSom), marshal(v3.Benchmarking),
-			marshal(v3.BlueOcean), marshal(v3.GrowthHacking), marshal(v3.Scenarios),
-			marshal(v3.BSC), marshal(v3.DecisionMatrix),
-			marshal(v3.Synthesis), v3.Status, v3.ErrorMessage,
-			v3.ProcessingTimeMs, v3.Version, v3.ParentAnalysisID,
-			v3.IsLatest, v3.ApprovedAt, v3.ApprovedBy,
-			v3.SentAt, v3.SentTo, v3.DeletedAt,
-			v3.CreatedAt, v3.UpdatedAt, v3.CompletedAt,
-		).
-		AddRow(
-			v2.ID, v2.SubmissionID, v2.EnrichmentID,
-			marshal(v2.SWOT), marshal(v2.PESTEL), marshal(v2.Porter),
-			marshal(v2.OKRs), marshal(v2.TamSamSom), marshal(v2.Benchmarking),
-			marshal(v2.BlueOcean), marshal(v2.GrowthHacking), marshal(v2.Scenarios),
-			marshal(v2.BSC), marshal(v2.DecisionMatrix),
-			marshal(v2.Synthesis), v2.Status, v2.ErrorMessage,
-			v2.ProcessingTimeMs, v2.Version, v2.ParentAnalysisID,
-			v2.IsLatest, v2.ApprovedAt, v2.ApprovedBy,
-			v2.SentAt, v2.SentTo, v2.DeletedAt,
-			v2.CreatedAt, v2.UpdatedAt, v2.CompletedAt,
-		).
-		AddRow(
-			v1.ID, v1.SubmissionID, v1.EnrichmentID,
-			marshal(v1.SWOT), marshal(v1.PESTEL), marshal(v1.Porter),
-			marshal(v1.OKRs), marshal(v1.TamSamSom), marshal(v1.Benchmarking),
-			marshal(v1.BlueOcean), marshal(v1.GrowthHacking), marshal(v1.Scenarios),
-			marshal(v1.BSC), marshal(v1.DecisionMatrix),
-			marshal(v1.Synthesis), v1.Status, v1.ErrorMessage,
-			v1.ProcessingTimeMs, v1.Version, v1.ParentAnalysisID,
-			v1.IsLatest, v1.ApprovedAt, v1.ApprovedBy,
-			v1.SentAt, v1.SentTo, v1.DeletedAt,
-			v1.CreatedAt, v1.UpdatedAt, v1.CompletedAt,
-		)
-
-	mock.ExpectQuery(`SELECT (.+) FROM analyses WHERE submission_id = \$1 AND deleted_at IS NULL ORDER BY version DESC`).
-		WithArgs(submissionID).
-		WillReturnRows(rows)
-
-	results, err := repo.GetAllVersionsBySubmissionID(context.Background(), submissionID)
-
-	assert.NoError(t, err)
-	assert.Len(t, results, 3)
-	assert.Equal(t, 3, results[0].Version)
-	assert.Equal(t, 2, results[1].Version)
-	assert.Equal(t, 1, results[2].Version)
-	assert.NoError(t, mock.ExpectationsWereMet())
-}
-
-// =============================================================================
 // TESTS: GetByID
 // =============================================================================
 
@@ -546,7 +403,6 @@ func TestRepository_GetByID_Success(t *testing.T) {
 		"swot", "pestel", "porter", "okrs", "tam_sam_som", "benchmarking",
 		"blue_ocean", "growth_hacking", "scenarios", "bsc", "decision_matrix",
 		"synthesis", "status", "error_message", "processing_time_ms",
-		"version", "parent_analysis_id", "is_latest",
 		"approved_at", "approved_by", "sent_at", "sent_to", "deleted_at",
 		"created_at", "updated_at", "completed_at",
 	}).AddRow(
@@ -556,8 +412,7 @@ func TestRepository_GetByID_Success(t *testing.T) {
 		marshal(testAnalysis.BlueOcean), marshal(testAnalysis.GrowthHacking), marshal(testAnalysis.Scenarios),
 		marshal(testAnalysis.BSC), marshal(testAnalysis.DecisionMatrix),
 		marshal(testAnalysis.Synthesis), testAnalysis.Status, testAnalysis.ErrorMessage,
-		testAnalysis.ProcessingTimeMs, testAnalysis.Version, testAnalysis.ParentAnalysisID,
-		testAnalysis.IsLatest, testAnalysis.ApprovedAt, testAnalysis.ApprovedBy,
+		testAnalysis.ProcessingTimeMs, testAnalysis.ApprovedAt, testAnalysis.ApprovedBy,
 		testAnalysis.SentAt, testAnalysis.SentTo, testAnalysis.DeletedAt,
 		testAnalysis.CreatedAt, testAnalysis.UpdatedAt, testAnalysis.CompletedAt,
 	)
@@ -650,7 +505,6 @@ func TestRepository_List_WithPagination(t *testing.T) {
 		"swot", "pestel", "porter", "okrs", "tam_sam_som", "benchmarking",
 		"blue_ocean", "growth_hacking", "scenarios", "bsc", "decision_matrix",
 		"synthesis", "status", "error_message", "processing_time_ms",
-		"version", "parent_analysis_id", "is_latest",
 		"approved_at", "approved_by", "sent_at", "sent_to", "deleted_at",
 		"created_at", "updated_at", "completed_at",
 	}).
@@ -661,8 +515,7 @@ func TestRepository_List_WithPagination(t *testing.T) {
 			marshal(a1.BlueOcean), marshal(a1.GrowthHacking), marshal(a1.Scenarios),
 			marshal(a1.BSC), marshal(a1.DecisionMatrix),
 			marshal(a1.Synthesis), a1.Status, a1.ErrorMessage,
-			a1.ProcessingTimeMs, a1.Version, a1.ParentAnalysisID,
-			a1.IsLatest, a1.ApprovedAt, a1.ApprovedBy,
+			a1.ProcessingTimeMs, a1.ApprovedAt, a1.ApprovedBy,
 			a1.SentAt, a1.SentTo, a1.DeletedAt,
 			a1.CreatedAt, a1.UpdatedAt, a1.CompletedAt,
 		).
@@ -673,13 +526,12 @@ func TestRepository_List_WithPagination(t *testing.T) {
 			marshal(a2.BlueOcean), marshal(a2.GrowthHacking), marshal(a2.Scenarios),
 			marshal(a2.BSC), marshal(a2.DecisionMatrix),
 			marshal(a2.Synthesis), a2.Status, a2.ErrorMessage,
-			a2.ProcessingTimeMs, a2.Version, a2.ParentAnalysisID,
-			a2.IsLatest, a2.ApprovedAt, a2.ApprovedBy,
+			a2.ProcessingTimeMs, a2.ApprovedAt, a2.ApprovedBy,
 			a2.SentAt, a2.SentTo, a2.DeletedAt,
 			a2.CreatedAt, a2.UpdatedAt, a2.CompletedAt,
 		)
 
-	mock.ExpectQuery(`SELECT (.+) FROM analyses WHERE deleted_at IS NULL ORDER BY version DESC, created_at DESC LIMIT \$1 OFFSET \$2`).
+	mock.ExpectQuery(`SELECT (.+) FROM analyses WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT \$1 OFFSET \$2`).
 		WithArgs(10, 0).
 		WillReturnRows(rows)
 

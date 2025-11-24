@@ -2,6 +2,8 @@ package analysis
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -42,7 +44,10 @@ func (s *Service) RunAnalysis(ctx context.Context, submissionID, enrichmentID st
 		SubmissionData: submissionData,
 		EnrichmentData: enrichmentData,
 	}
-	analysis := s.createAnalysisRecord(ctx, submissionID, enrichmentID)
+	analysis, err := s.startAnalysisRecord(ctx, submissionID, enrichmentID)
+	if err != nil {
+		return nil, err
+	}
 
 	// ========================================================================
 	// LAYER 1: THE ENVIRONMENT (Macro + Industry)
@@ -157,20 +162,37 @@ func (s *Service) exec(wg *sync.WaitGroup, task func()) {
 	go func() { defer wg.Done(); task() }()
 }
 
-func (s *Service) createAnalysisRecord(ctx context.Context, subID, enrichID string) *Analysis {
+func (s *Service) startAnalysisRecord(ctx context.Context, subID, enrichID string) (*Analysis, error) {
+	existing, err := s.repo.GetBySubmissionID(ctx, subID)
+	if err == nil && existing != nil {
+		switch existing.Status {
+		case string(StatusCompleted), string(StatusApproved), string(StatusSent):
+			return nil, fmt.Errorf("analysis already exists for submission %s", subID)
+		default:
+			// Pending state: reuse record (worker will continue/restart processing)
+			// If there was an error previously, it will be overwritten
+			return existing, nil
+		}
+	} else if err != nil && !strings.Contains(err.Error(), "not found") {
+		return nil, err
+	}
+
+	// If not found or other retrieval error, create a new record
 	a := &Analysis{
 		ID:           uuid.New().String(),
 		SubmissionID: subID,
 		EnrichmentID: enrichID,
 		Status:       string(StatusPending),
-		Version:      1,
-		IsLatest:     true,
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
 	}
-	s.repo.Create(ctx, a)
+
+	if err := s.repo.Create(ctx, a); err != nil {
+		return nil, fmt.Errorf("failed to create analysis: %w", err)
+	}
+
 	s.logger.Debug().Str("analysis_id", a.ID).Msg("Layer 1: Starting Environment analysis")
-	return a
+	return a, nil
 }
 
 func (s *Service) saveCheckpoint(ctx context.Context, a *Analysis, k *ContextContainer, nextStatus string) {
@@ -238,7 +260,7 @@ func (s *Service) saveCheckpoint(ctx context.Context, a *Analysis, k *ContextCon
 }
 
 func (s *Service) markAsComplete(ctx context.Context, a *Analysis, startTime time.Time) {
-	a.Status = "completed"
+	a.Status = string(StatusCompleted)
 	a.ProcessingTimeMs = time.Since(startTime).Milliseconds()
 	now := time.Now()
 	a.CompletedAt = &now
@@ -287,11 +309,22 @@ func (s *Service) runTamSamSom(ctx context.Context, k *ContextContainer) (*TamSa
 
 func (s *Service) runSWOT(ctx context.Context, k *ContextContainer) (*SWOTAnalysis, error) {
 	var res SWOTAnalysis
+
+	// SAFETY: Nil checks prevent panic if Layer 1 failed
+	pestelSummary := ""
+	if k.PESTEL != nil {
+		pestelSummary = k.PESTEL.Summary
+	}
+	porterSummary := ""
+	if k.Porter != nil {
+		porterSummary = k.Porter.Summary
+	}
+
 	data := map[string]interface{}{
 		"company_data":    k.SubmissionData,
 		"enrichment_data": k.EnrichmentData,
-		"pestel_insights": k.PESTEL.Summary,
-		"porter_insights": k.Porter.Summary,
+		"pestel_insights": pestelSummary,
+		"porter_insights": porterSummary,
 	}
 	opts := llm.NewGenerationOptions(s.frameworks["swot"])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, llm.FrameworkSWOTPrompt, data, &res)
@@ -300,10 +333,17 @@ func (s *Service) runSWOT(ctx context.Context, k *ContextContainer) (*SWOTAnalys
 
 func (s *Service) runBenchmarking(ctx context.Context, k *ContextContainer) (*BenchmarkingAnalysis, error) {
 	var res BenchmarkingAnalysis
+
+	// SAFETY: Nil check prevents panic if Layer 1 failed
+	marketScale := ""
+	if k.TamSamSom != nil {
+		marketScale = k.TamSamSom.Summary
+	}
+
 	data := map[string]interface{}{
 		"company_data":    k.SubmissionData,
 		"enrichment_data": k.EnrichmentData,
-		"market_scale":    k.TamSamSom.Summary,
+		"market_scale":    marketScale,
 	}
 	opts := llm.NewGenerationOptions(s.frameworks["benchmarking"])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, llm.FrameworkBenchmarkingPrompt, data, &res)
@@ -312,10 +352,17 @@ func (s *Service) runBenchmarking(ctx context.Context, k *ContextContainer) (*Be
 
 func (s *Service) runBlueOcean(ctx context.Context, k *ContextContainer) (*BlueOceanAnalysis, error) {
 	var res BlueOceanAnalysis
+
+	// SAFETY: Nil check prevents panic if Layer 1 failed
+	porterSummary := ""
+	if k.Porter != nil {
+		porterSummary = k.Porter.Summary
+	}
+
 	data := map[string]interface{}{
 		"company_data":    k.SubmissionData,
 		"enrichment_data": k.EnrichmentData,
-		"porter_insights": k.Porter.Summary,
+		"porter_insights": porterSummary,
 	}
 	opts := llm.NewGenerationOptions(s.frameworks["blue_ocean"])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, llm.FrameworkBlueOceanPrompt, data, &res)
@@ -335,10 +382,17 @@ func (s *Service) runGrowthHacking(ctx context.Context, k *ContextContainer) (*G
 
 func (s *Service) runScenarios(ctx context.Context, k *ContextContainer) (*ScenarioAnalysis, error) {
 	var res ScenarioAnalysis
+
+	// SAFETY: Nil check prevents panic if Layer 1 failed
+	pestelSummary := ""
+	if k.PESTEL != nil {
+		pestelSummary = k.PESTEL.Summary
+	}
+
 	data := map[string]interface{}{
 		"company_data":    k.SubmissionData,
 		"enrichment_data": k.EnrichmentData,
-		"pestel_insights": k.PESTEL.Summary,
+		"pestel_insights": pestelSummary,
 		"macro_context":   s.extractMacroContext(k.EnrichmentData),
 	}
 	opts := llm.NewGenerationOptions(s.frameworks["scenarios"])
@@ -349,17 +403,27 @@ func (s *Service) runScenarios(ctx context.Context, k *ContextContainer) (*Scena
 func (s *Service) runOKRs(ctx context.Context, k *ContextContainer) (*OKRAnalysis, error) {
 	var res OKRAnalysis
 
+	// SAFETY: Nil checks prevent panic if previous layers failed
+	blueOceanSummary := ""
+	if k.BlueOcean != nil {
+		blueOceanSummary = k.BlueOcean.Summary
+	}
+	var swotWeaknesses []SWOTItem
+	if k.SWOT != nil {
+		swotWeaknesses = k.SWOT.Weaknesses
+	}
+
 	// DEBUG: Log what we're passing to OKRs
 	s.logger.Debug().
-		Str("blue_ocean_summary", k.BlueOcean.Summary).
-		Int("swot_weaknesses_count", len(k.SWOT.Weaknesses)).
+		Str("blue_ocean_summary", blueOceanSummary).
+		Int("swot_weaknesses_count", len(swotWeaknesses)).
 		Msg("🔍 DEBUG OKRs Input Data")
 
 	data := map[string]interface{}{
 		"company_data":        k.SubmissionData,
 		"enrichment_data":     k.EnrichmentData,
-		"blue_ocean_insights": k.BlueOcean.Summary,
-		"swot_weaknesses":     k.SWOT.Weaknesses,
+		"blue_ocean_insights": blueOceanSummary,
+		"swot_weaknesses":     swotWeaknesses,
 	}
 	opts := llm.NewGenerationOptions(s.frameworks["okrs"])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, llm.FrameworkOKRsPrompt, data, &res)
@@ -376,15 +440,21 @@ func (s *Service) runOKRs(ctx context.Context, k *ContextContainer) (*OKRAnalysi
 func (s *Service) runBSC(ctx context.Context, k *ContextContainer) (*BalancedScorecardAnalysis, error) {
 	var res BalancedScorecardAnalysis
 
+	// SAFETY: Nil check prevents panic if previous layer failed
+	blueOceanSummary := ""
+	if k.BlueOcean != nil {
+		blueOceanSummary = k.BlueOcean.Summary
+	}
+
 	// DEBUG: Log what we're passing to BSC
 	s.logger.Debug().
-		Str("blue_ocean_summary", k.BlueOcean.Summary).
+		Str("blue_ocean_summary", blueOceanSummary).
 		Msg("🔍 DEBUG BSC Input Data")
 
 	data := map[string]interface{}{
 		"company_data":        k.SubmissionData,
 		"enrichment_data":     k.EnrichmentData,
-		"blue_ocean_insights": k.BlueOcean.Summary,
+		"blue_ocean_insights": blueOceanSummary,
 	}
 	opts := llm.NewGenerationOptions(s.frameworks["bsc"])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, llm.FrameworkBSCPrompt, data, &res)
@@ -404,15 +474,21 @@ func (s *Service) runBSC(ctx context.Context, k *ContextContainer) (*BalancedSco
 func (s *Service) runDecisionMatrix(ctx context.Context, k *ContextContainer) (*DecisionMatrixAnalysis, error) {
 	var res DecisionMatrixAnalysis
 
+	// SAFETY: Nil check prevents panic if previous layer failed
+	scenarioSummary := ""
+	if k.Scenarios != nil {
+		scenarioSummary = k.Scenarios.Summary
+	}
+
 	// DEBUG: Log what we're passing to DecisionMatrix
 	s.logger.Debug().
-		Str("scenario_summary", k.Scenarios.Summary).
+		Str("scenario_summary", scenarioSummary).
 		Msg("🔍 DEBUG DecisionMatrix Input Data")
 
 	data := map[string]interface{}{
 		"company_data":      k.SubmissionData,
 		"enrichment_data":   k.EnrichmentData,
-		"scenario_insights": k.Scenarios.Summary,
+		"scenario_insights": scenarioSummary,
 	}
 	opts := llm.NewGenerationOptions(s.frameworks["decision_matrix"])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, llm.FrameworkDecisionMatrixPrompt, data, &res)
@@ -430,14 +506,16 @@ func (s *Service) runDecisionMatrix(ctx context.Context, k *ContextContainer) (*
 
 func (s *Service) runSynthesis(ctx context.Context, k *ContextContainer) (AnalysisSynthesis, error) {
 	var res AnalysisSynthesis
+
+	// SAFETY: Build summaries map with nil checks to prevent panic if any framework failed
 	summaries := map[string]string{
-		"pestel":     k.PESTEL.Summary,
-		"porter":     k.Porter.Summary,
-		"swot":       k.SWOT.Summary,
-		"blue_ocean": k.BlueOcean.Summary,
-		"okrs":       k.OKRs.Summary,
-		"scenarios":  k.Scenarios.Summary,
-		"growth":     k.GrowthHacking.Summary,
+		"pestel":     safeGetSummary(k.PESTEL),
+		"porter":     safeGetSummary(k.Porter),
+		"swot":       safeGetSummary(k.SWOT),
+		"blue_ocean": safeGetSummary(k.BlueOcean),
+		"okrs":       safeGetSummary(k.OKRs),
+		"scenarios":  safeGetSummary(k.Scenarios),
+		"growth":     safeGetSummary(k.GrowthHacking),
 	}
 	data := map[string]interface{}{
 		"company_data":            k.SubmissionData,
@@ -448,6 +526,78 @@ func (s *Service) runSynthesis(ctx context.Context, k *ContextContainer) (Analys
 	opts := llm.NewGenerationOptions(s.frameworks["synthesis"])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, llm.SynthesisPrompt, data, &res)
 	return res, err
+}
+
+// Summarizable interface for type-safe nil checking
+type Summarizable interface {
+	GetSummary() string
+}
+
+// safeGetSummary extracts summary from any framework result, returning empty string if nil
+func safeGetSummary(s interface{}) string {
+	if s == nil {
+		return ""
+	}
+	// Use type switch to handle all framework types
+	switch v := s.(type) {
+	case *PESTELAnalysis:
+		if v == nil {
+			return ""
+		}
+		return v.Summary
+	case *PorterAnalysis:
+		if v == nil {
+			return ""
+		}
+		return v.Summary
+	case *SWOTAnalysis:
+		if v == nil {
+			return ""
+		}
+		return v.Summary
+	case *BlueOceanAnalysis:
+		if v == nil {
+			return ""
+		}
+		return v.Summary
+	case *OKRAnalysis:
+		if v == nil {
+			return ""
+		}
+		return v.Summary
+	case *ScenarioAnalysis:
+		if v == nil {
+			return ""
+		}
+		return v.Summary
+	case *GrowthHackingAnalysis:
+		if v == nil {
+			return ""
+		}
+		return v.Summary
+	case *TamSamSomAnalysis:
+		if v == nil {
+			return ""
+		}
+		return v.Summary
+	case *BenchmarkingAnalysis:
+		if v == nil {
+			return ""
+		}
+		return v.Summary
+	case *BalancedScorecardAnalysis:
+		if v == nil {
+			return ""
+		}
+		return v.Summary
+	case *DecisionMatrixAnalysis:
+		if v == nil {
+			return ""
+		}
+		return v.Summary
+	default:
+		return ""
+	}
 }
 
 // submissionToMap converts a SubmissionData struct to a map for template injection

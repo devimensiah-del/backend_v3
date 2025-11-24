@@ -375,38 +375,18 @@ func TestPostgresRepository_List(t *testing.T) {
 
 	now := time.Now()
 
+	// List now returns lightweight ReportSummary (excludes 24 HTML page columns for performance)
 	rows := sqlmock.NewRows([]string{
 		"id", "submission_id", "analysis_id",
-		"cover_page", "executive_summary", "table_of_contents",
-		"divider_part1_page", "pestel_pes_page", "pestel_tel_page", "porter_page", "swot_page",
-		"divider_part2_page", "tam_sam_som_page", "blue_ocean_page",
-		"divider_part3_page", "okr_page", "growth_loops_page",
-		"divider_part4_page", "scenarios_page", "recommendations_page",
-		"bsc_page", "benchmarking_page", "financial_projections_page", "growth_hacking_page",
-		"risk_assessment_page", "roadmap_page", "appendix_page",
 		"pdf_url", "pdf_generated_at", "pdf_generation_status",
 		"status", "error_message", "generation_time_ms", "total_pages",
 		"created_at", "updated_at", "completed_at",
 	}).
 		AddRow(uuid.New().String(), uuid.New().String(), uuid.New().String(),
-			"<html>1</html>", "<html>1</html>", "<html>1</html>",
-			"<html>1</html>", "<html>1</html>", "<html>1</html>", "<html>1</html>", "<html>1</html>",
-			"<html>1</html>", "<html>1</html>", "<html>1</html>",
-			"<html>1</html>", "<html>1</html>", "<html>1</html>",
-			"<html>1</html>", "<html>1</html>", "<html>1</html>",
-			"<html>1</html>", "<html>1</html>", "<html>1</html>", "<html>1</html>",
-			"<html>1</html>", "<html>1</html>", "<html>1</html>",
 			"https://storage.example.com/1.pdf", now, "completed",
 			"completed", "", 5000, 24,
 			now, now, now).
 		AddRow(uuid.New().String(), uuid.New().String(), uuid.New().String(),
-			"<html>2</html>", "<html>2</html>", "<html>2</html>",
-			"<html>2</html>", "<html>2</html>", "<html>2</html>", "<html>2</html>", "<html>2</html>",
-			"<html>2</html>", "<html>2</html>", "<html>2</html>",
-			"<html>2</html>", "<html>2</html>", "<html>2</html>",
-			"<html>2</html>", "<html>2</html>", "<html>2</html>",
-			"<html>2</html>", "<html>2</html>", "<html>2</html>", "<html>2</html>",
-			"<html>2</html>", "<html>2</html>", "<html>2</html>",
 			"https://storage.example.com/2.pdf", now, "completed",
 			"completed", "", 5000, 24,
 			now, now, now)
@@ -419,6 +399,8 @@ func TestPostgresRepository_List(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Len(t, results, 2)
+	assert.Equal(t, "https://storage.example.com/1.pdf", results[0].PDFURL)
+	assert.Equal(t, "completed", results[0].Status)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 

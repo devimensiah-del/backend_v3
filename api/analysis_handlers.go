@@ -130,8 +130,6 @@ func (h *AnalysisHandlers) GetAnalysis(c *gin.Context) {
 		ID:           analysis.ID,
 		SubmissionID: analysis.SubmissionID,
 		Status:       analysis.Status,
-		Version:      analysis.Version,
-		ParentID:     analysis.ParentAnalysisID,
 		Analysis:     analysisData,
 		CreatedAt:    analysis.CreatedAt,
 		UpdatedAt:    analysis.UpdatedAt,
@@ -177,57 +175,9 @@ func (h *AnalysisHandlers) UpdateAnalysis(c *gin.Context) {
 		ID:           updatedAnalysis.ID,
 		SubmissionID: updatedAnalysis.SubmissionID,
 		Status:       updatedAnalysis.Status,
-		Version:      updatedAnalysis.Version,
-		ParentID:     updatedAnalysis.ParentAnalysisID,
 		Analysis:     analysisData,
 		CreatedAt:    updatedAnalysis.CreatedAt,
 		UpdatedAt:    updatedAnalysis.UpdatedAt,
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"analysis": response,
-	})
-}
-
-// CreateAnalysisVersion handles POST /api/v1/admin/analysis/:id/version
-// Creates a new version of the analysis with optional edits
-func (h *AnalysisHandlers) CreateAnalysisVersion(c *gin.Context) {
-	analysisID := c.Param("id")
-
-	// Parse request body (optional edits to apply to new version)
-	var req struct {
-		Edits map[string]interface{} `json:"edits"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		// Empty body is OK - just create version without edits
-		req.Edits = nil
-	}
-
-	// Create new version via service
-	newVersion, err := h.AnalysisService.CreateVersion(c.Request.Context(), analysisID, req.Edits)
-	if err != nil {
-		h.Logger.Error().Err(err).Str("analysis_id", analysisID).Msg("Failed to create analysis version")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:   "Version creation failed",
-			Message: "Failed to create new analysis version",
-		})
-		return
-	}
-
-	// Transform to response
-	analysisData := make(map[string]interface{})
-	analysisBytes, _ := json.Marshal(newVersion)
-	json.Unmarshal(analysisBytes, &analysisData)
-
-	response := AnalysisResponse{
-		ID:           newVersion.ID,
-		SubmissionID: newVersion.SubmissionID,
-		Status:       newVersion.Status,
-		Version:      newVersion.Version,
-		ParentID:     newVersion.ParentAnalysisID,
-		Analysis:     analysisData,
-		CreatedAt:    newVersion.CreatedAt,
-		UpdatedAt:    newVersion.UpdatedAt,
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -306,8 +256,6 @@ func (h *AnalysisHandlers) SendAnalysis(c *gin.Context) {
 		ID:           updatedAnalysis.ID,
 		SubmissionID: updatedAnalysis.SubmissionID,
 		Status:       updatedAnalysis.Status,
-		Version:      updatedAnalysis.Version,
-		ParentID:     updatedAnalysis.ParentAnalysisID,
 		Analysis:     analysisData,
 		CreatedAt:    updatedAnalysis.CreatedAt,
 		UpdatedAt:    updatedAnalysis.UpdatedAt,
@@ -354,8 +302,6 @@ func (h *AnalysisHandlers) ApproveAnalysis(c *gin.Context) {
 		ID:           updatedAnalysis.ID,
 		SubmissionID: updatedAnalysis.SubmissionID,
 		Status:       updatedAnalysis.Status,
-		Version:      updatedAnalysis.Version,
-		ParentID:     updatedAnalysis.ParentAnalysisID,
 		Analysis:     analysisData,
 		CreatedAt:    updatedAnalysis.CreatedAt,
 		UpdatedAt:    updatedAnalysis.UpdatedAt,
@@ -391,8 +337,6 @@ func (h *AnalysisHandlers) GetAnalysisAdmin(c *gin.Context) {
 		ID:           analysis.ID,
 		SubmissionID: analysis.SubmissionID,
 		Status:       analysis.Status,
-		Version:      analysis.Version,
-		ParentID:     analysis.ParentAnalysisID,
 		Analysis:     analysisData,
 		CreatedAt:    analysis.CreatedAt,
 		UpdatedAt:    analysis.UpdatedAt,

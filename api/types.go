@@ -136,17 +136,6 @@ type SubmissionDetailResponse struct {
 	PDFURL            *string  `json:"pdfUrl,omitempty"`
 }
 
-// ReportPreviewResponse returns the HTML for the Admin UI
-type ReportPreviewResponse struct {
-	Pages map[string]string `json:"pages"` // Key: "SWOT", Value: "<html>...</html>"
-}
-
-// ReportPublishResponse returns the final PDF link
-type ReportPublishResponse struct {
-	ReportID string `json:"report_id"`
-	PDFURL   string `json:"pdf_url"`
-}
-
 // ... (Keep HealthResponse, MessageResponse, SubmissionListResponse as they were) ...
 type HealthResponse struct {
 	Status   string            `json:"status"`
@@ -212,9 +201,23 @@ type AnalysisResponse struct {
 	ID           string                 `json:"id"`
 	SubmissionID string                 `json:"submissionId"`
 	Status       string                 `json:"status"`
-	Version      int                    `json:"version"`
-	ParentID     *string                `json:"parentId,omitempty"`
 	Analysis     map[string]interface{} `json:"analysis"` // Contains all framework data
 	CreatedAt    time.Time              `json:"createdAt"`
 	UpdatedAt    time.Time              `json:"updatedAt"`
+}
+
+// ==================== REPORT RESPONSE TYPES ====================
+
+// ReportPreviewResponse returns HTML preview pages for admin review
+type ReportPreviewResponse struct {
+	Pages map[string]string `json:"pages"` // Map of page name to HTML content
+}
+
+// ReportPublishResponse returns status of PDF generation request
+type ReportPublishResponse struct {
+	ReportID string `json:"reportId"`
+	TaskID   string `json:"taskId,omitempty"` // Task ID for async tracking
+	Status   string `json:"status"`           // "processing", "completed", "failed"
+	Message  string `json:"message,omitempty"`
+	PDFURL   string `json:"pdfUrl,omitempty"` // Set when completed synchronously
 }

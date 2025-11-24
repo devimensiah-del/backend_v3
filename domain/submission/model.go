@@ -2,6 +2,7 @@ package submission
 
 import (
 	"errors"
+	"net/mail"
 	"time"
 
 	"github.com/google/uuid"
@@ -90,6 +91,9 @@ func (s *Submission) Validate() error {
 	}
 	if s.ContactEmail == "" {
 		return errors.New("contact email is required")
+	}
+	if _, err := mail.ParseAddress(s.ContactEmail); err != nil {
+		return errors.New("contact email is invalid")
 	}
 	if s.BusinessChallenge == "" {
 		return errors.New("business challenge is required")

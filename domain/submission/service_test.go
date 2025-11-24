@@ -77,6 +77,19 @@ func (m *MockRepository) GetCompletedCount(ctx context.Context) (int, error) {
 	return args.Int(0), args.Error(1)
 }
 
+func (m *MockRepository) GetEnrichmentStatus(ctx context.Context, submissionID uuid.UUID) (*submission.EnrichmentStatusRow, error) {
+	args := m.Called(ctx, submissionID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*submission.EnrichmentStatusRow), args.Error(1)
+}
+
+func (m *MockRepository) ReserveEnrichment(ctx context.Context, submissionID uuid.UUID) (bool, error) {
+	args := m.Called(ctx, submissionID)
+	return args.Bool(0), args.Error(1)
+}
+
 // ============================================================================
 // TEST CREATE
 // ============================================================================

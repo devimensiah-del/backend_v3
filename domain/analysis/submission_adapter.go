@@ -1,9 +1,8 @@
 package analysis
 
 import (
-	"context"
-
 	"backend_v3/domain/submission"
+	"context"
 
 	"github.com/google/uuid"
 )

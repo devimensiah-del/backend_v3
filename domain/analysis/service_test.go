@@ -55,27 +55,6 @@ func (m *MockRepository) GetBySubmissionID(ctx context.Context, submissionID str
 	return args.Get(0).(*Analysis), args.Error(1)
 }
 
-func (m *MockRepository) GetLatestVersionBySubmissionID(ctx context.Context, submissionID string) (*Analysis, error) {
-	args := m.Called(ctx, submissionID)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*Analysis), args.Error(1)
-}
-
-func (m *MockRepository) GetAllVersionsBySubmissionID(ctx context.Context, submissionID string) ([]*Analysis, error) {
-	args := m.Called(ctx, submissionID)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]*Analysis), args.Error(1)
-}
-
-func (m *MockRepository) ClearLatest(ctx context.Context, submissionID string) error {
-	args := m.Called(ctx, submissionID)
-	return args.Error(0)
-}
-
 func (m *MockRepository) List(ctx context.Context, limit, offset int) ([]*Analysis, error) {
 	args := m.Called(ctx, limit, offset)
 	if args.Get(0) == nil {
@@ -145,8 +124,6 @@ func createTestService() (*Service, *MockRepository, *MockSubmissionRepository, 
 		mockLLM,
 		logger,
 		queueClient,
-		"test-analyst-model",
-		"test-synthesis-model",
 	)
 
 	return service, mockRepo, mockSubRepo, mockLLM
@@ -163,8 +140,6 @@ func createTestAnalysis() *Analysis {
 		SubmissionID: submissionID,
 		EnrichmentID: enrichmentID,
 		Status:       string(StatusCompleted),
-		Version:      1,
-		IsLatest:     true,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 		CompletedAt:  &now,
@@ -251,7 +226,7 @@ func TestService_GetByID_DatabaseError(t *testing.T) {
 // TESTS: GetBySubmissionID
 // =============================================================================
 
-func TestService_GetBySubmissionID_ReturnsLatestVersion(t *testing.T) {
+func TestService_GetBySubmissionID_ReturnsAnalysis(t *testing.T) {
 	service, mockRepo, _, _ := createTestService()
 	defer service.queueClient.Close()
 
@@ -264,67 +239,6 @@ func TestService_GetBySubmissionID_ReturnsLatestVersion(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
 	assert.Equal(t, testAnalysis.SubmissionID, result.SubmissionID)
-	mockRepo.AssertExpectations(t)
-}
-
-// =============================================================================
-// TESTS: GetLatestVersion vs GetAllVersions
-// =============================================================================
-
-func TestService_GetLatestVersion_Success(t *testing.T) {
-	service, mockRepo, _, _ := createTestService()
-	defer service.queueClient.Close()
-
-	testAnalysis := createTestAnalysis()
-	testAnalysis.Version = 3
-	testAnalysis.IsLatest = true
-
-	mockRepo.On("GetLatestVersionBySubmissionID", mock.Anything, testAnalysis.SubmissionID).Return(testAnalysis, nil)
-
-	result, err := service.GetLatestVersion(context.Background(), testAnalysis.SubmissionID)
-
-	assert.NoError(t, err)
-	assert.NotNil(t, result)
-	assert.Equal(t, 3, result.Version)
-	assert.True(t, result.IsLatest)
-	mockRepo.AssertExpectations(t)
-}
-
-func TestService_GetAllVersions_ReturnsMultipleVersions(t *testing.T) {
-	service, mockRepo, _, _ := createTestService()
-	defer service.queueClient.Close()
-
-	submissionID := uuid.New().String()
-
-	// Create 3 versions
-	v1 := createTestAnalysis()
-	v1.SubmissionID = submissionID
-	v1.Version = 1
-	v1.IsLatest = false
-
-	v2 := createTestAnalysis()
-	v2.SubmissionID = submissionID
-	v2.Version = 2
-	v2.IsLatest = false
-	v2.ParentAnalysisID = &v1.ID
-
-	v3 := createTestAnalysis()
-	v3.SubmissionID = submissionID
-	v3.Version = 3
-	v3.IsLatest = true
-	v3.ParentAnalysisID = &v2.ID
-
-	versions := []*Analysis{v3, v2, v1} // Ordered by version DESC
-
-	mockRepo.On("GetAllVersionsBySubmissionID", mock.Anything, submissionID).Return(versions, nil)
-
-	results, err := service.GetAllVersions(context.Background(), submissionID)
-
-	assert.NoError(t, err)
-	assert.Len(t, results, 3)
-	assert.Equal(t, 3, results[0].Version)
-	assert.Equal(t, 2, results[1].Version)
-	assert.Equal(t, 1, results[2].Version)
 	mockRepo.AssertExpectations(t)
 }
 
@@ -412,58 +326,6 @@ func TestService_UpdateFields_ValidationPreservesStatus(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t, originalStatus, result.Status)
-	mockRepo.AssertExpectations(t)
-}
-
-// =============================================================================
-// TESTS: CreateVersion
-// =============================================================================
-
-func TestService_CreateVersion_IncrementsVersion(t *testing.T) {
-	service, mockRepo, _, _ := createTestService()
-	defer service.queueClient.Close()
-
-	parentAnalysis := createTestAnalysis()
-	parentAnalysis.Version = 1
-
-	mockRepo.On("GetByID", mock.Anything, parentAnalysis.ID).Return(parentAnalysis, nil)
-	mockRepo.On("ClearLatest", mock.Anything, parentAnalysis.SubmissionID).Return(nil)
-	mockRepo.On("Create", mock.Anything, mock.MatchedBy(func(a *Analysis) bool {
-		return a.Version == 2 && a.ParentAnalysisID != nil && *a.ParentAnalysisID == parentAnalysis.ID
-	})).Return(nil)
-
-	result, err := service.CreateVersion(context.Background(), parentAnalysis.ID, nil)
-
-	assert.NoError(t, err)
-	assert.NotNil(t, result)
-	assert.Equal(t, 2, result.Version)
-	assert.NotNil(t, result.ParentAnalysisID)
-	assert.Equal(t, parentAnalysis.ID, *result.ParentAnalysisID)
-	mockRepo.AssertExpectations(t)
-}
-
-func TestService_CreateVersion_WithEdits(t *testing.T) {
-	service, mockRepo, _, _ := createTestService()
-	defer service.queueClient.Close()
-
-	parentAnalysis := createTestAnalysis()
-
-	edits := map[string]interface{}{
-		"pestel": map[string]interface{}{
-			"summary": "Edited PESTEL summary",
-		},
-	}
-
-	mockRepo.On("GetByID", mock.Anything, parentAnalysis.ID).Return(parentAnalysis, nil)
-	mockRepo.On("ClearLatest", mock.Anything, parentAnalysis.SubmissionID).Return(nil)
-	mockRepo.On("Create", mock.Anything, mock.MatchedBy(func(a *Analysis) bool {
-		return a.PESTEL.Summary == "Edited PESTEL summary" && a.Version == 2
-	})).Return(nil)
-
-	result, err := service.CreateVersion(context.Background(), parentAnalysis.ID, edits)
-
-	assert.NoError(t, err)
-	assert.Equal(t, "Edited PESTEL summary", result.PESTEL.Summary)
 	mockRepo.AssertExpectations(t)
 }
 

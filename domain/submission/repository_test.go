@@ -31,14 +31,40 @@ func setupMockDB(t *testing.T) (*sqlx.DB, sqlmock.Sqlmock) {
 
 func createTestSubmission() *submission.Submission {
 	website := "https://test.com"
+	cnpj := "12.345.678/0001-90"
+	industry := "Technology"
+	companySize := "11-50"
+	location := "Sao Paulo"
+	contactPhone := "+55 11 99999-9999"
+	contactPosition := "CTO"
+	targetMarket := "Enterprise"
+	revenueMin := 1000000.0
+	revenueMax := 5000000.0
+	fundingStage := "Seed"
+	additionalNotes := "Important notes"
+	linkedin := "https://linkedin.com/company/test"
+	twitter := "@test"
 	userID := uuid.New()
 	return &submission.Submission{
 		ID:                uuid.New(),
 		CompanyName:       "Test Corp",
+		CNPJ:              &cnpj,
 		CompanyWebsite:    &website,
+		CompanyIndustry:   &industry,
+		CompanySize:       &companySize,
+		CompanyLocation:   &location,
 		ContactName:       "John Doe",
 		ContactEmail:      "john@test.com",
+		ContactPhone:      &contactPhone,
+		ContactPosition:   &contactPosition,
+		TargetMarket:      &targetMarket,
+		AnnualRevenueMin:  &revenueMin,
+		AnnualRevenueMax:  &revenueMax,
+		FundingStage:      &fundingStage,
 		BusinessChallenge: "Need to scale",
+		AdditionalNotes:   &additionalNotes,
+		LinkedInURL:       &linkedin,
+		TwitterHandle:     &twitter,
 		Status:            submission.StatusReceived,
 		UserID:            &userID,
 		CreatedAt:         time.Now(),
@@ -63,10 +89,10 @@ func TestRepository_Create(t *testing.T) {
 			mockSetup: func(mock sqlmock.Sqlmock, sub *submission.Submission) {
 				mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO submissions`)).
 					WithArgs(
-						sub.ID, sub.CompanyName, sub.CompanyWebsite, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
-						sub.ContactName, sub.ContactEmail, sqlmock.AnyArg(), sqlmock.AnyArg(),
-						sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
-						sub.BusinessChallenge, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
+						sub.ID, sub.CompanyName, sub.CNPJ, sub.CompanyWebsite, sub.CompanyIndustry, sub.CompanySize,
+						sub.CompanyLocation, sub.ContactName, sub.ContactEmail, sub.ContactPhone, sub.ContactPosition,
+						sub.TargetMarket, sub.AnnualRevenueMin, sub.AnnualRevenueMax, sub.FundingStage,
+						sub.BusinessChallenge, sub.AdditionalNotes, sub.LinkedInURL, sub.TwitterHandle,
 						sub.Status, sub.UserID, sub.CreatedAt, sub.UpdatedAt,
 					).
 					WillReturnResult(sqlmock.NewResult(1, 1))
@@ -83,10 +109,10 @@ func TestRepository_Create(t *testing.T) {
 			mockSetup: func(mock sqlmock.Sqlmock, sub *submission.Submission) {
 				mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO submissions`)).
 					WithArgs(
-						sub.ID, sub.CompanyName, sub.CompanyWebsite, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
-						sub.ContactName, sub.ContactEmail, sqlmock.AnyArg(), sqlmock.AnyArg(),
-						sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
-						sub.BusinessChallenge, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
+						sub.ID, sub.CompanyName, sub.CNPJ, sub.CompanyWebsite, sub.CompanyIndustry, sub.CompanySize,
+						sub.CompanyLocation, sub.ContactName, sub.ContactEmail, sub.ContactPhone, sub.ContactPosition,
+						sub.TargetMarket, sub.AnnualRevenueMin, sub.AnnualRevenueMax, sub.FundingStage,
+						sub.BusinessChallenge, sub.AdditionalNotes, sub.LinkedInURL, sub.TwitterHandle,
 						sub.Status, nil, sub.CreatedAt, sub.UpdatedAt,
 					).
 					WillReturnResult(sqlmock.NewResult(1, 1))
@@ -518,7 +544,7 @@ func TestRepository_List(t *testing.T) {
 			wantErr:   false,
 		},
 		{
-			name: "success - SQL injection prevention (invalid OrderBy ignored)",
+			name: "failure - invalid OrderBy rejected",
 			opts: &submission.ListOptions{
 				Limit:   10,
 				Offset:  0,
@@ -526,27 +552,19 @@ func TestRepository_List(t *testing.T) {
 				Order:   "DESC",
 			},
 			mockSetup: func(mock sqlmock.Sqlmock) {
-				// Should fall back to safe default: created_at DESC
-				countRows := sqlmock.NewRows([]string{"count"}).AddRow(10)
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT COUNT(*) FROM submissions WHERE deleted_at IS NULL`)).
-					WillReturnRows(countRows)
-
-				rows := sqlmock.NewRows([]string{
-					"id", "company_name", "contact_name", "contact_email", "business_challenge",
-					"status", "created_at", "updated_at", "deleted_at",
-				})
-				for i := 0; i < 10; i++ {
-					rows.AddRow(uuid.New(), "Corp", "Name", "email@test.com", "Challenge", submission.StatusReceived, time.Now(), time.Now(), nil)
-				}
-
-				// Should use safe default created_at (not the malicious input)
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM submissions WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT $1 OFFSET $2`)).
-					WithArgs(10, 0).
-					WillReturnRows(rows)
 			},
-			wantCount: 10,
-			wantTotal: 10,
-			wantErr:   false,
+			wantErr: true,
+		},
+		{
+			name: "failure - invalid Order direction rejected",
+			opts: &submission.ListOptions{
+				Limit:   10,
+				Offset:  0,
+				OrderBy: "created_at",
+				Order:   "DROP",
+			},
+			mockSetup: func(mock sqlmock.Sqlmock) {},
+			wantErr:   true,
 		},
 		{
 			name: "failure - count query error",

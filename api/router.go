@@ -198,7 +198,6 @@ func SetupRouter(
 		// Analysis management
 		adminAPI.GET("/analysis/:id", mainHandler.AnalysisHandlers.GetAnalysisAdmin)
 		adminAPI.PUT("/analysis/:id", mainHandler.AnalysisHandlers.UpdateAnalysis)
-		adminAPI.POST("/analysis/:id/version", mainHandler.AnalysisHandlers.CreateAnalysisVersion)
 		adminAPI.POST("/analysis/:id/approve", mainHandler.AnalysisHandlers.ApproveAnalysis)
 		adminAPI.POST("/analysis/:id/send", mainHandler.AnalysisHandlers.SendAnalysis)
 	}

@@ -181,8 +181,6 @@ func main() {
 		llmClient,
 		log.Logger,
 		asynqClient,
-		cfg.AnalysisModel,
-		cfg.SynthesisModel,
 	)
 	// Inject all framework-specific configs (heterogeneous routing)
 	analysisSvc.SetFrameworks(cfg.Frameworks)

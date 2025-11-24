@@ -3,6 +3,9 @@ package submission
 import (
 	"context"
 	"fmt"
+	"os"
+	"strconv"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,15 +15,22 @@ import (
 
 // Service holds the tools we need: a Database Repository and a Queue Client
 type Service struct {
-	repo        Repository
-	queueClient *asynq.Client
+	repo                 Repository
+	queueClient          queueClient
+	revenuePerSubmission float64
+}
+
+type queueClient interface {
+	Enqueue(task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error)
+	Close() error
 }
 
 // NewService is the constructor (starts the engine)
-func NewService(repo Repository, queueClient *asynq.Client) *Service {
+func NewService(repo Repository, queueClient queueClient) *Service {
 	return &Service{
-		repo:        repo,
-		queueClient: queueClient,
+		repo:                 repo,
+		queueClient:          queueClient,
+		revenuePerSubmission: loadRevenuePerSubmission(),
 	}
 }
 
@@ -104,59 +114,71 @@ type AnalyticsData struct {
 
 // GetAnalytics retrieves analytics data for the admin dashboard
 func (s *Service) GetAnalytics(ctx context.Context) (*AnalyticsData, error) {
-	// Get counts in parallel using goroutines for better performance
-	totalChan := make(chan int, 1)
-	activeChan := make(chan int, 1)
-	completedChan := make(chan int, 1)
-	errChan := make(chan error, 3)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-	// Get total count
+	var (
+		total, active, completed int
+		wg                       sync.WaitGroup
+		once                     sync.Once
+		errChan                  = make(chan error, 1)
+	)
+
+	wg.Add(3)
+
 	go func() {
+		defer wg.Done()
 		count, err := s.repo.GetTotalCount(ctx)
 		if err != nil {
-			errChan <- err
+			once.Do(func() {
+				errChan <- err
+				cancel()
+			})
 			return
 		}
-		totalChan <- count
+		total = count
 	}()
 
-	// Get active count
 	go func() {
+		defer wg.Done()
 		count, err := s.repo.GetActiveCount(ctx)
 		if err != nil {
-			errChan <- err
+			once.Do(func() {
+				errChan <- err
+				cancel()
+			})
 			return
 		}
-		activeChan <- count
+		active = count
 	}()
 
-	// Get completed count
 	go func() {
+		defer wg.Done()
 		count, err := s.repo.GetCompletedCount(ctx)
 		if err != nil {
-			errChan <- err
+			once.Do(func() {
+				errChan <- err
+				cancel()
+			})
 			return
 		}
-		completedChan <- count
+		completed = count
 	}()
 
-	// Wait for all results
-	var total, active, completed int
-	for i := 0; i < 3; i++ {
-		select {
-		case total = <-totalChan:
-		case active = <-activeChan:
-		case completed = <-completedChan:
-		case err := <-errChan:
-			return nil, fmt.Errorf("failed to get analytics: %w", err)
-		}
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case err := <-errChan:
+		return nil, fmt.Errorf("failed to get analytics: %w", err)
+	case <-done:
 	}
 
-	// Calculate revenue
-	// TODO: Once payment tracking is implemented, fetch from payment/revenue table
-	// For now, we'll use a placeholder calculation: $500 per completed submission
-	const revenuePerSubmission = 500.0
-	revenue := float64(completed) * revenuePerSubmission
+	// Calculate revenue (configurable for pricing changes)
+	revenue := float64(completed) * s.revenuePerSubmission
 
 	return &AnalyticsData{
 		TotalSubmissions:     total,
@@ -204,4 +226,19 @@ type ListOptions struct {
 	UserID  *uuid.UUID
 	OrderBy string
 	Order   string
+}
+
+// loadRevenuePerSubmission reads pricing for analytics from environment with a safe default.
+func loadRevenuePerSubmission() float64 {
+	const fallback = 500.0
+	val := os.Getenv("ANALYTICS_REVENUE_PER_SUBMISSION")
+	if val == "" {
+		return fallback
+	}
+
+	parsed, err := strconv.ParseFloat(val, 64)
+	if err != nil || parsed < 0 {
+		return fallback
+	}
+	return parsed
 }

@@ -98,11 +98,6 @@ func (s *Service) UpdateFields(ctx context.Context, id uuid.UUID, updateData map
 		return nil, fmt.Errorf("cannot edit enrichment after it has been approved")
 	}
 
-	// Validate: Cannot edit while worker is actively processing
-	if enrichment.Status == StatusPending && enrichment.StartedAt != nil && enrichment.CompletedAt == nil {
-		return nil, fmt.Errorf("cannot edit enrichment while worker is processing (progress: %d%%) - please wait for completion", enrichment.Progress)
-	}
-
 	// Deep merge update data into existing enriched_data
 	enrichment.EnrichedData = deepMerge(enrichment.EnrichedData, updateData)
 
@@ -212,7 +207,8 @@ func (s *Service) MarkAsFailed(ctx context.Context, submissionID uuid.UUID, erro
 		return fmt.Errorf("failed to get enrichment: %w", err)
 	}
 
-	// Set error message (status stays "pending")
+	enrichment.Fail(fmt.Errorf(errorMsg))
+
 	enrichment.ErrorMessage = errorMsg
 
 	if err := s.repo.UpdateSystem(ctx, enrichment); err != nil {

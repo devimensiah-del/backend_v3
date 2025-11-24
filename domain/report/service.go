@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"html/template"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -45,7 +46,7 @@ type Service struct {
 	pdfGen         PDFGenerator
 	storage        StorageClient
 	logger         zerolog.Logger
-	templates      *template.Template
+	templates      map[string]*template.Template // Cache of parsed templates
 }
 
 func NewService(
@@ -56,17 +57,114 @@ func NewService(
 	storage StorageClient,
 	logger zerolog.Logger,
 ) *Service {
-	// Templates are now self-contained and parsed individually in renderPage
-	// No need to parse them all at startup
-	return &Service{
+	svc := &Service{
 		repo:           repo,
 		analysisRepo:   analysisRepo,
 		submissionRepo: subRepo,
 		pdfGen:         pdfGen,
 		storage:        storage,
 		logger:         logger.With().Str("service", "report").Logger(),
-		templates:      nil, // Not used anymore
+		templates:      make(map[string]*template.Template),
 	}
+
+	// Pre-parse and cache all templates at startup for performance
+	if err := svc.initTemplateCache(); err != nil {
+		logger.Warn().Err(err).Msg("Failed to initialize template cache, will parse on-demand")
+	}
+
+	return svc
+}
+
+// initTemplateCache pre-parses all 24 templates and caches them in memory
+func (s *Service) initTemplateCache() error {
+	// Define template function map (same as renderPage)
+	funcMap := template.FuncMap{
+		"add":     func(a, b int) int { return a + b },
+		"lower":   func(s string) string { return strings.ToLower(s) },
+		"replace": func(s, old, new string) string { return strings.ReplaceAll(s, old, new) },
+		"slice": func(start, end int, s string) string {
+			if start < 0 {
+				start = 0
+			}
+			if end > len(s) {
+				end = len(s)
+			}
+			if start >= len(s) {
+				return ""
+			}
+			return s[start:end]
+		},
+	}
+
+	// List of all template files
+	templateFiles := []string{
+		"01_cover.html",
+		"02_exec_summary.html",
+		"03_toc.html",
+		"03a_divider_part1.html",
+		"04a_pestel_pes.html",
+		"04b_pestel_tel.html",
+		"05a_porter_7forces.html",
+		"06_swot.html",
+		"08a_divider_part2.html",
+		"07_tam_sam_som.html",
+		"08_ocean.html",
+		"11a_divider_part3.html",
+		"12a_okrs_quarterly.html",
+		"13a_growth_loops.html",
+		"14a_divider_part4.html",
+		"15a_scenarios.html",
+		"16a_recommendations_review.html",
+		"10_business_model.html",
+		"11_competitive_analysis.html",
+		"12_financial_projections.html",
+		"13_gtm_strategy.html",
+		"14_risk_assessment.html",
+		"15_roadmap.html",
+		"16_appendix.html",
+	}
+
+	// Template search paths
+	templatePaths := []string{
+		filepath.Join("templates", "report_v2"),
+		filepath.Join("backend_v3", "templates", "report_v2"),
+		filepath.Join("..", "templates", "report_v2"),
+		filepath.Join("..", "..", "templates", "report_v2"),
+	}
+
+	// Try to parse each template from available paths
+	for _, templateName := range templateFiles {
+		var tmpl *template.Template
+		var err error
+
+		for _, basePath := range templatePaths {
+			fullPath := filepath.Join(basePath, templateName)
+			tmpl, err = template.New(templateName).Funcs(funcMap).ParseFiles(fullPath)
+			if err == nil {
+				s.templates[templateName] = tmpl
+				s.logger.Debug().
+					Str("template", templateName).
+					Str("path", fullPath).
+					Msg("Template cached successfully")
+				break
+			}
+		}
+
+		if err != nil {
+			// Log warning but don't fail - will try on-demand parsing
+			s.logger.Warn().
+				Str("template", templateName).
+				Err(err).
+				Msg("Failed to cache template, will parse on-demand")
+		}
+	}
+
+	s.logger.Info().
+		Int("cached", len(s.templates)).
+		Int("total", len(templateFiles)).
+		Msg("Template cache initialized")
+
+	return nil
 }
 
 // --- Public Methods ---
@@ -261,8 +359,10 @@ func (s *Service) Publish(ctx context.Context, submissionID, analysisID string) 
 		AppendixPage:             htmlPages[23], // 16_appendix.html
 	}
 
-	// Ideally use Upsert logic here
-	_ = s.repo.Create(ctx, report)
+	// Use Upsert for idempotency - allows re-publishing reports
+	if err := s.repo.Upsert(ctx, report); err != nil {
+		return "", fmt.Errorf("failed to save report: %w", err)
+	}
 
 	return pdfURL, nil
 }
@@ -301,8 +401,42 @@ func (s *Service) gatherReportData(ctx context.Context, subID, analysisID string
 	}, nil
 }
 
+// Whitelist of allowed template names to prevent path traversal attacks
+var allowedTemplates = map[string]bool{
+	"01_cover.html":                     true,
+	"02_exec_summary.html":              true,
+	"03_toc.html":                       true,
+	"03a_divider_part1.html":            true,
+	"04a_pestel_pes.html":               true,
+	"04b_pestel_tel.html":               true,
+	"05a_porter_7forces.html":           true,
+	"06_swot.html":                      true,
+	"08a_divider_part2.html":            true,
+	"07_tam_sam_som.html":               true,
+	"08_ocean.html":                     true,
+	"11a_divider_part3.html":            true,
+	"12a_okrs_quarterly.html":           true,
+	"13a_growth_loops.html":             true,
+	"14a_divider_part4.html":            true,
+	"15a_scenarios.html":                true,
+	"16a_recommendations_review.html":   true,
+	"10_business_model.html":            true,
+	"11_competitive_analysis.html":      true,
+	"12_financial_projections.html":     true,
+	"13_gtm_strategy.html":              true,
+	"14_risk_assessment.html":           true,
+	"15_roadmap.html":                   true,
+	"16_appendix.html":                  true,
+}
+
 // renderPage merges the template with data and theme
 func (s *Service) renderPage(templateName string, globalData *ReportData, specificContent interface{}) (string, error) {
+	// SECURITY: Validate template name against whitelist to prevent path traversal
+	cleanName := filepath.Base(templateName) // Remove any path components
+	if !allowedTemplates[cleanName] {
+		return "", fmt.Errorf("invalid template name: %s (not in whitelist)", templateName)
+	}
+	templateName = cleanName // Use only the clean filename
 	// Construct full payload with all necessary data
 	payload := map[string]interface{}{
 		"Theme":          globalData.Theme,
@@ -354,44 +488,56 @@ func (s *Service) renderPage(templateName string, globalData *ReportData, specif
 
 	// Templates are now self-contained - parse individually
 	// Using report_v2 for TUC Glasses aligned templates
+	// SECURITY: Use filepath.Join to safely construct paths, preventing traversal
 	templatePaths := []string{
-		"templates/report_v2/" + templateName,            // Production / From root
-		"backend_v3/templates/report_v2/" + templateName, // From parent dir
-		"../templates/report_v2/" + templateName,         // From tests in subdirs
-		"../../templates/report_v2/" + templateName,      // From deep test dirs
+		filepath.Join("templates", "report_v2", templateName),            // Production / From root
+		filepath.Join("backend_v3", "templates", "report_v2", templateName), // From parent dir
+		filepath.Join("..", "templates", "report_v2", templateName),         // From tests in subdirs
+		filepath.Join("..", "..", "templates", "report_v2", templateName),   // From deep test dirs
 	}
 
-	var tmpl *template.Template
-	var err error
+	// PERFORMANCE: Try to use cached template first
+	tmpl, cached := s.templates[templateName]
 
-	funcMap := template.FuncMap{
-		"safeHTML": func(s string) template.HTML { return template.HTML(s) },
-		"add":      func(a, b int) int { return a + b },
-		"lower":    func(s string) string { return strings.ToLower(s) },
-		"replace":  func(s, old, new string) string { return strings.ReplaceAll(s, old, new) },
-		"slice": func(start, end int, s string) string {
-			if start < 0 {
-				start = 0
-			}
-			if end > len(s) {
-				end = len(s)
-			}
-			if start >= len(s) {
-				return ""
-			}
-			return s[start:end]
-		},
-	}
+	// If not cached, parse on-demand (fallback)
+	if !cached {
+		var err error
 
-	for _, path := range templatePaths {
-		tmpl, err = template.New(templateName).Funcs(funcMap).ParseFiles(path)
-		if err == nil {
-			break
+		// SECURITY: Removed safeHTML function to prevent XSS vulnerabilities
+		// Go's html/template automatically escapes all content by default
+		funcMap := template.FuncMap{
+			"add":     func(a, b int) int { return a + b },
+			"lower":   func(s string) string { return strings.ToLower(s) },
+			"replace": func(s, old, new string) string { return strings.ReplaceAll(s, old, new) },
+			"slice": func(start, end int, s string) string {
+				if start < 0 {
+					start = 0
+				}
+				if end > len(s) {
+					end = len(s)
+				}
+				if start >= len(s) {
+					return ""
+				}
+				return s[start:end]
+			},
 		}
-	}
 
-	if err != nil {
-		return "", fmt.Errorf("template %s not found in any location: %w", templateName, err)
+		for _, path := range templatePaths {
+			tmpl, err = template.New(templateName).Funcs(funcMap).ParseFiles(path)
+			if err == nil {
+				// Cache for next time
+				s.templates[templateName] = tmpl
+				s.logger.Debug().
+					Str("template", templateName).
+					Msg("Template parsed and cached on-demand")
+				break
+			}
+		}
+
+		if err != nil {
+			return "", fmt.Errorf("template %s not found in any location: %w", templateName, err)
+		}
 	}
 
 	var buf bytes.Buffer

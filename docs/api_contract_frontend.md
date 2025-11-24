@@ -1,14 +1,36 @@
-# API Contract – Frontend Expectations
+# API Contract – Frontend Expectations (v1.0 Final)
+
+> **Last Updated**: 2024-11-24
+> **Base URL**: `/api/v1`
 
 Detailed request/response shapes for all API endpoints under `/api/v1`, with the submission → enrichment → analysis → report workflow enforced as described. Types are expressed as JSON object fields with primitive types; arrays are `[]`; timestamps are ISO 8601 strings.
+
+---
 
 ## Auth
 - `POST /auth/login`
   - Request: `{ "email": string, "password": string }`
-  - Response `200`: `{ "token": string }`
+  - Response `200`:
+    ```json
+    {
+      "user": { "id": string, "email": string, "role": string },
+      "access_token": string,
+      "token_type": "Bearer",
+      "expires_in": number,
+      "expires_at": number
+    }
+    ```
 - `POST /auth/signup`
   - Request: `{ "email": string, "password": string, "fullName": string }`
-  - Response `201`: `{ "token": string }`
+  - Response `201`:
+    ```json
+    {
+      "user": { "id": string, "email": string },
+      "access_token": string,
+      "token_type": "Bearer",
+      "expires_in": number
+    }
+    ```
 - `POST /auth/logout`
   - Request: Bearer token only
   - Response `200`: `{ "message": string }`
@@ -132,9 +154,36 @@ Detailed request/response shapes for all API endpoints under `/api/v1`, with the
 ```
 
 - `GET /submissions/:id/enrichment`
-  - Response `200`: `Enrichment`
+  - Response `200`:
+    ```json
+    {
+      "enrichment": {
+        "id": string,
+        "submissionId": string,
+        "status": "pending" | "completed" | "approved",
+        "progress": number,           // 0-100
+        "currentStep": string,        // e.g., "Enrichment complete - awaiting review"
+        "data": EnrichmentContent,    // Note: backend field is "enrichedData", mapped to "data"
+        "isLocked": boolean,
+        "createdAt": string,
+        "updatedAt": string
+      }
+    }
+    ```
 - `GET /submissions/:id/analysis`
-  - Response `200`: `AnalysisResponse` (latest version only)
+  - Response `200`:
+    ```json
+    {
+      "analysis": {
+        "id": string,
+        "submissionId": string,
+        "status": "pending" | "completed" | "approved" | "sent",
+        "analysis": AnalysisContent,  // Contains all 12 frameworks
+        "createdAt": string,
+        "updatedAt": string
+      }
+    }
+    ```
 - `GET /submissions/:id/report/preview`
   - Response `200`: `ReportPreview`
 - `GET /submissions/:id/report/download`
@@ -161,24 +210,38 @@ Detailed request/response shapes for all API endpoints under `/api/v1`, with the
 - `GET /admin/enrichment/:id`
   - Response `200`: `Enrichment`
 - `PUT /admin/enrichment/:id`
-  - Request: `Partial<EnrichmentContent>` plus optional `notes`
-  - Response `200`: `Enrichment`
+  - **IMPORTANT**: Only allowed when `status === "completed"`. Returns 400 if `status === "approved"`.
+  - Request: `Partial<EnrichmentContent>` (any fields from enrichedData)
+  - Response `200`: `{ "enrichment": Enrichment }`
+  - Error `400`: `{ "error": "Update failed", "message": "Cannot edit enrichment after approval" }`
 - `POST /admin/enrichment/:id/approve`
-  - Response `200`: `{ "enrichment": Enrichment, "analysisId"?: string, "analysisStatus"?: string, "analysisVersion"?: number, "message": string }` (analysis fields best-effort; job may still be queued)
+  - Triggers analysis job. Changes status: `completed → approved`
+  - Response `200`: `{ "enrichment": Enrichment, "message": "Enrichment approved, analysis job started" }`
 - `POST /admin/enrichment/:id/unlock`
   - Response `200`: `{ "enrichmentId": string, "status": EnrichmentStatus }` (remains unchanged; unlock toggles editability)
 - `GET /admin/analysis/:id`
   - Response `200`: `Analysis`
 - `PUT /admin/analysis/:id`
-  - Request: `Partial<AnalysisContent>` plus optional `notes`
-  - Response `200`: `Analysis`
-- `POST /admin/analysis/:id/version`
-  - Response `201`: `{ "analysisId": string, "version": string, "status": AnalysisStatus, "previousVersion": string }`
+  - **IMPORTANT**: Only allowed when `status === "completed"`.
+  - Cannot edit when: `pending` (AI processing), `approved` (PDF generated), `sent` (delivered to user)
+  - Request: `Partial<AnalysisContent>` (any framework fields)
+    ```json
+    {
+      "pestel": { "political": ["Updated point 1", "Updated point 2"] },
+      "swot": { "strengths": [{ "content": "New strength", "confidence": "Alta", "source": "Admin" }] }
+    }
+    ```
+  - Response `200`: `{ "analysis": Analysis }`
+  - Error `400`: `{ "error": "Update failed", "message": "Cannot edit analysis while AI is still processing" }`
 - `POST /admin/analysis/:id/approve`
-  - Response `200`: `{ "analysisId": string, "version": string, "status": "approved" }`
+  - Triggers PDF generation job. Changes status: `completed → approved`
+  - Response `200`: `{ "analysis": Analysis, "message": "Analysis approved successfully" }`
 - `POST /admin/analysis/:id/send`
+  - **Prerequisite**: PDF must exist (status `approved` + PDF generated)
+  - Changes status: `approved → sent`. Triggers user notification.
   - Request: `{ "userEmail": string }` (required)
-  - Response `200`: `{ "analysisId": string, "version": string, "status": "sent" }`
+  - Response `200`: `{ "analysis": Analysis, "message": "Analysis sent to user successfully" }`
+  - Error `400`: `{ "error": "Send failed", "message": "PDF não está disponível ainda" }`
 - `GET /admin/analytics`
   - Response `200`: `{ "summary": object }` (implementation-defined)
 
@@ -302,28 +365,36 @@ Detailed request/response shapes for all API endpoints under `/api/v1`, with the
 Frontend responses expose `content` under the `data` property.
 
 ### Analysis
+
+**Note**: Analysis does NOT have versioning. Each submission has exactly one analysis record.
+
 ```json
 {
   "id": string,
   "submissionId": string,
-  "versions": AnalysisVersion[]
-}
-```
-
-`AnalysisVersion`:
-```json
-{
-  "version": string,              // "v1", "v2", ...
+  "enrichmentId": string,
   "status": AnalysisStatus,       // pending -> completed -> approved -> sent
-  "content": AnalysisContent,
-  "notes"?: string,
   "createdAt": string,
-  "updatedAt": string
+  "updatedAt": string,
+  "completedAt": string|null,
+  "sentAt": string|null,
+  "sentTo": string|null,          // Email address when sent
+  "errorMessage": string|null,    // Set if processing failed
+  "processingTimeMs": number|null,
+  // Framework data (PESTEL, Porter, SWOT, etc.)
+  ...AnalysisContent
 }
 ```
 
-`AnalysisStatus = "pending" | "completed" | "approved" | "sent"`  
-`AnalysisContent` contains the 11 frameworks and synthesis, each with the fields below (strings unless specified):
+`AnalysisStatus = "pending" | "completed" | "approved" | "sent"`
+
+**Status Transition Rules:**
+- `pending`: AI is processing. **No edits allowed.**
+- `completed`: AI finished. **Admin can edit.** Can approve.
+- `approved`: PDF generating/generated. **No edits allowed.** Can send.
+- `sent`: Delivered to user. **No edits allowed.** Terminal state.
+
+`AnalysisContent` contains the 12 frameworks and synthesis, each with the fields below (strings unless specified):
 ```json
 {
   "pestel": {
@@ -436,17 +507,12 @@ Frontend responses expose `content` under the `data` property.
   }
 }
 ```
-`SWOTItem { "content": string, "confidence": string, "source": string }`  
-`GrowthLoop { "name": string, "type": string, "steps": string[], "metrics": string[], "bottleneck": string }`  
-`Scenario { "name": string, "probability": number, "description": string, "required_actions": string[] }`  
-`QuarterlyOKR { "quarter": string, "objective": string, "key_results": string[], "investment": string, "timeline": string }`  
-`PriorityRecommendation { "priority": number, "title": string, "description": string, "timeline": string, "budget": string }`  
+`SWOTItem { "content": string, "confidence": "Alta" | "Média" | "Baixa", "source": string }`
+`GrowthLoop { "name": string, "type": string, "steps": string[], "metrics": string[], "bottleneck": string }`
+`Scenario { "name": string, "probability": number, "description": string, "required_actions": string[] }`
+`QuarterlyOKR { "quarter": string, "objective": string, "key_results": string[], "investment": string, "timeline": string }`
+`PriorityRecommendation { "priority": number, "title": string, "description": string, "timeline": string, "budget": string }`
 `ReviewCycle { "frequency": string, "extraordinary_triggers": string[] }`
-
-- Versioning rules:
-  - v1 is created when enrichment is approved; it starts with status of the prior analysis (for v1 this will be `"pending"`).
-  - Creating a new version clones content and status from the previous version; previous version status remains unchanged.
-  - Admin edits are applied to the targeted version only.
 
 ### Report
 ```json
@@ -513,16 +579,117 @@ Frontend responses expose `content` under the `data` property.
 ```
 
 ## Workflow & Status Logic (frontend expectations)
-- Submission is stored with `status: "received"` and never changes.
-- Enrichment is created immediately after submission with `status: "pending"`.
-- Worker processing updates enrichment to `status: "completed"` when done.
-- Admin can edit enrichment fields; upon approval via `/admin/enrichment/:id/approve`, enrichment moves to `status: "approved"` and analysis v1 is created with `status: "pending"`.
-- Analysis processing updates a version to `status: "completed"` when done. Admin can edit a version and:
-  - Approve it (`status: "approved"`), which triggers report generation for that version.
-  - Send it (`status: "sent"`) to make the approved version visible to the submitting user.
-- Creating a new analysis version clones the previous version's content and status; previous version status is immutable. New version receives the prior version's status until admin changes it.
-- Report generation is tied to the approved analysis version; when ready, report `status` becomes `"completed"` and PDF download is available.
-- User-facing enrichment/analysis endpoints always return the latest version only; version history is admin-only.
+
+### Complete Workflow Diagram
+
+```
+[User Submits Form]
+        ↓
+[Submission Created] status: "received" (never changes)
+        ↓
+[Enrichment Job Queued] status: "pending", progress: 0-100
+        ↓ (AI Worker)
+[Enrichment Completed] status: "completed", progress: 100
+        ↓ (Admin Review & Edit)
+[Admin Approves Enrichment] status: "approved"
+        ↓
+[Analysis Job Triggered] status: "pending"
+        ↓ (AI Worker - 12 frameworks)
+[Analysis Completed] status: "completed"
+        ↓ (Admin Review & Edit)
+[Admin Approves Analysis] status: "approved"
+        ↓
+[Report/PDF Job Triggered]
+        ↓ (Gotenberg PDF generation)
+[PDF Ready]
+        ↓
+[Admin Sends to User] status: "sent"
+        ↓
+[User Downloads PDF]
+```
+
+### Status Rules Summary
+
+| Entity | Statuses | Editable When | Actions |
+|--------|----------|---------------|---------|
+| Submission | `received` | Never changes | - |
+| Enrichment | `pending` → `completed` → `approved` | `completed` only | Approve triggers Analysis |
+| Analysis | `pending` → `completed` → `approved` → `sent` | `completed` only | Approve triggers PDF, Send notifies user |
+| Report | `pending` → `processing` → `completed` | Never | Download when completed |
+
+### Derived Status for UI Display
+
+```typescript
+function getDerivedStatus(submission: SubmissionDetail): string {
+  // Check analysis status first (later in workflow)
+  if (submission.analysisId) {
+    const analysis = await getAnalysis(submission.id);
+    switch (analysis.status) {
+      case 'sent': return 'delivered';      // User can download
+      case 'approved': return 'ready';      // PDF generating/ready
+      case 'completed': return 'review';    // Awaiting admin review
+      case 'pending': return 'analyzing';   // AI processing
+    }
+  }
+
+  // Check enrichment status
+  if (submission.enrichmentId) {
+    const enrichment = await getEnrichment(submission.id);
+    switch (enrichment.status) {
+      case 'approved': return 'analyzing';  // Analysis should start
+      case 'completed': return 'enriched';  // Awaiting admin approval
+      case 'pending': return 'enriching';   // AI processing
+    }
+  }
+
+  return 'received';  // Just submitted
+}
+```
+
+### Progress Indicators
+
+**Enrichment Progress (0-100):**
+- `0-30`: Gathering company data
+- `30-60`: Market & competitor analysis
+- `60-90`: Finalizing insights
+- `100`: Complete
+
+**Analysis Progress (derived from frameworks completed):**
+- Each of 12 frameworks = ~8% progress
+- Layer 1 (PESTEL, Porter, TAM): 0-25%
+- Layer 2 (SWOT, Benchmarking): 25-42%
+- Layer 3 (Blue Ocean, Growth, Scenarios): 42-67%
+- Layer 4 (OKRs, BSC, Decision Matrix): 67-92%
+- Synthesis: 92-100%
 
 ## Error Shape
-All error responses: HTTP status code with body `{ "error": string, "message": string, "details"?: object }`.
+All error responses: HTTP status code with body:
+```json
+{
+  "error": string,      // Error type (e.g., "Not found", "Forbidden")
+  "message": string     // Human-readable description
+}
+```
+
+### Common Error Codes
+
+| Status | When |
+|--------|------|
+| 400 | Validation failed, invalid status transition |
+| 401 | Missing or invalid auth token |
+| 403 | User doesn't own resource / not admin |
+| 404 | Resource not found |
+| 429 | Rate limited (auth: 5/15min, general: 100/min) |
+| 500 | Server error |
+
+---
+
+## Changelog
+
+- **v1.0** (2024-11-24): Finalized contract
+  - Removed analysis versioning (single record per submission)
+  - Added edit protection rules (only editable when `completed`)
+  - Fixed auth response to include `access_token`
+  - Added derived status logic for UI
+  - Added progress indicators
+  - Clarified enrichment `data` field mapping

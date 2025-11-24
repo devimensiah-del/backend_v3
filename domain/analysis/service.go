@@ -58,11 +58,7 @@ type Service struct {
 	queueClient    *asynq.Client // For job orchestration
 	reportLookup   ReportLookup  // Optional: used to verify PDF before Send
 
-	// Deprecated fields (kept for backward compatibility)
-	analystModel   string
-	synthesisModel string
-
-	// New: Framework-specific configurations for heterogeneous model routing
+	// Framework-specific configurations for heterogeneous model routing
 	frameworks map[string]config.FrameworkConfig
 }
 
@@ -73,8 +69,6 @@ func NewService(
 	llm LLMClient,
 	logger zerolog.Logger,
 	queueClient *asynq.Client,
-	analystModel string, // DEPRECATED: use frameworks map
-	synthesisModel string, // DEPRECATED: use frameworks map
 ) *Service {
 	return &Service{
 		repo:           repo,
@@ -82,9 +76,7 @@ func NewService(
 		llm:            llm,
 		logger:         logger.With().Str("service", "analysis").Logger(),
 		queueClient:    queueClient,
-		analystModel:   analystModel,
-		synthesisModel: synthesisModel,
-		frameworks:     make(map[string]config.FrameworkConfig), // Will be populated by main.go
+		frameworks:     make(map[string]config.FrameworkConfig), // Populated via SetFrameworks()
 	}
 }
 
@@ -116,59 +108,6 @@ func (s *Service) ListAll(ctx context.Context, limit, offset int) ([]*Analysis, 
 // Delete removes an analysis record
 func (s *Service) Delete(ctx context.Context, id string) error {
 	return s.repo.Delete(ctx, id)
-}
-
-// CreateVersion creates a new version of an existing analysis with optional edits
-// This is typically called after admin review when changes need to be made
-func (s *Service) CreateVersion(ctx context.Context, analysisID string, edits map[string]interface{}) (*Analysis, error) {
-	// Get the current analysis
-	currentAnalysis, err := s.repo.GetByID(ctx, analysisID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Do not allow new versions once the analysis has been sent
-	if currentAnalysis.Status == string(StatusSent) {
-		return nil, fmt.Errorf("cannot create new version after analysis has been sent")
-	}
-
-	// Create a new version based on the current one
-	newVersion := currentAnalysis.CreateNewVersion()
-
-	// Apply edits if provided
-	if edits != nil {
-		s.applyEditsToAnalysis(newVersion, edits)
-	}
-
-	// Generate new ID for the new version
-	newVersion.ID = generateAnalysisID()
-
-	// Clear previous latest and save the new version as latest
-	if err := s.repo.ClearLatest(ctx, currentAnalysis.SubmissionID); err != nil {
-		return nil, fmt.Errorf("failed to clear latest flag: %w", err)
-	}
-	err = s.repo.Create(ctx, newVersion)
-	if err != nil {
-		return nil, err
-	}
-
-	s.logger.Info().
-		Str("original_id", analysisID).
-		Str("new_id", newVersion.ID).
-		Int("version", newVersion.Version).
-		Msg("Created new analysis version")
-
-	return newVersion, nil
-}
-
-// GetLatestVersion retrieves the latest version of an analysis for a submission
-func (s *Service) GetLatestVersion(ctx context.Context, submissionID string) (*Analysis, error) {
-	return s.repo.GetLatestVersionBySubmissionID(ctx, submissionID)
-}
-
-// GetAllVersions retrieves all versions of analyses for a submission
-func (s *Service) GetAllVersions(ctx context.Context, submissionID string) ([]*Analysis, error) {
-	return s.repo.GetAllVersionsBySubmissionID(ctx, submissionID)
 }
 
 // applyEditsToAnalysis applies edits from a map to the analysis structure
@@ -306,6 +245,7 @@ func generateAnalysisID() string {
 
 // UpdateFields updates analysis framework fields (admin edit)
 // Status remains unchanged
+// IMPORTANT: Admin can only edit when status is "completed" (AI finished processing)
 func (s *Service) UpdateFields(ctx context.Context, analysisID string, updateData map[string]interface{}) (*Analysis, error) {
 	// Get current analysis
 	currentAnalysis, err := s.repo.GetByID(ctx, analysisID)
@@ -313,9 +253,16 @@ func (s *Service) UpdateFields(ctx context.Context, analysisID string, updateDat
 		return nil, err
 	}
 
-	// Do not allow edits after analysis has been sent
+	// Only allow edits when AI has finished (status = "completed")
+	// Block edits during: pending (AI processing), approved, sent
+	if currentAnalysis.Status == string(StatusPending) {
+		return nil, fmt.Errorf("cannot edit analysis while AI is still processing")
+	}
+	if currentAnalysis.Status == string(StatusApproved) {
+		return nil, fmt.Errorf("cannot edit analysis after approval - PDF has been generated")
+	}
 	if currentAnalysis.Status == string(StatusSent) {
-		return nil, fmt.Errorf("cannot edit analysis after it has been sent")
+		return nil, fmt.Errorf("cannot edit analysis after it has been sent to client")
 	}
 
 	// Apply edits to analysis

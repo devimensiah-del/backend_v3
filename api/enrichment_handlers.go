@@ -218,24 +218,20 @@ func (h *EnrichmentHandlers) ApproveEnrichment(c *gin.Context) {
 	// Best-effort: fetch latest analysis for this submission (may still be queued)
 	var analysisID *string
 	var analysisStatus *string
-	var analysisVersion *int
 	if h.AnalysisService != nil {
-		if latest, err := h.AnalysisService.GetLatestVersion(c.Request.Context(), updatedEnrichment.SubmissionID.String()); err == nil && latest != nil {
-			id := latest.ID
+		if a, err := h.AnalysisService.GetBySubmissionID(c.Request.Context(), updatedEnrichment.SubmissionID.String()); err == nil && a != nil {
+			id := a.ID
 			analysisID = &id
-			status := latest.Status
+			status := a.Status
 			analysisStatus = &status
-			version := latest.Version
-			analysisVersion = &version
 		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"enrichment":      enrichmentResponse,
-		"analysisId":      analysisID,
-		"analysisStatus":  analysisStatus,
-		"analysisVersion": analysisVersion,
-		"message":         "Enriquecimento aprovado, analise iniciada.",
+		"enrichment":     enrichmentResponse,
+		"analysisId":     analysisID,
+		"analysisStatus": analysisStatus,
+		"message":        "Enriquecimento aprovado, analise iniciada.",
 	})
 }
 
@@ -358,16 +354,38 @@ func (h *EnrichmentHandlers) buildEnrichmentResponse(e *enrichment.Enrichment) E
 		Int("data_size", len(e.EnrichedData)).
 		Msg("Building enrichment response")
 
+	// Calculate progress and determine the appropriate step message
+	progress := h.calculateInferredProgress(string(e.Status), e.CurrentStep)
+	currentStep := h.getDisplayStep(string(e.Status), e.CurrentStep)
+
 	return EnrichmentResponse{
 		ID:           e.ID.String(),
 		SubmissionID: e.SubmissionID.String(),
 		Status:       string(e.Status),
-		Progress:     h.calculateInferredProgress(string(e.Status), e.CurrentStep),
-		CurrentStep:  e.CurrentStep,
+		Progress:     progress,
+		CurrentStep:  currentStep,
 		Data:         e.EnrichedData,
 		IsLocked:     e.IsLocked,
 		CreatedAt:    e.CreatedAt,
 		UpdatedAt:    e.UpdatedAt,
+	}
+}
+
+// getDisplayStep returns a user-friendly step message based on status
+// This ensures completed/approved statuses show appropriate messages even if
+// the database has stale step data
+func (h *EnrichmentHandlers) getDisplayStep(status string, dbStep string) string {
+	switch status {
+	case "completed":
+		return "Enrichment complete - awaiting review"
+	case "approved":
+		return "Approved - analysis in progress"
+	default:
+		// For pending status, use the database step
+		if dbStep == "" {
+			return "Queued for enrichment"
+		}
+		return dbStep
 	}
 }
 

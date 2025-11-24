@@ -41,6 +41,12 @@ func (f *fakeSubmissionRepo) Delete(ctx context.Context, id uuid.UUID) error    
 func (f *fakeSubmissionRepo) GetTotalCount(ctx context.Context) (int, error)     { panic("not used") }
 func (f *fakeSubmissionRepo) GetActiveCount(ctx context.Context) (int, error)    { panic("not used") }
 func (f *fakeSubmissionRepo) GetCompletedCount(ctx context.Context) (int, error) { panic("not used") }
+func (f *fakeSubmissionRepo) GetEnrichmentStatus(ctx context.Context, submissionID uuid.UUID) (*submission.EnrichmentStatusRow, error) {
+	panic("not used")
+}
+func (f *fakeSubmissionRepo) ReserveEnrichment(ctx context.Context, submissionID uuid.UUID) (bool, error) {
+	panic("not used")
+}
 
 type noopEnrichmentGetter struct{}
 

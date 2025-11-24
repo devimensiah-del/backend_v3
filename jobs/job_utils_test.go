@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"backend_v3/config"
+	jobtypes "backend_v3/jobs/types"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -157,7 +158,7 @@ func TestEnrichmentJobPayloadSerialization(t *testing.T) {
 	task, err := NewEnrichmentTask(payload)
 	require.NoError(t, err)
 	assert.NotNil(t, task)
-	assert.Equal(t, TypeEnrichment, task.Type())
+	assert.Equal(t, jobtypes.TypeEnrichment, task.Type())
 
 	// Test deserialization
 	var deserializedPayload EnrichmentJobPayload
@@ -181,7 +182,7 @@ func TestAnalysisJobPayloadSerialization(t *testing.T) {
 	task, err := NewAnalysisTask(payload)
 	require.NoError(t, err)
 	assert.NotNil(t, task)
-	assert.Equal(t, TypeAnalysis, task.Type())
+	assert.Equal(t, jobtypes.TypeAnalysis, task.Type())
 
 	// Test deserialization
 	var deserializedPayload AnalysisJobPayload
@@ -232,8 +233,8 @@ func TestJobPayloadValidation(t *testing.T) {
 
 // TestJobConstants verifies job type constants
 func TestJobConstants(t *testing.T) {
-	assert.Equal(t, "enrichment_job", TypeEnrichment)
-	assert.Equal(t, "analysis_job", TypeAnalysis)
+	assert.Equal(t, "enrichment_job", jobtypes.TypeEnrichment)
+	assert.Equal(t, "analysis_job", jobtypes.TypeAnalysis)
 }
 
 // TestRetryDelayFormula tests the exponential backoff formula matches expected behavior
@@ -282,7 +283,7 @@ func TestRetryDelayFormula(t *testing.T) {
 
 // TestDLQKeyFormat tests Dead Letter Queue key naming
 func TestDLQKeyFormat(t *testing.T) {
-	taskType := TypeEnrichment
+	taskType := jobtypes.TypeEnrichment
 	timestamp := time.Now().Unix()
 
 	expectedKeyFormat := "dlq:enrichment_job:"

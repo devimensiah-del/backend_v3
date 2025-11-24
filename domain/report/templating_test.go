@@ -134,7 +134,6 @@ func TestMissingDataHandling_EmptyFrameworks(t *testing.T) {
 		ID:           uuid.New().String(),
 		SubmissionID: uuid.New().String(),
 		Status:       "completed",
-		Version:      1,
 
 		// Empty PESTEL
 		PESTEL: analysis.PESTELAnalysis{
@@ -709,7 +708,7 @@ func TestPageCountVerification(t *testing.T) {
 		Return([]byte("fake-pdf"), nil)
 	mockStorage.On("Upload", ctx, mock.Anything, mock.Anything, "application/pdf").
 		Return("https://storage.example.com/test.pdf", nil)
-	mockReportRepo.On("Create", ctx, mock.MatchedBy(func(r *report.Report) bool {
+	mockReportRepo.On("Upsert", ctx, mock.MatchedBy(func(r *report.Report) bool {
 		// Verify TotalPages is set to 24
 		return r.TotalPages == 24
 	})).Return(nil)

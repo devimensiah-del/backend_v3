@@ -28,6 +28,12 @@ func (m *memRepo) GetCompletedCount(ctx context.Context) (int, error) { return 0
 func (m *memRepo) ListWithAnalytics(ctx context.Context, opts *ListOptions) ([]*Submission, int, error) {
 	return nil, 0, nil
 }
+func (m *memRepo) GetEnrichmentStatus(ctx context.Context, submissionID uuid.UUID) (*EnrichmentStatusRow, error) {
+	return nil, nil
+}
+func (m *memRepo) ReserveEnrichment(ctx context.Context, submissionID uuid.UUID) (bool, error) {
+	return true, nil
+}
 
 func TestCreateSetsReceivedStatus(t *testing.T) {
 	repo := &memRepo{}

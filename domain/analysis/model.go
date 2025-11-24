@@ -8,15 +8,18 @@ import (
 )
 
 // Status constants for Analysis
+// Flow: pending → completed → approved → sent
+// - pending: Initial state, waiting for worker or worker is processing
+// - completed: Worker finished analysis successfully
+// - approved: Admin approved, PDF generated
+// - sent: Made available to user
 type Status string
 
 const (
-	StatusPending   Status = "pending"   // Initial state, waiting for worker
-	StatusCompleted Status = "completed" // Worker finished (version 1)
+	StatusPending   Status = "pending"   // Initial state, waiting for worker (or worker processing)
+	StatusCompleted Status = "completed" // Worker finished analysis successfully
 	StatusApproved  Status = "approved"  // Admin approved, PDF generated
 	StatusSent      Status = "sent"      // Made available to user
-	// Note: Removed StatusProcessing and StatusFailed
-	// Failures keep status as "pending" with error_message populated
 )
 
 type Analysis struct {
@@ -29,11 +32,6 @@ type Analysis struct {
 	CreatedAt        time.Time  `db:"created_at" json:"created_at"`
 	UpdatedAt        time.Time  `db:"updated_at" json:"updated_at"`
 	CompletedAt      *time.Time `db:"completed_at" json:"completed_at"`
-
-	// Versioning fields
-	Version          int     `db:"version" json:"version"`
-	ParentAnalysisID *string `db:"parent_analysis_id" json:"parent_analysis_id,omitempty"`
-	IsLatest         bool    `db:"is_latest" json:"is_latest"`
 
 	// Approval and Send tracking
 	ApprovedAt *time.Time `db:"approved_at" json:"approved_at,omitempty"`
@@ -305,42 +303,6 @@ func (a *Analysis) Fail(errorMsg string) {
 	a.UpdatedAt = time.Now()
 }
 
-// CreateNewVersion creates a new version of this analysis
-// Returns a new Analysis with incremented version and parent reference
-func (a *Analysis) CreateNewVersion() *Analysis {
-	newAnalysis := &Analysis{
-		// Copy basic info
-		SubmissionID:     a.SubmissionID,
-		EnrichmentID:     a.EnrichmentID,
-		Status:           a.Status, // Copy status from previous version per user requirement
-		ProcessingTimeMs: 0,
-		CreatedAt:        time.Now(),
-		UpdatedAt:        time.Now(),
-		CompletedAt:      nil,
-
-		// Versioning
-		Version:          a.Version + 1,
-		ParentAnalysisID: &a.ID,
-		IsLatest:         true,
-
-		// Copy all framework data
-		PESTEL:         a.PESTEL,
-		Porter:         a.Porter,
-		TamSamSom:      a.TamSamSom,
-		SWOT:           a.SWOT,
-		Benchmarking:   a.Benchmarking,
-		BlueOcean:      a.BlueOcean,
-		GrowthHacking:  a.GrowthHacking,
-		Scenarios:      a.Scenarios,
-		OKRs:           a.OKRs,
-		BSC:            a.BSC,
-		DecisionMatrix: a.DecisionMatrix,
-		Synthesis:      a.Synthesis,
-	}
-
-	return newAnalysis
-}
-
 // ============================================
 // JSONB Serialization for PostgreSQL
 // ============================================
@@ -350,7 +312,11 @@ func (a *Analysis) CreateNewVersion() *Analysis {
 // --- PESTELAnalysis ---
 
 func (p PESTELAnalysis) Value() (driver.Value, error) {
-	return json.Marshal(p)
+	b, err := json.Marshal(p)
+	if err != nil {
+		return nil, err
+	}
+	return string(b), nil // Must return string for JSONB compatibility with lib/pq
 }
 
 func (p *PESTELAnalysis) Scan(value interface{}) error {
@@ -367,7 +333,11 @@ func (p *PESTELAnalysis) Scan(value interface{}) error {
 // --- PorterAnalysis ---
 
 func (p PorterAnalysis) Value() (driver.Value, error) {
-	return json.Marshal(p)
+	b, err := json.Marshal(p)
+	if err != nil {
+		return nil, err
+	}
+	return string(b), nil
 }
 
 func (p *PorterAnalysis) Scan(value interface{}) error {
@@ -384,7 +354,11 @@ func (p *PorterAnalysis) Scan(value interface{}) error {
 // --- SWOTAnalysis ---
 
 func (s SWOTAnalysis) Value() (driver.Value, error) {
-	return json.Marshal(s)
+	b, err := json.Marshal(s)
+	if err != nil {
+		return nil, err
+	}
+	return string(b), nil
 }
 
 func (s *SWOTAnalysis) Scan(value interface{}) error {
@@ -401,7 +375,11 @@ func (s *SWOTAnalysis) Scan(value interface{}) error {
 // --- BlueOceanAnalysis ---
 
 func (b BlueOceanAnalysis) Value() (driver.Value, error) {
-	return json.Marshal(b)
+	bytes, err := json.Marshal(b)
+	if err != nil {
+		return nil, err
+	}
+	return string(bytes), nil
 }
 
 func (b *BlueOceanAnalysis) Scan(value interface{}) error {
@@ -418,7 +396,11 @@ func (b *BlueOceanAnalysis) Scan(value interface{}) error {
 // --- BalancedScorecardAnalysis ---
 
 func (bsc BalancedScorecardAnalysis) Value() (driver.Value, error) {
-	return json.Marshal(bsc)
+	b, err := json.Marshal(bsc)
+	if err != nil {
+		return nil, err
+	}
+	return string(b), nil
 }
 
 func (bsc *BalancedScorecardAnalysis) Scan(value interface{}) error {
@@ -435,7 +417,11 @@ func (bsc *BalancedScorecardAnalysis) Scan(value interface{}) error {
 // --- OKRAnalysis ---
 
 func (o OKRAnalysis) Value() (driver.Value, error) {
-	return json.Marshal(o)
+	b, err := json.Marshal(o)
+	if err != nil {
+		return nil, err
+	}
+	return string(b), nil
 }
 
 func (o *OKRAnalysis) Scan(value interface{}) error {
@@ -452,7 +438,11 @@ func (o *OKRAnalysis) Scan(value interface{}) error {
 // --- BenchmarkingAnalysis ---
 
 func (b BenchmarkingAnalysis) Value() (driver.Value, error) {
-	return json.Marshal(b)
+	bytes, err := json.Marshal(b)
+	if err != nil {
+		return nil, err
+	}
+	return string(bytes), nil
 }
 
 func (b *BenchmarkingAnalysis) Scan(value interface{}) error {
@@ -469,7 +459,11 @@ func (b *BenchmarkingAnalysis) Scan(value interface{}) error {
 // --- GrowthHackingAnalysis ---
 
 func (g GrowthHackingAnalysis) Value() (driver.Value, error) {
-	return json.Marshal(g)
+	b, err := json.Marshal(g)
+	if err != nil {
+		return nil, err
+	}
+	return string(b), nil
 }
 
 func (g *GrowthHackingAnalysis) Scan(value interface{}) error {
@@ -486,7 +480,11 @@ func (g *GrowthHackingAnalysis) Scan(value interface{}) error {
 // --- ScenarioAnalysis ---
 
 func (s ScenarioAnalysis) Value() (driver.Value, error) {
-	return json.Marshal(s)
+	b, err := json.Marshal(s)
+	if err != nil {
+		return nil, err
+	}
+	return string(b), nil
 }
 
 func (s *ScenarioAnalysis) Scan(value interface{}) error {
@@ -503,7 +501,11 @@ func (s *ScenarioAnalysis) Scan(value interface{}) error {
 // --- TamSamSomAnalysis ---
 
 func (t TamSamSomAnalysis) Value() (driver.Value, error) {
-	return json.Marshal(t)
+	b, err := json.Marshal(t)
+	if err != nil {
+		return nil, err
+	}
+	return string(b), nil
 }
 
 func (t *TamSamSomAnalysis) Scan(value interface{}) error {
@@ -520,7 +522,11 @@ func (t *TamSamSomAnalysis) Scan(value interface{}) error {
 // --- DecisionMatrixAnalysis ---
 
 func (d DecisionMatrixAnalysis) Value() (driver.Value, error) {
-	return json.Marshal(d)
+	b, err := json.Marshal(d)
+	if err != nil {
+		return nil, err
+	}
+	return string(b), nil
 }
 
 func (d *DecisionMatrixAnalysis) Scan(value interface{}) error {
@@ -537,7 +543,11 @@ func (d *DecisionMatrixAnalysis) Scan(value interface{}) error {
 // --- AnalysisSynthesis ---
 
 func (a AnalysisSynthesis) Value() (driver.Value, error) {
-	return json.Marshal(a)
+	b, err := json.Marshal(a)
+	if err != nil {
+		return nil, err
+	}
+	return string(b), nil
 }
 
 func (a *AnalysisSynthesis) Scan(value interface{}) error {

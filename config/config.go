@@ -15,9 +15,10 @@ import (
 
 // FrameworkConfig holds model-specific configuration for each analysis framework
 type FrameworkConfig struct {
-	Model       string
-	Temperature float64
-	MaxTokens   int
+	Model         string
+	Temperature   float64
+	MaxTokens     int
+	FallbackModel string // Used if primary model fails (rate limit, unavailable, timeout)
 }
 
 // Config holds all application configuration
@@ -37,9 +38,7 @@ type Config struct {
 
 	// AI/LLM Configuration
 	OpenRouterAPIKey string
-	EnrichmentModel  string // Gemini 2.0 Flash (deprecated, use Frameworks["enrichment"])
-	AnalysisModel    string // Gemini 2.0 Pro (deprecated, use Frameworks[framework])
-	SynthesisModel   string // Claude 3.5 Sonnet (deprecated, use Frameworks["synthesis"])
+	FallbackModel    string // Global fallback model when primary fails (e.g., gpt-4o-mini)
 
 	// Framework-specific model configurations (heterogeneous approach)
 	Frameworks map[string]FrameworkConfig
@@ -96,9 +95,7 @@ func Load() (*Config, error) {
 
 		// AI Configuration
 		OpenRouterAPIKey: getEnv("OPENAI_API_KEY", ""),
-		EnrichmentModel:  getEnv("AI_ENRICHMENT_MODEL", "google/gemini-2.0-flash-001"),
-		AnalysisModel:    getEnv("AI_ANALYSIS_MODEL", "google/gemini-2.0-pro-exp-02-05"),
-		SynthesisModel:   getEnv("AI_SYNTHESIS_MODEL", "anthropic/claude-3.5-sonnet"),
+		FallbackModel:    getEnv("AI_FALLBACK_MODEL", "openai/gpt-4o-mini"), // Reliable fallback for all frameworks
 
 		// Redis & Worker
 		// Parse Redis connection from REDIS_URL (Railway) or fall back to REDIS_ADDR (local)
@@ -284,108 +281,99 @@ func getEnvFloat(key string, fallback float64) float64 {
 }
 
 // loadFrameworkConfigs loads heterogeneous model configurations for all analysis frameworks
-// Based on Strategic Cascade Optimization Report (Nov 2025)
+// Each framework gets its primary model + global fallback for resilience
 func loadFrameworkConfigs() map[string]FrameworkConfig {
 	configs := make(map[string]FrameworkConfig)
 
-	log.Info().Msg("Loading framework-specific AI model configurations")
+	// Global fallback model - used when any primary model fails
+	fallbackModel := getEnv("AI_FALLBACK_MODEL", "openai/gpt-4o-mini")
 
-	// Enrichment Layer (Layer 0)
-	configs["enrichment"] = loadFrameworkConfig("enrichment", "AI_ENRICHMENT_MODEL", "AI_ENRICHMENT_TEMP", "AI_ENRICHMENT_MAX_TOKENS",
-		"google/gemini-2.0-flash-001", 0.5, 8000)
+	log.Info().
+		Str("fallback_model", fallbackModel).
+		Msg("Loading framework-specific AI model configurations")
+
+	// Enrichment Layer (Layer 0) - Discovery & Data Gathering
+	configs["enrichment"] = loadFrameworkConfigWithFallback("enrichment",
+		"AI_ENRICHMENT_MODEL", "AI_ENRICHMENT_TEMP", "AI_ENRICHMENT_MAX_TOKENS",
+		"google/gemini-2.0-flash-001", 0.5, 8000, fallbackModel)
 
 	// Layer 1: Environment Scanning
-	configs["pestel"] = loadFrameworkConfig("pestel", "AI_PESTEL_MODEL", "AI_PESTEL_TEMP", "AI_PESTEL_MAX_TOKENS",
-		"openai/o3-mini", 0.2, 1500)
+	configs["pestel"] = loadFrameworkConfigWithFallback("pestel",
+		"AI_PESTEL_MODEL", "AI_PESTEL_TEMP", "AI_PESTEL_MAX_TOKENS",
+		"openai/gpt-4o", 0.2, 1500, fallbackModel)
 
-	configs["porter"] = loadFrameworkConfig("porter", "AI_PORTER_MODEL", "AI_PORTER_TEMP", "AI_PORTER_MAX_TOKENS",
-		"openai/gpt-4o", 0.3, 1500)
+	configs["porter"] = loadFrameworkConfigWithFallback("porter",
+		"AI_PORTER_MODEL", "AI_PORTER_TEMP", "AI_PORTER_MAX_TOKENS",
+		"openai/gpt-4o", 0.3, 1500, fallbackModel)
 
-	// FIX: Use Claude 3.7 Sonnet for better market sizing estimation (validated in tests)
-	// Allows "partial data" responses instead of failing with empty output
-	configs["tam_sam_som"] = loadFrameworkConfig("tam_sam_som", "AI_TAM_MODEL", "AI_TAM_TEMP", "AI_TAM_MAX_TOKENS",
-		"anthropic/claude-3.7-sonnet", 0.6, 2000)
+	configs["tam_sam_som"] = loadFrameworkConfigWithFallback("tam_sam_som",
+		"AI_TAM_MODEL", "AI_TAM_TEMP", "AI_TAM_MAX_TOKENS",
+		"openai/gpt-4o", 0.4, 2000, fallbackModel)
 
 	// Layer 2: Positioning
-	configs["swot"] = loadFrameworkConfig("swot", "AI_SWOT_MODEL", "AI_SWOT_TEMP", "AI_SWOT_MAX_TOKENS",
-		"openai/gpt-4o-mini", 0.4, 1500)
+	configs["swot"] = loadFrameworkConfigWithFallback("swot",
+		"AI_SWOT_MODEL", "AI_SWOT_TEMP", "AI_SWOT_MAX_TOKENS",
+		"openai/gpt-4o-mini", 0.4, 1500, fallbackModel)
 
-	configs["benchmarking"] = loadFrameworkConfig("benchmarking", "AI_BENCHMARKING_MODEL", "AI_BENCHMARKING_TEMP", "AI_BENCHMARKING_MAX_TOKENS",
-		"openai/gpt-4o-mini", 0.35, 1500)
+	configs["benchmarking"] = loadFrameworkConfigWithFallback("benchmarking",
+		"AI_BENCHMARKING_MODEL", "AI_BENCHMARKING_TEMP", "AI_BENCHMARKING_MAX_TOKENS",
+		"openai/gpt-4o-mini", 0.35, 1500, fallbackModel)
 
 	// Layer 3: Strategy
-	configs["blue_ocean"] = loadFrameworkConfig("blue_ocean", "AI_BLUE_OCEAN_MODEL", "AI_BLUE_OCEAN_TEMP", "AI_BLUE_OCEAN_MAX_TOKENS",
-		"openai/gpt-4o", 0.7, 1500)
+	configs["blue_ocean"] = loadFrameworkConfigWithFallback("blue_ocean",
+		"AI_BLUE_OCEAN_MODEL", "AI_BLUE_OCEAN_TEMP", "AI_BLUE_OCEAN_MAX_TOKENS",
+		"openai/gpt-4o", 0.7, 1500, fallbackModel)
 
-	configs["growth_hacking"] = loadFrameworkConfig("growth_hacking", "AI_GROWTH_HACKING_MODEL", "AI_GROWTH_HACKING_TEMP", "AI_GROWTH_HACKING_MAX_TOKENS",
-		"openai/gpt-4o-mini", 0.6, 1500)
+	configs["growth_hacking"] = loadFrameworkConfigWithFallback("growth_hacking",
+		"AI_GROWTH_HACKING_MODEL", "AI_GROWTH_HACKING_TEMP", "AI_GROWTH_HACKING_MAX_TOKENS",
+		"openai/gpt-4o-mini", 0.6, 1500, fallbackModel)
 
-	configs["scenarios"] = loadFrameworkConfig("scenarios", "AI_SCENARIOS_MODEL", "AI_SCENARIOS_TEMP", "AI_SCENARIOS_MAX_TOKENS",
-		"openai/gpt-4o", 0.6, 1800)
+	configs["scenarios"] = loadFrameworkConfigWithFallback("scenarios",
+		"AI_SCENARIOS_MODEL", "AI_SCENARIOS_TEMP", "AI_SCENARIOS_MAX_TOKENS",
+		"openai/gpt-4o", 0.6, 1800, fallbackModel)
 
 	// Layer 4: Execution
-	configs["okrs"] = loadFrameworkConfig("okrs", "AI_OKRS_MODEL", "AI_OKRS_TEMP", "AI_OKRS_MAX_TOKENS",
-		"openai/o3-mini", 0.25, 1500)
+	configs["okrs"] = loadFrameworkConfigWithFallback("okrs",
+		"AI_OKRS_MODEL", "AI_OKRS_TEMP", "AI_OKRS_MAX_TOKENS",
+		"openai/gpt-4o", 0.25, 1500, fallbackModel)
 
-	configs["bsc"] = loadFrameworkConfig("bsc", "AI_BSC_MODEL", "AI_BSC_TEMP", "AI_BSC_MAX_TOKENS",
-		"openai/gpt-4o-mini", 0.35, 1500)
+	configs["bsc"] = loadFrameworkConfigWithFallback("bsc",
+		"AI_BSC_MODEL", "AI_BSC_TEMP", "AI_BSC_MAX_TOKENS",
+		"openai/gpt-4o-mini", 0.35, 1500, fallbackModel)
 
-	// FIX: Increase token limit to prevent JSON truncation (validated in tests)
-	// 1500 tokens insufficient for 3 detailed recommendations, increased to 2500
-	configs["decision_matrix"] = loadFrameworkConfig("decision_matrix", "AI_DECISION_MATRIX_MODEL", "AI_DECISION_MATRIX_TEMP", "AI_DECISION_MATRIX_MAX_TOKENS",
-		"openai/o3-mini", 0.2, 2500)
+	configs["decision_matrix"] = loadFrameworkConfigWithFallback("decision_matrix",
+		"AI_DECISION_MATRIX_MODEL", "AI_DECISION_MATRIX_TEMP", "AI_DECISION_MATRIX_MAX_TOKENS",
+		"openai/gpt-4o", 0.2, 2500, fallbackModel)
 
-	// Synthesis Layer
-	configs["synthesis"] = loadFrameworkConfig("synthesis", "AI_SYNTHESIS_MODEL", "AI_SYNTHESIS_TEMP", "AI_SYNTHESIS_MAX_TOKENS",
-		"openai/gpt-4o", 0.4, 3000)
+	// Synthesis Layer - Final Executive Summary
+	configs["synthesis"] = loadFrameworkConfigWithFallback("synthesis",
+		"AI_SYNTHESIS_MODEL", "AI_SYNTHESIS_TEMP", "AI_SYNTHESIS_MAX_TOKENS",
+		"openai/gpt-4o", 0.4, 3000, fallbackModel)
 
 	log.Info().Int("frameworks_loaded", len(configs)).Msg("Framework configurations loaded successfully")
 	return configs
 }
 
-// loadFrameworkConfig loads a single framework configuration with logging for missing env vars
-func loadFrameworkConfig(frameworkName, modelEnv, tempEnv, tokensEnv, defaultModel string, defaultTemp float64, defaultTokens int) FrameworkConfig {
+// loadFrameworkConfigWithFallback loads a framework configuration with fallback model support
+func loadFrameworkConfigWithFallback(frameworkName, modelEnv, tempEnv, tokensEnv, defaultModel string, defaultTemp float64, defaultTokens int, fallbackModel string) FrameworkConfig {
 	model := getEnv(modelEnv, defaultModel)
 	temp := getEnvFloat(tempEnv, defaultTemp)
 	tokens := getEnvInt(tokensEnv, defaultTokens)
 
-	// Log when using defaults (indicates missing environment variable)
-	if _, exists := os.LookupEnv(modelEnv); !exists {
-		log.Warn().
-			Str("framework", frameworkName).
-			Str("env_var", modelEnv).
-			Str("default", defaultModel).
-			Msg("Using default AI model (env var not set)")
-	}
-
-	if _, exists := os.LookupEnv(tempEnv); !exists {
-		log.Debug().
-			Str("framework", frameworkName).
-			Str("env_var", tempEnv).
-			Float64("default", defaultTemp).
-			Msg("Using default temperature (env var not set)")
-	}
-
-	if _, exists := os.LookupEnv(tokensEnv); !exists {
-		log.Debug().
-			Str("framework", frameworkName).
-			Str("env_var", tokensEnv).
-			Int("default", defaultTokens).
-			Msg("Using default max_tokens (env var not set)")
-	}
-
-	// Log the final configuration
-	log.Info().
+	// Log the configuration (only warn if env var explicitly set but empty)
+	log.Debug().
 		Str("framework", frameworkName).
 		Str("model", model).
+		Str("fallback", fallbackModel).
 		Float64("temperature", temp).
 		Int("max_tokens", tokens).
-		Msg("Framework AI configuration")
+		Msg("Framework AI configuration loaded")
 
 	return FrameworkConfig{
-		Model:       model,
-		Temperature: temp,
-		MaxTokens:   tokens,
+		Model:         model,
+		Temperature:   temp,
+		MaxTokens:     tokens,
+		FallbackModel: fallbackModel,
 	}
 }
 

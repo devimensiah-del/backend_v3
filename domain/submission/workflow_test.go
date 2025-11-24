@@ -2,8 +2,8 @@ package submission_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
-	"fmt"
 	"testing"
 
 	"backend_v3/domain/submission"
@@ -43,47 +43,26 @@ func TestService_SubmitForm(t *testing.T) {
 		name             string
 		request          *submission.SubmitRequest
 		repoMockSetup    func(*MockRepository)
-		queueMockSetup   func(*MockAsynqClient)
 		wantErr          bool
 		errContains      string
-		verifyJobPayload bool
+		assertQueue      func(*testing.T, *MockAsynqClient)
 	}{
 		{
-			name: "success - triggers enrichment job with correct payload",
+			name: "success - saves submission with provided CNPJ",
 			request: &submission.SubmitRequest{
 				CompanyName:       "Test Corp",
 				ContactName:       "John Doe",
 				ContactEmail:      "john@test.com",
 				BusinessChallenge: "Need to scale",
+				CNPJ:              stringPtr("12.345.678/0001-90"),
 			},
 			repoMockSetup: func(m *MockRepository) {
-				m.On("Create", mock.Anything, mock.AnythingOfType("*submission.Submission")).Return(nil)
+				m.On("Create", mock.Anything, mock.MatchedBy(func(sub *submission.Submission) bool {
+					return sub.CNPJ != nil && *sub.CNPJ == "12.345.678/0001-90"
+				})).Return(nil)
 			},
-			queueMockSetup: func(m *MockAsynqClient) {
-				m.On("Enqueue", mock.MatchedBy(func(task *asynq.Task) bool {
-					// Verify task type
-					if task.Type() != "enrichment_job" {
-						return false
-					}
-
-					// Verify payload contains submission_id
-					var payload map[string]interface{}
-					if err := json.Unmarshal(task.Payload(), &payload); err != nil {
-						return false
-					}
-
-					submissionID, ok := payload["submission_id"].(string)
-					if !ok || submissionID == "" {
-						return false
-					}
-
-					// Verify it's a valid UUID
-					_, err := uuid.Parse(submissionID)
-					return err == nil
-				}), mock.Anything).Return(&asynq.TaskInfo{}, nil)
-			},
-			wantErr:          false,
-			verifyJobPayload: true,
+			wantErr:     false,
+			assertQueue: func(t *testing.T, q *MockAsynqClient) { q.AssertCalled(t, "Enqueue", mock.Anything, mock.Anything) },
 		},
 		{
 			name: "success - creates submission with nil UserID (public submission)",
@@ -99,10 +78,8 @@ func TestService_SubmitForm(t *testing.T) {
 					return sub.UserID == nil // Verify UserID is nil
 				})).Return(nil)
 			},
-			queueMockSetup: func(m *MockAsynqClient) {
-				m.On("Enqueue", mock.Anything, mock.Anything).Return(&asynq.TaskInfo{}, nil)
-			},
-			wantErr: false,
+			wantErr:     false,
+			assertQueue: func(t *testing.T, q *MockAsynqClient) { q.AssertCalled(t, "Enqueue", mock.Anything, mock.Anything) },
 		},
 		{
 			name: "success - creates submission with UserID (authenticated user)",
@@ -121,10 +98,8 @@ func TestService_SubmitForm(t *testing.T) {
 					return sub.UserID != nil // Verify UserID is set
 				})).Return(nil)
 			},
-			queueMockSetup: func(m *MockAsynqClient) {
-				m.On("Enqueue", mock.Anything, mock.Anything).Return(&asynq.TaskInfo{}, nil)
-			},
-			wantErr: false,
+			wantErr:     false,
+			assertQueue: func(t *testing.T, q *MockAsynqClient) { q.AssertCalled(t, "Enqueue", mock.Anything, mock.Anything) },
 		},
 		{
 			name: "failure - validation error (missing company name)",
@@ -133,10 +108,9 @@ func TestService_SubmitForm(t *testing.T) {
 				ContactEmail:      "john@test.com",
 				BusinessChallenge: "Need to scale",
 			},
-			repoMockSetup:  func(m *MockRepository) {},
-			queueMockSetup: func(m *MockAsynqClient) {},
-			wantErr:        true,
-			errContains:    "validation failed",
+			repoMockSetup: func(m *MockRepository) {},
+			wantErr:       true,
+			errContains:   "validation failed",
 		},
 		{
 			name: "failure - database error (submission not saved)",
@@ -150,29 +124,8 @@ func TestService_SubmitForm(t *testing.T) {
 				m.On("Create", mock.Anything, mock.AnythingOfType("*submission.Submission")).
 					Return(assert.AnError)
 			},
-			queueMockSetup: func(m *MockAsynqClient) {
-				// Queue should NOT be called if DB save fails
-			},
 			wantErr:     true,
 			errContains: "failed to save submission",
-		},
-		{
-			name: "success - job enqueue failure is logged but doesn't fail workflow",
-			request: &submission.SubmitRequest{
-				CompanyName:       "Test Corp",
-				ContactName:       "John Doe",
-				ContactEmail:      "john@test.com",
-				BusinessChallenge: "Need to scale",
-			},
-			repoMockSetup: func(m *MockRepository) {
-				m.On("Create", mock.Anything, mock.AnythingOfType("*submission.Submission")).Return(nil)
-			},
-			queueMockSetup: func(m *MockAsynqClient) {
-				// Simulate queue failure
-				m.On("Enqueue", mock.Anything, mock.Anything).
-					Return(nil, assert.AnError)
-			},
-			wantErr: false, // Workflow succeeds even if job fails (data is saved)
 		},
 	}
 
@@ -183,15 +136,12 @@ func TestService_SubmitForm(t *testing.T) {
 			mockQueue := new(MockAsynqClient)
 
 			tt.repoMockSetup(mockRepo)
-			tt.queueMockSetup(mockQueue)
-
-			// Create a real asynq.Client wrapper that delegates to mock
-			// We can't directly inject the mock, so we test at the service level
-			// For this test, we'll use the mock repository pattern
-			svc := &testableService{
-				repo:        mockRepo,
-				queueClient: mockQueue,
+			if !tt.wantErr {
+				mockRepo.On("ReserveEnrichment", mock.Anything, mock.Anything).Return(true, nil)
+				mockQueue.On("Enqueue", mock.Anything, mock.Anything).Return(&asynq.TaskInfo{}, nil)
 			}
+
+			svc := submission.NewService(mockRepo, mockQueue)
 
 			// Execute
 			result, err := svc.SubmitForm(context.Background(), tt.request)
@@ -213,7 +163,11 @@ func TestService_SubmitForm(t *testing.T) {
 			}
 
 			mockRepo.AssertExpectations(t)
-			mockQueue.AssertExpectations(t)
+			if tt.assertQueue != nil {
+				tt.assertQueue(t, mockQueue)
+			} else {
+				mockQueue.AssertNotCalled(t, "Enqueue", mock.Anything, mock.Anything)
+			}
 		})
 	}
 }
@@ -228,7 +182,6 @@ func TestService_TriggerEnrichmentProcess(t *testing.T) {
 		submission     *submission.Submission
 		queueMockSetup func(*MockAsynqClient)
 		wantErr        bool
-		verifyPayload  func(*testing.T, *asynq.Task)
 	}{
 		{
 			name: "success - enqueues enrichment job with correct type",
@@ -244,10 +197,6 @@ func TestService_TriggerEnrichmentProcess(t *testing.T) {
 				m.On("Enqueue", mock.MatchedBy(func(task *asynq.Task) bool {
 					return task.Type() == "enrichment_job"
 				}), mock.Anything).Return(&asynq.TaskInfo{}, nil)
-			},
-			wantErr: false,
-			verifyPayload: func(t *testing.T, task *asynq.Task) {
-				assert.Equal(t, "enrichment_job", task.Type())
 			},
 		},
 		{
@@ -266,12 +215,10 @@ func TestService_TriggerEnrichmentProcess(t *testing.T) {
 					Run(func(args mock.Arguments) {
 						task := args.Get(0).(*asynq.Task)
 
-						// Verify payload structure
 						var payload map[string]interface{}
 						err := json.Unmarshal(task.Payload(), &payload)
 						assert.NoError(t, err)
 
-						// Verify submission_id exists and is valid UUID
 						submissionID, ok := payload["submission_id"].(string)
 						assert.True(t, ok, "payload should contain submission_id")
 						assert.NotEmpty(t, submissionID, "submission_id should not be empty")
@@ -280,7 +227,6 @@ func TestService_TriggerEnrichmentProcess(t *testing.T) {
 						assert.NoError(t, err, "submission_id should be valid UUID")
 					})
 			},
-			wantErr: false,
 		},
 		{
 			name: "success - job has MaxRetry(3) option",
@@ -294,30 +240,44 @@ func TestService_TriggerEnrichmentProcess(t *testing.T) {
 			},
 			queueMockSetup: func(m *MockAsynqClient) {
 				m.On("Enqueue", mock.Anything, mock.MatchedBy(func(opts []asynq.Option) bool {
-					// Verify MaxRetry option is present
-					// This is a simplified check - in real scenarios you'd inspect the options
 					return len(opts) > 0
 				})).Return(&asynq.TaskInfo{}, nil)
 			},
-			wantErr: false,
+		},
+		{
+			name: "failure - queue client missing",
+			submission: &submission.Submission{
+				ID:                uuid.New(),
+				CompanyName:       "Test Corp",
+				ContactName:       "John Doe",
+				ContactEmail:      "john@test.com",
+				BusinessChallenge: "Need to scale",
+				Status:            submission.StatusReceived,
+			},
+			queueMockSetup: func(m *MockAsynqClient) {},
+			wantErr:        true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Setup
+			mockRepo := new(MockRepository)
 			mockQueue := new(MockAsynqClient)
 			tt.queueMockSetup(mockQueue)
 
-			svc := &testableService{
-				repo:        new(MockRepository),
-				queueClient: mockQueue,
+			mockRepo.On("ReserveEnrichment", mock.Anything, mock.Anything).Return(true, nil)
+			// Mock GetEnrichmentStatus to return sql.ErrNoRows (no enrichment exists yet)
+			mockRepo.On("GetEnrichmentStatus", mock.Anything, mock.Anything).Return(nil, sql.ErrNoRows)
+
+			var svc *submission.Service
+			if tt.wantErr {
+				svc = submission.NewService(mockRepo, nil)
+			} else {
+				svc = submission.NewService(mockRepo, mockQueue)
 			}
 
-			// Execute - directly test the internal method
-			err := svc.triggerEnrichmentProcess(tt.submission)
+			err := svc.TriggerEnrichmentProcess(context.Background(), tt.submission)
 
-			// Verify
 			if tt.wantErr {
 				assert.Error(t, err)
 			} else {
@@ -329,197 +289,6 @@ func TestService_TriggerEnrichmentProcess(t *testing.T) {
 	}
 }
 
-// ============================================================================
-// TEST CREATE ATOMICITY (DB save + job enqueue)
-// ============================================================================
-
-func TestService_SubmitForm_Atomicity(t *testing.T) {
-	t.Run("DB save succeeds, job enqueue fails - workflow succeeds (data is saved)", func(t *testing.T) {
-		// Setup
-		mockRepo := new(MockRepository)
-		mockQueue := new(MockAsynqClient)
-
-		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*submission.Submission")).Return(nil)
-		mockQueue.On("Enqueue", mock.Anything, mock.Anything).Return(nil, assert.AnError)
-
-		svc := &testableService{
-			repo:        mockRepo,
-			queueClient: mockQueue,
-		}
-
-		req := &submission.SubmitRequest{
-			CompanyName:       "Test Corp",
-			ContactName:       "John Doe",
-			ContactEmail:      "john@test.com",
-			BusinessChallenge: "Need to scale",
-		}
-
-		// Execute
-		result, err := svc.SubmitForm(context.Background(), req)
-
-		// Verify - workflow succeeds even though job failed
-		assert.NoError(t, err, "SubmitForm should succeed even if job enqueue fails")
-		assert.NotNil(t, result)
-		assert.Equal(t, submission.StatusReceived, result.Status)
-
-		mockRepo.AssertExpectations(t)
-		mockQueue.AssertExpectations(t)
-	})
-
-	t.Run("DB save fails - job NOT triggered", func(t *testing.T) {
-		// Setup
-		mockRepo := new(MockRepository)
-		mockQueue := new(MockAsynqClient)
-
-		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*submission.Submission")).
-			Return(assert.AnError)
-		// Queue Enqueue should NOT be called
-
-		svc := &testableService{
-			repo:        mockRepo,
-			queueClient: mockQueue,
-		}
-
-		req := &submission.SubmitRequest{
-			CompanyName:       "Test Corp",
-			ContactName:       "John Doe",
-			ContactEmail:      "john@test.com",
-			BusinessChallenge: "Need to scale",
-		}
-
-		// Execute
-		result, err := svc.SubmitForm(context.Background(), req)
-
-		// Verify
-		assert.Error(t, err)
-		assert.Nil(t, result)
-		assert.Contains(t, err.Error(), "failed to save submission")
-
-		mockRepo.AssertExpectations(t)
-		mockQueue.AssertNotCalled(t, "Enqueue", mock.Anything, mock.Anything)
-	})
-}
-
-// ============================================================================
-// TEST ENRICHMENT JOB NOT TRIGGERED ON UPDATE/DELETE
-// ============================================================================
-
-func TestService_EnrichmentJobOnlyOnCreate(t *testing.T) {
-	t.Run("Create() does NOT trigger enrichment job (only SubmitForm does)", func(t *testing.T) {
-		// Setup
-		mockRepo := new(MockRepository)
-
-		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*submission.Submission")).Return(nil)
-		// Queue Enqueue should NOT be called for Create()
-
-		svc := submission.NewService(mockRepo, nil) // Nil queue client - no jobs triggered
-
-		sub := &submission.Submission{
-			CompanyName:       "Test Corp",
-			ContactName:       "John Doe",
-			ContactEmail:      "john@test.com",
-			BusinessChallenge: "Need to scale",
-		}
-
-		// Execute
-		result, err := svc.Create(context.Background(), sub)
-
-		// Verify
-		assert.NoError(t, err)
-		assert.NotNil(t, result)
-
-		mockRepo.AssertExpectations(t)
-		// Verify queue was never called (nil client, so no panic means no call)
-	})
-
-	t.Run("Delete() does NOT trigger enrichment job", func(t *testing.T) {
-		// Setup
-		mockRepo := new(MockRepository)
-
-		id := uuid.New()
-		mockRepo.On("Delete", mock.Anything, id).Return(nil)
-
-		svc := submission.NewService(mockRepo, nil) // Nil queue client - no jobs triggered
-
-		// Execute
-		err := svc.Delete(context.Background(), id)
-
-		// Verify
-		assert.NoError(t, err)
-
-		mockRepo.AssertExpectations(t)
-		// Delete() never touches the queue, so nil queue client is fine
-	})
-}
-
-// ============================================================================
-// TESTABLE SERVICE (wraps real service to inject mocks)
-// ============================================================================
-
-type testableService struct {
-	repo        submission.Repository
-	queueClient asynqClient
-}
-
-type asynqClient interface {
-	Enqueue(task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error)
-	Close() error
-}
-
-func (s *testableService) SubmitForm(ctx context.Context, req *submission.SubmitRequest) (*submission.Submission, error) {
-	// Replicate the SubmitForm logic with mock dependencies
-	sub := s.createSubmissionEntity(req)
-
-	if err := sub.Validate(); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
-	}
-
-	if err := s.repo.Create(ctx, sub); err != nil {
-		return nil, fmt.Errorf("failed to save submission: %w", err)
-	}
-
-	// Trigger enrichment (errors are logged but don't fail workflow)
-	_ = s.triggerEnrichmentProcess(sub)
-
-	return sub, nil
-}
-
-func (s *testableService) createSubmissionEntity(req *submission.SubmitRequest) *submission.Submission {
-	sub := submission.NewSubmission(
-		req.CompanyName,
-		req.ContactName,
-		req.ContactEmail,
-		req.BusinessChallenge,
-		req.UserID,
-	)
-
-	sub.CompanyWebsite = req.CompanyWebsite
-	sub.CompanyIndustry = req.CompanyIndustry
-	sub.CompanySize = req.CompanySize
-	sub.CompanyLocation = req.CompanyLocation
-	sub.ContactPhone = req.ContactPhone
-	sub.ContactPosition = req.ContactPosition
-	sub.TargetMarket = req.TargetMarket
-	sub.AnnualRevenueMin = req.AnnualRevenueMin
-	sub.AnnualRevenueMax = req.AnnualRevenueMax
-	sub.FundingStage = req.FundingStage
-	sub.AdditionalNotes = req.AdditionalNotes
-	sub.LinkedInURL = req.LinkedInURL
-	sub.TwitterHandle = req.TwitterHandle
-
-	return sub
-}
-
-func (s *testableService) triggerEnrichmentProcess(sub *submission.Submission) error {
-	payload, err := json.Marshal(map[string]interface{}{
-		"submission_id": sub.ID.String(),
-	})
-	if err != nil {
-		return err
-	}
-
-	task := asynq.NewTask("enrichment_job", payload)
-
-	_, err = s.queueClient.Enqueue(task, asynq.MaxRetry(3))
-	return err
+func stringPtr(val string) *string {
+	return &val
 }

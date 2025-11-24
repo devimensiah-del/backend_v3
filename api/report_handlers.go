@@ -15,11 +15,13 @@ import (
 type ReportHandlers struct {
 	AnalysisService   *analysis.Service
 	ReportService     *report.Service
+	AsyncService      *report.AsyncService // Optional: For async PDF generation
 	SubmissionService *submission.Service
 	Logger            zerolog.Logger
 }
 
 // NewReportHandlers creates a new report.Handlers instance with all dependencies
+// AsyncService is optional - if nil, PDF generation runs synchronously
 func NewReportHandlers(
 	analysisSvc *analysis.Service,
 	reportSvc *report.Service,
@@ -29,9 +31,15 @@ func NewReportHandlers(
 	return &ReportHandlers{
 		AnalysisService:   analysisSvc,
 		ReportService:     reportSvc,
+		AsyncService:      nil, // Will be set separately if async is enabled
 		SubmissionService: submissionSvc,
 		Logger:            logger,
 	}
+}
+
+// SetAsyncService enables async PDF generation by setting the async service
+func (h *ReportHandlers) SetAsyncService(asyncSvc *report.AsyncService) {
+	h.AsyncService = asyncSvc
 }
 
 // --- REPORT ENDPOINTS ---
@@ -61,6 +69,8 @@ func (h *ReportHandlers) PreviewReport(c *gin.Context) {
 
 // PublishReport freezes the report and generates the PDF
 // POST /api/submissions/:id/report/publish
+// If AsyncService is available, uses background job queue to prevent HTTP timeouts
+// Otherwise, generates PDF synchronously
 func (h *ReportHandlers) PublishReport(c *gin.Context) {
 	submissionID := c.Param("id")
 
@@ -70,16 +80,54 @@ func (h *ReportHandlers) PublishReport(c *gin.Context) {
 		return
 	}
 
+	// If async service is available, enqueue for background processing
+	if h.AsyncService != nil {
+		taskID, err := h.AsyncService.EnqueuePDFGeneration(c.Request.Context(), submissionID, anal.ID)
+		if err != nil {
+			h.Logger.Error().Err(err).Msg("Failed to enqueue PDF generation")
+			c.JSON(http.StatusInternalServerError, ErrorResponse{
+				Error:   "Failed to start PDF generation",
+				Message: err.Error(),
+			})
+			return
+		}
+
+		h.Logger.Info().
+			Str("submission_id", submissionID).
+			Str("analysis_id", anal.ID).
+			Str("task_id", taskID).
+			Msg("PDF generation task enqueued")
+
+		// Return 202 Accepted with task ID for polling
+		c.JSON(http.StatusAccepted, ReportPublishResponse{
+			ReportID: anal.ID,
+			TaskID:   taskID,
+			Status:   "processing",
+			Message:  "PDF generation started. Poll /api/submissions/:id/report/download for status.",
+		})
+		return
+	}
+
+	// Fallback: Generate PDF synchronously (may timeout for large reports)
+	h.Logger.Warn().
+		Str("submission_id", submissionID).
+		Msg("AsyncService not configured, generating PDF synchronously")
+
 	pdfURL, err := h.ReportService.Publish(c.Request.Context(), submissionID, anal.ID)
 	if err != nil {
-		h.Logger.Error().Err(err).Msg("Publish failed")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Publish failed", Message: err.Error()})
+		h.Logger.Error().Err(err).Msg("PDF generation failed")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "PDF generation failed",
+			Message: err.Error(),
+		})
 		return
 	}
 
 	c.JSON(http.StatusOK, ReportPublishResponse{
-		ReportID: anal.ID, // Or create a new ID
+		ReportID: anal.ID,
+		Status:   "completed",
 		PDFURL:   pdfURL,
+		Message:  "PDF generated successfully",
 	})
 }
 

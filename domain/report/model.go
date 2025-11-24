@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// Report represents a complete business analysis report with 16 HTML pages
+// Report represents a complete business analysis report with 24 HTML pages
 // This is what the frontend will display to end users
 type Report struct {
 	ID           string `db:"id" json:"id"`
@@ -74,6 +74,25 @@ type ReportMetadata struct {
 	CompletedAt         *time.Time `json:"completed_at"`
 }
 
+// ReportSummary is a lightweight struct for listing reports
+// PERFORMANCE: Excludes the 24 HTML page columns to avoid massive bandwidth usage
+// Each report can have ~100KB+ of HTML, so listing 50 reports could pull 5MB+ without this optimization
+type ReportSummary struct {
+	ID                  string     `db:"id" json:"id"`
+	SubmissionID        string     `db:"submission_id" json:"submission_id"`
+	AnalysisID          string     `db:"analysis_id" json:"analysis_id"`
+	PDFURL              string     `db:"pdf_url" json:"pdf_url"`
+	PDFGeneratedAt      *time.Time `db:"pdf_generated_at" json:"pdf_generated_at"`
+	PDFGenerationStatus string     `db:"pdf_generation_status" json:"pdf_generation_status"`
+	Status              string     `db:"status" json:"status"`
+	ErrorMessage        string     `db:"error_message" json:"error_message"`
+	GenerationTimeMs    int64      `db:"generation_time_ms" json:"generation_time_ms"`
+	TotalPages          int        `db:"total_pages" json:"total_pages"`
+	CreatedAt           time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt           time.Time  `db:"updated_at" json:"updated_at"`
+	CompletedAt         *time.Time `db:"completed_at" json:"completed_at"`
+}
+
 // PageTemplate defines the structure for HTML page generation
 // Frontend developers: This shows what data each page contains
 type PageTemplate struct {
@@ -87,7 +106,7 @@ type PageTemplate struct {
 // PDFGenerationRequest contains parameters for PDF generation
 type PDFGenerationRequest struct {
 	ReportID   string            `json:"report_id"`
-	HTMLPages  []string          `json:"html_pages"`  // All 16 pages in order
+	HTMLPages  []string          `json:"html_pages"`  // All 24 pages in order
 	Options    PDFOptions        `json:"options"`     // PDF generation options
 	OutputPath string            `json:"output_path"` // Where to save/upload PDF
 	Metadata   map[string]string `json:"metadata"`    // PDF metadata (author, title, etc.)
@@ -105,15 +124,16 @@ type PDFOptions struct {
 }
 
 // DefaultPDFOptions returns sensible defaults for PDF generation
+// NOTE: Templates use A4 Landscape (842px × 595px) format
 func DefaultPDFOptions() PDFOptions {
 	return PDFOptions{
 		Format:              "A4",
-		Orientation:         "portrait",
-		Margin:              "1cm",
+		Orientation:         "landscape", // Changed from portrait to match templates
+		Margin:              "0",         // Changed from 1cm to match template design
 		PrintBackground:     true,
-		DisplayHeaderFooter: true,
+		DisplayHeaderFooter: false, // Changed from true - templates don't use headers/footers
 		Scale:               1.0,
-		PreferCSSPageSize:   false,
+		PreferCSSPageSize:   true, // Changed to true - respect @page CSS rules
 	}
 }
 
@@ -121,16 +141,16 @@ func DefaultPDFOptions() PDFOptions {
 // Frontend developers: Use this for real-time progress updates
 type ReportProgress struct {
 	ReportID        string    `json:"report_id"`
-	CurrentPage     int       `json:"current_page"`      // Which page is being generated (1-16)
-	TotalPages      int       `json:"total_pages"`       // Always 16
+	CurrentPage     int       `json:"current_page"`      // Which page is being generated (1-24)
+	TotalPages      int       `json:"total_pages"`       // Always 24
 	Status          string    `json:"status"`            // processing, completed, failed
 	PercentComplete float64   `json:"percent_complete"`  // 0-100
 	EstimatedTimeMs int64     `json:"estimated_time_ms"` // Estimated remaining time
 	LastUpdated     time.Time `json:"last_updated"`
 }
 
-// ReportSummary provides a high-level overview for dashboards
-type ReportSummary struct {
+// ReportStats provides a high-level overview for dashboards
+type ReportStats struct {
 	TotalReports       int              `json:"total_reports"`
 	CompletedReports   int              `json:"completed_reports"`
 	FailedReports      int              `json:"failed_reports"`

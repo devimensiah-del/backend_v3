@@ -75,15 +75,20 @@ func (m *MockReportRepo) GetByID(ctx context.Context, id string) (*report.Report
 	return args.Get(0).(*report.Report), args.Error(1)
 }
 
-func (m *MockReportRepo) List(ctx context.Context, limit, offset int) ([]*report.Report, error) {
+func (m *MockReportRepo) List(ctx context.Context, limit, offset int) ([]*report.ReportSummary, error) {
 	args := m.Called(ctx, limit, offset)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).([]*report.Report), args.Error(1)
+	return args.Get(0).([]*report.ReportSummary), args.Error(1)
 }
 
 func (m *MockReportRepo) Update(ctx context.Context, r *report.Report) error {
+	args := m.Called(ctx, r)
+	return args.Error(0)
+}
+
+func (m *MockReportRepo) Upsert(ctx context.Context, r *report.Report) error {
 	args := m.Called(ctx, r)
 	return args.Error(0)
 }
@@ -115,7 +120,6 @@ func getCoimmaAnalysis() *analysis.Analysis {
 		ID:           "6057454f-12bf-4783-8334-f5a4424ad246",
 		SubmissionID: "db32e622-56bb-4fba-a480-9384aeaa2f5c",
 		Status:       "completed",
-		Version:      1,
 
 		// PESTEL Analysis
 		PESTEL: analysis.PESTELAnalysis{
@@ -640,8 +644,8 @@ func TestReportService_Publish_Coimma(t *testing.T) {
 	mockStorage.On("Upload", ctx, mock.AnythingOfType("string"), mockPDFBytes, "application/pdf").
 		Return(mockPDFURL, nil)
 
-	// Mock report creation
-	mockReportRepo.On("Create", ctx, mock.AnythingOfType("*report.Report")).
+	// Mock report upsert (service uses Upsert for idempotency)
+	mockReportRepo.On("Upsert", ctx, mock.AnythingOfType("*report.Report")).
 		Return(nil)
 
 	// Create service
