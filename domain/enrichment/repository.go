@@ -106,6 +106,9 @@ func (r *PostgresRepository) GetBySubmissionID(ctx context.Context, submissionID
 func (r *PostgresRepository) UpdateSystem(ctx context.Context, e *Enrichment) error {
 	e.UpdatedAt = time.Now()
 
+	fmt.Printf("[DEBUG] UpdateSystem: id=%s, status=%s, progress=%d, is_locked=%v, data_size=%d\n",
+		e.ID.String(), e.Status, e.Progress, e.IsLocked, len(e.EnrichedData))
+
 	query := `
 		UPDATE enrichments SET
 			status = :status,
@@ -125,6 +128,7 @@ func (r *PostgresRepository) UpdateSystem(ctx context.Context, e *Enrichment) er
 
 	result, err := r.db.NamedExecContext(ctx, query, e)
 	if err != nil {
+		fmt.Printf("[DEBUG] UpdateSystem: SQL error: %v\n", err)
 		return fmt.Errorf("failed to update enrichment: %w", err)
 	}
 
@@ -134,8 +138,20 @@ func (r *PostgresRepository) UpdateSystem(ctx context.Context, e *Enrichment) er
 		return fmt.Errorf("failed to get rows affected: %w", err)
 	}
 
+	fmt.Printf("[DEBUG] UpdateSystem: rows affected=%d for id=%s\n", rows, e.ID.String())
+
 	// If 0 rows affected, enrichment is locked by user OR not found
 	if rows == 0 {
+		// Check actual state in DB for debugging
+		var dbLocked bool
+		var dbID string
+		checkQuery := `SELECT id, is_locked FROM enrichments WHERE id = $1`
+		checkErr := r.db.QueryRowContext(ctx, checkQuery, e.ID).Scan(&dbID, &dbLocked)
+		if checkErr != nil {
+			fmt.Printf("[DEBUG] UpdateSystem: check query failed: %v\n", checkErr)
+		} else {
+			fmt.Printf("[DEBUG] UpdateSystem: DB state - id=%s, is_locked=%v\n", dbID, dbLocked)
+		}
 		return fmt.Errorf("enrichment is locked by user or not found - cannot update (progress: %d%%)", e.Progress)
 	}
 
@@ -181,6 +197,9 @@ func (r *PostgresRepository) ForceUpdateAndUnlock(ctx context.Context, e *Enrich
 	e.UpdatedAt = time.Now()
 	e.IsLocked = false // Force unlock
 
+	fmt.Printf("[DEBUG] ForceUpdateAndUnlock: id=%s, status=%s, progress=%d, data_size=%d\n",
+		e.ID.String(), e.Status, e.Progress, len(e.EnrichedData))
+
 	query := `
 		UPDATE enrichments SET
 			status = :status,
@@ -200,6 +219,7 @@ func (r *PostgresRepository) ForceUpdateAndUnlock(ctx context.Context, e *Enrich
 
 	result, err := r.db.NamedExecContext(ctx, query, e)
 	if err != nil {
+		fmt.Printf("[DEBUG] ForceUpdateAndUnlock: SQL error: %v\n", err)
 		return fmt.Errorf("failed to force update enrichment: %w", err)
 	}
 
@@ -208,7 +228,17 @@ func (r *PostgresRepository) ForceUpdateAndUnlock(ctx context.Context, e *Enrich
 		return fmt.Errorf("failed to get rows affected: %w", err)
 	}
 
+	fmt.Printf("[DEBUG] ForceUpdateAndUnlock: rows affected=%d for id=%s\n", rows, e.ID.String())
+
 	if rows == 0 {
+		// Check if enrichment exists at all
+		var exists bool
+		checkErr := r.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM enrichments WHERE id = $1)`, e.ID).Scan(&exists)
+		if checkErr != nil {
+			fmt.Printf("[DEBUG] ForceUpdateAndUnlock: existence check failed: %v\n", checkErr)
+		} else {
+			fmt.Printf("[DEBUG] ForceUpdateAndUnlock: enrichment exists=%v for id=%s\n", exists, e.ID.String())
+		}
 		return fmt.Errorf("enrichment not found")
 	}
 
