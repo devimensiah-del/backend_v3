@@ -36,29 +36,31 @@ func TestPostgresRepository_Create(t *testing.T) {
 		AnalysisID:   uuid.New().String(),
 		Status:       "completed",
 
-		// All 16 active HTML pages
+		// All HTML pages (v2 structure)
 		CoverPage:                "<html>Cover</html>",
 		ExecutiveSummary:         "<html>Executive Summary</html>",
 		TableOfContents:          "<html>TOC</html>",
-		PESTELPage:               "<html>PESTEL</html>",
+		DividerPart1Page:         "<html>Divider1</html>",
+		PESTELPesPage:            "<html>PESTEL PES</html>",
+		PESTELTelPage:            "<html>PESTEL TEL</html>",
 		PorterPage:               "<html>Porter</html>",
 		SWOTPage:                 "<html>SWOT</html>",
+		DividerPart2Page:         "<html>Divider2</html>",
 		TamSamSomPage:            "<html>TAM-SAM-SOM</html>",
 		BlueOceanPage:            "<html>Blue Ocean</html>",
+		DividerPart3Page:         "<html>Divider3</html>",
 		OKRPage:                  "<html>OKRs</html>",
+		GrowthLoopsPage:          "<html>Growth Loops</html>",
+		DividerPart4Page:         "<html>Divider4</html>",
+		ScenariosPage:            "<html>Scenarios</html>",
+		RecommendationsPage:      "<html>Recommendations</html>",
 		BSCPage:                  "<html>BSC</html>",
 		BenchmarkingPage:         "<html>Benchmarking</html>",
 		FinancialProjectionsPage: "<html>Financial Projections</html>",
 		GrowthHackingPage:        "<html>Growth Hacking</html>",
 		RiskAssessmentPage:       "<html>Risk Assessment</html>",
-		DecisionMatrixPage:       "<html>Decision Matrix</html>",
+		RoadmapPage:              "<html>Roadmap</html>",
 		AppendixPage:             "<html>Appendix</html>",
-
-		// Deprecated pages (empty)
-		BCGMatrixPage:           "",
-		ValuePropositionPage:    "",
-		StrategicPrioritiesPage: "",
-		RisksAndMitigationPage:  "",
 
 		// PDF info
 		PDFURL:              "https://storage.example.com/report.pdf",
@@ -74,21 +76,7 @@ func TestPostgresRepository_Create(t *testing.T) {
 	}
 
 	// Expect INSERT query
-	mock.ExpectExec(`INSERT INTO reports`).
-		WithArgs(
-			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), // id, submission_id, analysis_id
-			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), // cover, exec, toc
-			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), // pestel, porter, swot
-			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), // tam, ocean, okr
-			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), // bsc, bench, financial
-			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), // growth, risk, decision
-			sqlmock.AnyArg(),                                                       // appendix
-			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), // deprecated pages
-			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), // pdf_url, pdf_generated_at, pdf_status
-			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), // status, error, gen_time, total_pages
-			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), // created, updated, completed
-		).
-		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(`INSERT INTO reports`).WillReturnResult(sqlmock.NewResult(1, 1))
 
 	// Execute
 	err = repo.Create(context.Background(), testReport)
@@ -120,22 +108,24 @@ func TestPostgresRepository_GetBySubmissionID_Found(t *testing.T) {
 	rows := sqlmock.NewRows([]string{
 		"id", "submission_id", "analysis_id",
 		"cover_page", "executive_summary", "table_of_contents",
-		"pestel_page", "porter_page", "swot_page", "tam_sam_som_page", "blue_ocean_page", "okr_page",
+		"divider_part1_page", "pestel_pes_page", "pestel_tel_page", "porter_page", "swot_page",
+		"divider_part2_page", "tam_sam_som_page", "blue_ocean_page",
+		"divider_part3_page", "okr_page", "growth_loops_page",
+		"divider_part4_page", "scenarios_page", "recommendations_page",
 		"bsc_page", "benchmarking_page", "financial_projections_page", "growth_hacking_page",
-		"risk_assessment_page", "decision_matrix_page", "appendix_page",
-		"bcg_matrix_page", "value_proposition_page", "strategic_priorities_page", "risks_mitigation_page",
+		"risk_assessment_page", "roadmap_page", "appendix_page",
 		"pdf_url", "pdf_generated_at", "pdf_generation_status",
 		"status", "error_message", "generation_time_ms", "total_pages",
 		"created_at", "updated_at", "completed_at",
 	}).AddRow(
 		reportID, submissionID, uuid.New().String(),
 		"<html>Cover</html>", "<html>Exec</html>", "<html>TOC</html>",
-		"<html>PESTEL</html>", "<html>Porter</html>", "<html>SWOT</html>",
-		"<html>TAM</html>", "<html>Ocean</html>", "<html>OKR</html>",
-		"<html>BSC</html>", "<html>Bench</html>", "<html>Financial</html>",
-		"<html>Growth</html>", "<html>Risk</html>", "<html>Decision</html>",
-		"<html>Appendix</html>",
-		"", "", "", "", // deprecated pages
+		"<html>Div1</html>", "<html>PES</html>", "<html>TEL</html>", "<html>Porter</html>", "<html>SWOT</html>",
+		"<html>Div2</html>", "<html>TAM</html>", "<html>Ocean</html>",
+		"<html>Div3</html>", "<html>OKR</html>", "<html>GrowthLoops</html>",
+		"<html>Div4</html>", "<html>Scenarios</html>", "<html>Recommendations</html>",
+		"<html>BSC</html>", "<html>Bench</html>", "<html>Financial</html>", "<html>Growth</html>",
+		"<html>Risk</html>", "<html>Roadmap</html>", "<html>Appendix</html>",
 		"https://storage.example.com/report.pdf", now, "completed",
 		"completed", "", 5000, 24,
 		now, now, now,
@@ -161,18 +151,20 @@ func TestPostgresRepository_GetBySubmissionID_Found(t *testing.T) {
 	assert.NotEmpty(t, result.CoverPage)
 	assert.NotEmpty(t, result.ExecutiveSummary)
 	assert.NotEmpty(t, result.TableOfContents)
-	assert.NotEmpty(t, result.PESTELPage)
+	assert.NotEmpty(t, result.PESTELPesPage)
+	assert.NotEmpty(t, result.PESTELTelPage)
 	assert.NotEmpty(t, result.PorterPage)
 	assert.NotEmpty(t, result.SWOTPage)
 	assert.NotEmpty(t, result.TamSamSomPage)
 	assert.NotEmpty(t, result.BlueOceanPage)
 	assert.NotEmpty(t, result.OKRPage)
+	assert.NotEmpty(t, result.GrowthLoopsPage)
 	assert.NotEmpty(t, result.BSCPage)
 	assert.NotEmpty(t, result.BenchmarkingPage)
 	assert.NotEmpty(t, result.FinancialProjectionsPage)
 	assert.NotEmpty(t, result.GrowthHackingPage)
 	assert.NotEmpty(t, result.RiskAssessmentPage)
-	assert.NotEmpty(t, result.DecisionMatrixPage)
+	assert.NotEmpty(t, result.RoadmapPage)
 	assert.NotEmpty(t, result.AppendixPage)
 
 	// Verify PDF metadata
@@ -228,22 +220,24 @@ func TestPostgresRepository_GetByID_Found(t *testing.T) {
 	rows := sqlmock.NewRows([]string{
 		"id", "submission_id", "analysis_id",
 		"cover_page", "executive_summary", "table_of_contents",
-		"pestel_page", "porter_page", "swot_page", "tam_sam_som_page", "blue_ocean_page", "okr_page",
+		"divider_part1_page", "pestel_pes_page", "pestel_tel_page", "porter_page", "swot_page",
+		"divider_part2_page", "tam_sam_som_page", "blue_ocean_page",
+		"divider_part3_page", "okr_page", "growth_loops_page",
+		"divider_part4_page", "scenarios_page", "recommendations_page",
 		"bsc_page", "benchmarking_page", "financial_projections_page", "growth_hacking_page",
-		"risk_assessment_page", "decision_matrix_page", "appendix_page",
-		"bcg_matrix_page", "value_proposition_page", "strategic_priorities_page", "risks_mitigation_page",
+		"risk_assessment_page", "roadmap_page", "appendix_page",
 		"pdf_url", "pdf_generated_at", "pdf_generation_status",
 		"status", "error_message", "generation_time_ms", "total_pages",
 		"created_at", "updated_at", "completed_at",
 	}).AddRow(
 		reportID, uuid.New().String(), uuid.New().String(),
 		"<html>Cover</html>", "<html>Exec</html>", "<html>TOC</html>",
-		"<html>PESTEL</html>", "<html>Porter</html>", "<html>SWOT</html>",
-		"<html>TAM</html>", "<html>Ocean</html>", "<html>OKR</html>",
-		"<html>BSC</html>", "<html>Bench</html>", "<html>Financial</html>",
-		"<html>Growth</html>", "<html>Risk</html>", "<html>Decision</html>",
-		"<html>Appendix</html>",
-		"", "", "", "",
+		"<html>Div1</html>", "<html>PES</html>", "<html>TEL</html>", "<html>Porter</html>", "<html>SWOT</html>",
+		"<html>Div2</html>", "<html>TAM</html>", "<html>Ocean</html>",
+		"<html>Div3</html>", "<html>OKR</html>", "<html>GrowthLoops</html>",
+		"<html>Div4</html>", "<html>Scenarios</html>", "<html>Recommendations</html>",
+		"<html>BSC</html>", "<html>Bench</html>", "<html>Financial</html>", "<html>Growth</html>",
+		"<html>Risk</html>", "<html>Roadmap</html>", "<html>Appendix</html>",
 		"https://storage.example.com/report.pdf", now, "completed",
 		"completed", "", 5000, 24,
 		now, now, now,
@@ -305,18 +299,26 @@ func TestPostgresRepository_Update(t *testing.T) {
 		CoverPage:                "<html>Updated Cover</html>",
 		ExecutiveSummary:         "<html>Updated Exec</html>",
 		TableOfContents:          "<html>Updated TOC</html>",
-		PESTELPage:               "<html>Updated PESTEL</html>",
+		DividerPart1Page:         "<html>Updated Div1</html>",
+		PESTELPesPage:            "<html>Updated PES</html>",
+		PESTELTelPage:            "<html>Updated TEL</html>",
 		PorterPage:               "<html>Updated Porter</html>",
 		SWOTPage:                 "<html>Updated SWOT</html>",
+		DividerPart2Page:         "<html>Updated Div2</html>",
 		TamSamSomPage:            "<html>Updated TAM</html>",
 		BlueOceanPage:            "<html>Updated Ocean</html>",
+		DividerPart3Page:         "<html>Updated Div3</html>",
 		OKRPage:                  "<html>Updated OKR</html>",
+		GrowthLoopsPage:          "<html>Updated Loops</html>",
+		DividerPart4Page:         "<html>Updated Div4</html>",
+		ScenariosPage:            "<html>Updated Scenarios</html>",
+		RecommendationsPage:      "<html>Updated Recs</html>",
 		BSCPage:                  "<html>Updated BSC</html>",
 		BenchmarkingPage:         "<html>Updated Bench</html>",
 		FinancialProjectionsPage: "<html>Updated Financial</html>",
 		GrowthHackingPage:        "<html>Updated Growth</html>",
 		RiskAssessmentPage:       "<html>Updated Risk</html>",
-		DecisionMatrixPage:       "<html>Updated Decision</html>",
+		RoadmapPage:              "<html>Updated Roadmap</html>",
 		AppendixPage:             "<html>Updated Appendix</html>",
 
 		PDFURL:              "https://storage.example.com/updated.pdf",
@@ -329,19 +331,7 @@ func TestPostgresRepository_Update(t *testing.T) {
 		CompletedAt:      &now,
 	}
 
-	mock.ExpectExec(`UPDATE reports SET`).
-		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
-			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
-			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
-			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
-			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
-			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
-			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
-			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
-			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
-			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
-		).
-		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`UPDATE reports SET`).WillReturnResult(sqlmock.NewResult(0, 1))
 
 	err = repo.Update(context.Background(), testReport)
 
@@ -388,33 +378,35 @@ func TestPostgresRepository_List(t *testing.T) {
 	rows := sqlmock.NewRows([]string{
 		"id", "submission_id", "analysis_id",
 		"cover_page", "executive_summary", "table_of_contents",
-		"pestel_page", "porter_page", "swot_page", "tam_sam_som_page", "blue_ocean_page", "okr_page",
+		"divider_part1_page", "pestel_pes_page", "pestel_tel_page", "porter_page", "swot_page",
+		"divider_part2_page", "tam_sam_som_page", "blue_ocean_page",
+		"divider_part3_page", "okr_page", "growth_loops_page",
+		"divider_part4_page", "scenarios_page", "recommendations_page",
 		"bsc_page", "benchmarking_page", "financial_projections_page", "growth_hacking_page",
-		"risk_assessment_page", "decision_matrix_page", "appendix_page",
-		"bcg_matrix_page", "value_proposition_page", "strategic_priorities_page", "risks_mitigation_page",
+		"risk_assessment_page", "roadmap_page", "appendix_page",
 		"pdf_url", "pdf_generated_at", "pdf_generation_status",
 		"status", "error_message", "generation_time_ms", "total_pages",
 		"created_at", "updated_at", "completed_at",
 	}).
 		AddRow(uuid.New().String(), uuid.New().String(), uuid.New().String(),
 			"<html>1</html>", "<html>1</html>", "<html>1</html>",
+			"<html>1</html>", "<html>1</html>", "<html>1</html>", "<html>1</html>", "<html>1</html>",
 			"<html>1</html>", "<html>1</html>", "<html>1</html>",
 			"<html>1</html>", "<html>1</html>", "<html>1</html>",
 			"<html>1</html>", "<html>1</html>", "<html>1</html>",
+			"<html>1</html>", "<html>1</html>", "<html>1</html>", "<html>1</html>",
 			"<html>1</html>", "<html>1</html>", "<html>1</html>",
-			"<html>1</html>",
-			"", "", "", "",
 			"https://storage.example.com/1.pdf", now, "completed",
 			"completed", "", 5000, 24,
 			now, now, now).
 		AddRow(uuid.New().String(), uuid.New().String(), uuid.New().String(),
 			"<html>2</html>", "<html>2</html>", "<html>2</html>",
+			"<html>2</html>", "<html>2</html>", "<html>2</html>", "<html>2</html>", "<html>2</html>",
 			"<html>2</html>", "<html>2</html>", "<html>2</html>",
 			"<html>2</html>", "<html>2</html>", "<html>2</html>",
 			"<html>2</html>", "<html>2</html>", "<html>2</html>",
+			"<html>2</html>", "<html>2</html>", "<html>2</html>", "<html>2</html>",
 			"<html>2</html>", "<html>2</html>", "<html>2</html>",
-			"<html>2</html>",
-			"", "", "", "",
 			"https://storage.example.com/2.pdf", now, "completed",
 			"completed", "", 5000, 24,
 			now, now, now)

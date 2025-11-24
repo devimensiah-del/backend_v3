@@ -135,8 +135,9 @@ func main() {
 	// Cloud Storage (Supabase)
 	storage := infrastructure.NewSupabaseStorageClient(
 		cfg.SupabaseURL,
-		"reports", // Bucket Name
-		cfg.SupabaseJWTSecret,
+		cfg.SupabaseBucket,
+		cfg.SupabaseServiceKey,
+		cfg.SupabaseSignedTTL,
 	)
 	log.Info().Str("bucket", "reports").Msg("Supabase storage client initialized")
 

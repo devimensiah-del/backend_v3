@@ -148,12 +148,6 @@ type OKRAnalysis struct {
 }
 
 // DEPRECATED: Legacy OKRObjective kept for backward compatibility
-// Use QuarterlyOKR instead for new implementations
-type OKRObjective struct {
-	Title      string   `json:"title"`
-	KeyResults []string `json:"key_results"`
-}
-
 type BenchmarkingAnalysis struct {
 	Competitors     []string `json:"competitors_analyzed"`
 	PerformanceGaps []string `json:"performance_gaps"` // Fixes validator error
@@ -174,11 +168,6 @@ type GrowthHackingAnalysis struct {
 	LeapLoop  GrowthLoop `json:"leap_loop"`  // LEAP Loop (Acquisition): Land, Engage, Activate, Propagate
 	ScaleLoop GrowthLoop `json:"scale_loop"` // SCALE Loop (Monetization): Satisfy, Convert, Loop Back, Expand
 	Summary   string     `json:"summary"`
-
-	// DEPRECATED: Legacy fields kept for backward compatibility
-	Hypotheses  []string `json:"hypotheses,omitempty"`
-	Experiments []string `json:"experiments,omitempty"`
-	KeyMetrics  []string `json:"key_metrics,omitempty"`
 }
 
 // Scenario represents a future scenario with probability and required actions
@@ -197,11 +186,6 @@ type ScenarioAnalysis struct {
 	MitigationTactics   []string `json:"mitigation_tactics"`    // Risk mitigation strategies
 	EarlyWarningSignals []string `json:"early_warning_signals"` // Indicators that signal scenario shifts
 	Summary             string   `json:"summary"`
-
-	// DEPRECATED: Legacy fields kept for backward compatibility
-	ScenarioOptimistic  string `json:"scenario_optimistic,omitempty"`
-	ScenarioRealist     string `json:"scenario_realist,omitempty"`
-	ScenarioPessimistic string `json:"scenario_pessimistic,omitempty"`
 }
 
 type TamSamSomAnalysis struct {

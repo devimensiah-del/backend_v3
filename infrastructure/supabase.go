@@ -3,6 +3,7 @@ package infrastructure
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -24,11 +25,12 @@ type SupabaseStorageClient struct {
 	ProjectURL     string // https://xyz.supabase.co
 	Bucket         string // "reports"
 	Token          string // Service Role Key (for uploads)
+	SignedTTL      int    // seconds
 	HTTPClient     *http.Client
 	CircuitBreaker *gobreaker.CircuitBreaker
 }
 
-func NewSupabaseStorageClient(projectURL, bucket, token string) *SupabaseStorageClient {
+func NewSupabaseStorageClient(projectURL, bucket, token string, signedTTL int) *SupabaseStorageClient {
 	// SECURITY/RELIABILITY: Add circuit breaker to prevent cascade failures
 	cbSettings := gobreaker.Settings{
 		Name:        "supabase-storage",
@@ -47,6 +49,7 @@ func NewSupabaseStorageClient(projectURL, bucket, token string) *SupabaseStorage
 		ProjectURL: projectURL,
 		Bucket:     bucket,
 		Token:      token,
+		SignedTTL:  signedTTL,
 		HTTPClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -92,8 +95,47 @@ func (s *SupabaseStorageClient) upload(ctx context.Context, path string, data []
 		return "", fmt.Errorf("supabase storage error (%d): %s", resp.StatusCode, string(bodyBytes))
 	}
 
-	// Return the Public URL
-	// Format: https://xyz.supabase.co/storage/v1/object/public/{bucket}/{path}
-	publicURL := fmt.Sprintf("%s/storage/v1/object/public/%s/%s", s.ProjectURL, s.Bucket, path)
-	return publicURL, nil
+	// Generate signed URL (private bucket friendly)
+	signURL := fmt.Sprintf("%s/storage/v1/object/sign/%s/%s", s.ProjectURL, s.Bucket, path)
+	payload := fmt.Sprintf(`{"expiresIn": %d}`, s.SignedTTL)
+	signReq, err := http.NewRequestWithContext(ctx, "POST", signURL, bytes.NewBufferString(payload))
+	if err != nil {
+		return "", err
+	}
+	signReq.Header.Set("Authorization", "Bearer "+s.Token)
+	signReq.Header.Set("Content-Type", "application/json")
+
+	signResp, err := s.HTTPClient.Do(signReq)
+	if err != nil {
+		return "", err
+	}
+	defer signResp.Body.Close()
+
+	if signResp.StatusCode != 200 {
+		bodyBytes, _ := io.ReadAll(signResp.Body)
+		return "", fmt.Errorf("supabase sign url error (%d): %s", signResp.StatusCode, string(bodyBytes))
+	}
+
+	bodyBytes, err := io.ReadAll(signResp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	// Supabase returns {"signedURL":"/storage/v1/object/sign/<bucket>/<path>?token=..."}
+	type signRespBody struct {
+		SignedURL string `json:"signedURL"`
+	}
+	var sr signRespBody
+	if err := json.Unmarshal(bodyBytes, &sr); err != nil {
+		return "", fmt.Errorf("failed to parse signed URL response: %w", err)
+	}
+	if sr.SignedURL == "" {
+		return "", fmt.Errorf("signed URL missing in response")
+	}
+
+	// If SignedURL is relative, prefix with project URL
+	if sr.SignedURL[0] == '/' {
+		return s.ProjectURL + sr.SignedURL, nil
+	}
+	return sr.SignedURL, nil
 }

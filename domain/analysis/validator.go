@@ -62,16 +62,6 @@ func (v *ContentValidator) ValidateAndNormalize(analysis *Analysis) {
 		v.logger.Warn().Msg("SCALE Loop exceeded 4 steps, trimming")
 		analysis.GrowthHacking.ScaleLoop.Steps = analysis.GrowthHacking.ScaleLoop.Steps[:4]
 	}
-	// Backward compatibility: Validate deprecated fields if present
-	if analysis.GrowthHacking.Hypotheses != nil {
-		v.trimStringArray(&analysis.GrowthHacking.Hypotheses, 3, "GrowthHacking.Hypotheses")
-	}
-	if analysis.GrowthHacking.Experiments != nil {
-		v.trimStringArray(&analysis.GrowthHacking.Experiments, 3, "GrowthHacking.Experiments")
-	}
-	if analysis.GrowthHacking.KeyMetrics != nil {
-		v.trimStringArray(&analysis.GrowthHacking.KeyMetrics, 3, "GrowthHacking.KeyMetrics")
-	}
 
 	// Scenarios: Early Warnings
 	v.trimStringArray(&analysis.Scenarios.EarlyWarningSignals, 3, "Scenarios.EarlyWarningSignals")

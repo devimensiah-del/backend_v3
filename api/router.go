@@ -79,6 +79,7 @@ func SetupRouter(
 	enrichmentHandlers := NewEnrichmentHandlers(
 		submissionSvc,
 		enrichmentSvc,
+		analysisSvc,
 		logger,
 	)
 	reportHandlers := NewReportHandlers(

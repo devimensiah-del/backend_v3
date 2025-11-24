@@ -61,10 +61,13 @@ type Config struct {
 	DeadLetterQueueTTL   int // hours
 
 	// External Services
-	GotenbergURL      string
-	SupabaseURL       string
-	SupabaseAnonKey   string // Public key for Supabase Auth API calls
-	SupabaseJWTSecret string // Secret for validating JWT tokens (AuthMiddleware)
+	GotenbergURL       string
+	SupabaseURL        string
+	SupabaseAnonKey    string // Public key for Supabase Auth API calls
+	SupabaseJWTSecret  string // Secret for validating JWT tokens (AuthMiddleware)
+	SupabaseServiceKey string // Service role key for storage uploads
+	SupabaseBucket     string // Storage bucket for reports
+	SupabaseSignedTTL  int    // Signed URL TTL in seconds
 
 	// Storage & Frontend
 	StorageBasePath string
@@ -115,10 +118,13 @@ func Load() (*Config, error) {
 		// External Services
 		// Note: Default Gotenberg URL assumes docker-compose service name "gotenberg"
 		// For local dev without docker: use "http://localhost:3001" (avoid port 3000 conflict with frontend)
-		GotenbergURL:      getEnv("GOTENBERG_URL", "http://gotenberg:3000"),
-		SupabaseURL:       getEnv("SUPABASE_URL", ""),
-		SupabaseAnonKey:   getEnv("SUPABASE_ANON_KEY", ""),
-		SupabaseJWTSecret: getEnv("SUPABASE_JWT_SECRET", ""),
+		GotenbergURL:       getEnv("GOTENBERG_URL", "http://gotenberg:3000"),
+		SupabaseURL:        getEnv("SUPABASE_URL", ""),
+		SupabaseAnonKey:    getEnv("SUPABASE_ANON_KEY", ""),
+		SupabaseJWTSecret:  getEnv("SUPABASE_JWT_SECRET", ""),
+		SupabaseServiceKey: getEnv("SUPABASE_SERVICE_ROLE_KEY", ""),
+		SupabaseBucket:     getEnv("SUPABASE_STORAGE_BUCKET", "reports-pdf"),
+		SupabaseSignedTTL:  getEnvInt("SUPABASE_SIGNED_URL_TTL", 7*24*60*60), // default 7 days
 
 		// Storage
 		StorageBasePath: "./uploads",
@@ -235,6 +241,10 @@ func (c *Config) Validate() error {
 
 	if c.SupabaseAnonKey == "" {
 		return fmt.Errorf("SUPABASE_ANON_KEY is required for auth API calls")
+	}
+
+	if c.SupabaseServiceKey == "" {
+		return fmt.Errorf("SUPABASE_SERVICE_ROLE_KEY is required for storage uploads")
 	}
 
 	return nil

@@ -324,26 +324,6 @@ func getCoimmaAnalysis() *analysis.Analysis {
 				Bottleneck: "Baixo MRR devido aos serviços representarem apenas 5% do faturamento",
 			},
 			Summary: "Fase 1: Expansão no mercado pecuário e grãos com foco em conteúdo e canais digitais. Fase 2: Diversificação para indústria com novos produtos.",
-
-			// Legacy fields for GTM Strategy template
-			Hypotheses: []string{
-				"Conteúdo técnico sobre pecuária de precisão atrai leads qualificados",
-				"Webinars mensais aumentam a conversão de leads para vendas em 25%",
-				"Presença em feiras do agronegócio gera 50+ leads qualificados por evento",
-			},
-			Experiments: []string{
-				"Testar blog técnico por 3 meses com 2 posts semanais sobre automação",
-				"Realizar 6 webinars mensais sobre rastreabilidade e gestão de rebanhos",
-				"Participar de 3 feiras regionais no Q1 2025 (Expointer, Agrishow, Fenasucro)",
-				"Implementar programa de referência com incentivo de 10% para clientes",
-			},
-			KeyMetrics: []string{
-				"Leads orgânicos gerados por conteúdo (meta: 100 leads/mês)",
-				"Taxa de conversão webinar → demo (meta: 15%)",
-				"Custo por lead em feiras (meta: < R$ 200)",
-				"Net Promoter Score (NPS) (meta: > 50)",
-				"Monthly Recurring Revenue de serviços (meta: 10% do faturamento)",
-			},
 		},
 
 		// Scenario Analysis with Probabilities

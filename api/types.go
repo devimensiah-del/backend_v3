@@ -168,10 +168,9 @@ type SubmissionListResponse struct {
 
 // AnalyticsResponse returns admin analytics/metrics
 type AnalyticsResponse struct {
-	TotalSubmissions     int     `json:"totalSubmissions"`
-	ActiveSubmissions    int     `json:"activeSubmissions"`
-	CompletedSubmissions int     `json:"completedSubmissions"`
-	Revenue              float64 `json:"revenue"`
+	TotalSubmissions     int `json:"totalSubmissions"`
+	ActiveSubmissions    int `json:"activeSubmissions"`
+	CompletedSubmissions int `json:"completedSubmissions"`
 }
 
 // UserProfileResponse returns user profile data
@@ -189,7 +188,6 @@ type UserProfile struct {
 	CreatedAt time.Time `json:"createdAt" db:"created_at"`
 	UpdatedAt time.Time `json:"updatedAt" db:"updated_at"`
 }
-
 
 // ==================== ENRICHMENT RESPONSE TYPES ====================
 

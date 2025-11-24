@@ -128,18 +128,45 @@
         <div class="page-subtitle">Planejamento de Cenários</div>
 
         <div class="scenario scenario-optimistic">
-            <div class="scenario-header">Cenário Otimista</div>
-            <div class="scenario-content">{{ .Scenarios.ScenarioOptimistic }}</div>
+            <div class="scenario-header">Cenário Otimista ({{ .Scenarios.Optimistic.Probability }}%)</div>
+            <div class="scenario-content">
+                {{ .Scenarios.Optimistic.Description }}
+                <br/><br/>
+                <strong>Ações necessárias</strong>
+                <ul>
+                    {{ range .Scenarios.Optimistic.RequiredActions }}
+                    <li>{{ . }}</li>
+                    {{ end }}
+                </ul>
+            </div>
         </div>
 
         <div class="scenario scenario-realist">
-            <div class="scenario-header">Cenário Realista</div>
-            <div class="scenario-content">{{ .Scenarios.ScenarioRealist }}</div>
+            <div class="scenario-header">Cenário Realista ({{ .Scenarios.Realist.Probability }}%)</div>
+            <div class="scenario-content">
+                {{ .Scenarios.Realist.Description }}
+                <br/><br/>
+                <strong>Ações necessárias</strong>
+                <ul>
+                    {{ range .Scenarios.Realist.RequiredActions }}
+                    <li>{{ . }}</li>
+                    {{ end }}
+                </ul>
+            </div>
         </div>
 
         <div class="scenario scenario-pessimistic">
-            <div class="scenario-header">Cenário Pessimista</div>
-            <div class="scenario-content">{{ .Scenarios.ScenarioPessimistic }}</div>
+            <div class="scenario-header">Cenário Pessimista ({{ .Scenarios.Pessimistic.Probability }}%)</div>
+            <div class="scenario-content">
+                {{ .Scenarios.Pessimistic.Description }}
+                <br/><br/>
+                <strong>Ações necessárias</strong>
+                <ul>
+                    {{ range .Scenarios.Pessimistic.RequiredActions }}
+                    <li>{{ . }}</li>
+                    {{ end }}
+                </ul>
+            </div>
         </div>
 
         <div class="signals-box">

@@ -266,7 +266,6 @@ func (h *AdminHandlers) GetAnalytics(c *gin.Context) {
 		TotalSubmissions:     analytics.TotalSubmissions,
 		ActiveSubmissions:    analytics.ActiveSubmissions,
 		CompletedSubmissions: analytics.CompletedSubmissions,
-		Revenue:              analytics.Revenue,
 	}
 
 	c.JSON(http.StatusOK, response)

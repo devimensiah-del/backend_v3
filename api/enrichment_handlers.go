@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 
+	"backend_v3/domain/analysis"
 	"backend_v3/domain/enrichment"
 	"backend_v3/domain/submission"
 
@@ -14,6 +15,7 @@ import (
 type EnrichmentHandlers struct {
 	SubmissionService *submission.Service
 	EnrichmentService *enrichment.Service
+	AnalysisService   *analysis.Service
 	Logger            zerolog.Logger
 }
 
@@ -21,11 +23,13 @@ type EnrichmentHandlers struct {
 func NewEnrichmentHandlers(
 	submissionSvc *submission.Service,
 	enrichmentSvc *enrichment.Service,
+	analysisSvc *analysis.Service,
 	logger zerolog.Logger,
 ) *EnrichmentHandlers {
 	return &EnrichmentHandlers{
 		SubmissionService: submissionSvc,
 		EnrichmentService: enrichmentSvc,
+		AnalysisService:   analysisSvc,
 		Logger:            logger,
 	}
 }
@@ -211,9 +215,27 @@ func (h *EnrichmentHandlers) ApproveEnrichment(c *gin.Context) {
 	// Transform to DTO
 	enrichmentResponse := h.buildEnrichmentResponse(updatedEnrichment)
 
+	// Best-effort: fetch latest analysis for this submission (may still be queued)
+	var analysisID *string
+	var analysisStatus *string
+	var analysisVersion *int
+	if h.AnalysisService != nil {
+		if latest, err := h.AnalysisService.GetLatestVersion(c.Request.Context(), updatedEnrichment.SubmissionID.String()); err == nil && latest != nil {
+			id := latest.ID
+			analysisID = &id
+			status := latest.Status
+			analysisStatus = &status
+			version := latest.Version
+			analysisVersion = &version
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"enrichment": enrichmentResponse,
-		"message":    "Enriquecimento aprovado, análise iniciada.",
+		"enrichment":      enrichmentResponse,
+		"analysisId":      analysisID,
+		"analysisStatus":  analysisStatus,
+		"analysisVersion": analysisVersion,
+		"message":         "Enriquecimento aprovado, analise iniciada.",
 	})
 }
 

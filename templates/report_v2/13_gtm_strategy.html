@@ -109,27 +109,30 @@
         <div class="page-subtitle">Go-to-Market & Growth Hacking</div>
 
         <div class="section">
-            <div class="section-title">Hipóteses de Crescimento</div>
+            <div class="section-title">LEAP Loop (Aquisição)</div>
             <ul class="item-list">
-                {{ range .GrowthHacking.Hypotheses }}
+                {{ range $index, $step := .GrowthHacking.LeapLoop.Steps }}
+                <li class="item">Passo {{ add $index 1 }}: {{ $step }}</li>
+                {{ end }}
+            </ul>
+            <div class="section-title">Métricas LEAP</div>
+            <ul class="item-list">
+                {{ range .GrowthHacking.LeapLoop.Metrics }}
                 <li class="item">{{ . }}</li>
                 {{ end }}
             </ul>
         </div>
 
         <div class="section">
-            <div class="section-title">Experimentos e Iniciativas</div>
+            <div class="section-title">SCALE Loop (Monetização)</div>
             <ul class="item-list">
-                {{ range .GrowthHacking.Experiments }}
-                <li class="item">{{ . }}</li>
+                {{ range $index, $step := .GrowthHacking.ScaleLoop.Steps }}
+                <li class="item">Passo {{ add $index 1 }}: {{ $step }}</li>
                 {{ end }}
             </ul>
-        </div>
-
-        <div class="section metrics-section">
-            <div class="section-title">Métricas-Chave</div>
+            <div class="section-title">Métricas SCALE</div>
             <ul class="item-list">
-                {{ range .GrowthHacking.KeyMetrics }}
+                {{ range .GrowthHacking.ScaleLoop.Metrics }}
                 <li class="item">{{ . }}</li>
                 {{ end }}
             </ul>

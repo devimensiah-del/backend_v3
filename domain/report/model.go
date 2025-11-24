@@ -39,16 +39,6 @@ type Report struct {
 	RoadmapPage              string `db:"roadmap_page" json:"roadmap_page"`                             // Page 23 (NEW)
 	AppendixPage             string `db:"appendix_page" json:"appendix_page"`                           // Page 24
 
-	// DEPRECATED: Old framework pages (kept for backward compatibility)
-	PESTELPage         string `db:"pestel_page" json:"pestel_page,omitempty"`                   // Replaced by PESTELPesPage and PESTELTelPage
-	DecisionMatrixPage string `db:"decision_matrix_page" json:"decision_matrix_page,omitempty"` // Replaced by RoadmapPage
-
-	// DEPRECATED: Old framework pages (kept for backward compatibility, no longer populated)
-	BCGMatrixPage           string `db:"bcg_matrix_page" json:"bcg_matrix_page,omitempty"`                     // DEPRECATED: BCG Matrix (replaced by BSC)
-	ValuePropositionPage    string `db:"value_proposition_page" json:"value_proposition_page,omitempty"`       // DEPRECATED: Value Proposition Canvas
-	StrategicPrioritiesPage string `db:"strategic_priorities_page" json:"strategic_priorities_page,omitempty"` // DEPRECATED: Strategic Priorities
-	RisksAndMitigationPage  string `db:"risks_mitigation_page" json:"risks_mitigation_page,omitempty"`         // DEPRECATED: Old risks page (different from RiskAssessmentPage)
-
 	// PDF Generation
 	PDFURL              string     `db:"pdf_url" json:"pdf_url"`                             // Cloud storage URL for generated PDF
 	PDFGeneratedAt      *time.Time `db:"pdf_generated_at" json:"pdf_generated_at"`           // When PDF was created
