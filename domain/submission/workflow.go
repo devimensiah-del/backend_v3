@@ -27,11 +27,8 @@ func (s *Service) SubmitForm(ctx context.Context, req *SubmitRequest) (*Submissi
 	}
 
 	// Step 4: Trigger the AI Agent (Send a signal to the background worker to start researching)
-	// We don't wait for this to finish; we just say "Go!"
-	if err := s.triggerEnrichmentProcess(submission); err != nil {
-		// If the signal fails, we log it, but we don't crash because the data is already saved.
-		log.Error().Err(err).Msg("failed to trigger AI agent")
-	}
+	// MOVED: Triggering is now handled by the API handler to ensure Enrichment record is created first
+	// This avoids circular dependencies and ensures the UI has a record to poll immediately.
 
 	log.Info().Str("id", submission.ID.String()).Msg("submission process started successfully")
 	return submission, nil

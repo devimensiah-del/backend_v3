@@ -41,11 +41,11 @@ type SubmissionData struct {
 
 // Service handles all business analysis operations
 type Service struct {
-	repo          Repository
+	repo           Repository
 	submissionRepo SubmissionRepository
-	llm           LLMClient
-	logger        zerolog.Logger
-	queueClient   *asynq.Client // For job orchestration
+	llm            LLMClient
+	logger         zerolog.Logger
+	queueClient    *asynq.Client // For job orchestration
 
 	// Deprecated fields (kept for backward compatibility)
 	analystModel   string
@@ -267,7 +267,7 @@ func interfaceSliceToSWOTItemSlice(slice []interface{}) []SWOTItem {
 			// Backward compatibility: old format was just strings
 			result = append(result, SWOTItem{
 				Content:    str,
-				Confidence: "Média", // Default confidence for legacy data
+				Confidence: "Média",              // Default confidence for legacy data
 				Source:     "análise de mercado", // Default source
 			})
 		}

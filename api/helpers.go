@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 )
@@ -56,4 +57,22 @@ func employeeCountToSize(count *int) *string {
 	}
 
 	return &size
+}
+
+// buildBusinessChallengeString concatenates strategic fields with " | " separator
+// Skips empty fields to avoid creating empty sections
+func buildBusinessChallengeString(strategicGoal, currentChallenges, competitivePosition string) string {
+	var parts []string
+
+	if strategicGoal != "" {
+		parts = append(parts, strategicGoal)
+	}
+	if currentChallenges != "" {
+		parts = append(parts, currentChallenges)
+	}
+	if competitivePosition != "" {
+		parts = append(parts, competitivePosition)
+	}
+
+	return strings.Join(parts, " | ")
 }

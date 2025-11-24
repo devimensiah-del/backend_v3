@@ -59,6 +59,14 @@ func (h *Handler) ListSubmissions(c *gin.Context) {
 		return
 	}
 
+	// Transform submissions to include relationship IDs (enrichmentId, analysisId, reportId)
+	// This is required for frontend filtering (e.g., analysis page filters by analysisId)
+	detailedSubmissions := make([]SubmissionDetailResponse, len(submissions))
+	for i, sub := range submissions {
+		subUUID, _ := parseUUID(sub.ID.String())
+		detailedSubmissions[i] = buildSubmissionDetailResponse(sub, h, c.Request.Context(), subUUID, sub.ID.String())
+	}
+
 	// Calculate total pages
 	totalPages := (total + limit - 1) / limit // Ceiling division
 	if totalPages < 1 {
@@ -66,7 +74,7 @@ func (h *Handler) ListSubmissions(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, SubmissionListResponse{
-		Data:       submissions,
+		Data:       detailedSubmissions,
 		Page:       page,
 		PageSize:   limit,
 		Total:      total,

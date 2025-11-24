@@ -141,10 +141,28 @@ func (s *Service) handleCrash(ctx context.Context, sub *submission.Submission, e
 }
 
 func (s *Service) markAsComplete(ctx context.Context, sub *submission.Submission, e *Enrichment) (*Enrichment, error) {
+	log.Info().
+		Str("enrichment_id", e.ID.String()).
+		Int("progress", e.Progress).
+		Bool("was_locked", e.IsLocked).
+		Msg("Marking enrichment as complete")
+
 	e.Finish()
-	if err := s.repo.UpdateSystem(ctx, e); err != nil {
+	// Force unlock on completion to prevent stuck enrichments (bypasses user lock)
+	e.IsLocked = false
+	if err := s.repo.ForceUpdateAndUnlock(ctx, e); err != nil {
+		log.Error().
+			Err(err).
+			Str("enrichment_id", e.ID.String()).
+			Msg("Failed to mark enrichment as complete")
 		return nil, err
 	}
+
+	log.Info().
+		Str("enrichment_id", e.ID.String()).
+		Str("status", string(e.Status)).
+		Msg("Enrichment marked as complete successfully")
+
 	return e, nil
 }
 
@@ -152,9 +170,25 @@ func (s *Service) saveProfile(ctx context.Context, e *Enrichment, err error) {
 	if err != nil {
 		e.Fail(err)
 	}
+
+	log.Info().
+		Str("enrichment_id", e.ID.String()).
+		Int("progress", e.Progress).
+		Bool("is_locked", e.IsLocked).
+		Msg("Saving enriched profile to database")
+
 	// Actually save the enriched data to database
 	if updateErr := s.repo.UpdateSystem(ctx, e); updateErr != nil {
-		log.Error().Err(updateErr).Msg("Failed to save enriched profile to database")
+		log.Error().
+			Err(updateErr).
+			Str("enrichment_id", e.ID.String()).
+			Int("progress", e.Progress).
+			Bool("is_locked", e.IsLocked).
+			Msg("Failed to save enriched profile to database - enrichment may be locked by user")
+	} else {
+		log.Info().
+			Str("enrichment_id", e.ID.String()).
+			Msg("Enriched profile saved successfully")
 	}
 }
 

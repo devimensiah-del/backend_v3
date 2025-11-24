@@ -4,6 +4,7 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -26,9 +27,23 @@ func (m *JSONMap) Scan(value interface{}) error {
 	}
 	b, ok := value.([]byte)
 	if !ok {
-		return errors.New("type assertion to []byte failed")
+		// DEBUG: Log type mismatch to understand what we're receiving
+		return errors.New(fmt.Sprintf("type assertion to []byte failed - got %T instead", value))
 	}
-	return json.Unmarshal(b, m)
+
+	// DEBUG: Log the raw bytes being scanned
+	if err := json.Unmarshal(b, m); err != nil {
+		return fmt.Errorf("failed to unmarshal JSONB: %w (bytes: %s)", err, string(b[:min(100, len(b))]))
+	}
+
+	return nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // =================================================================
@@ -91,40 +106,40 @@ type MacroContext struct {
 }
 
 type EconomicIndicators struct {
-	Country              string   `json:"country"`               // e.g., "Brazil"
-	GDPGrowth            string   `json:"gdp_growth"`            // e.g., "+2.5% (2025 forecast)"
-	InflationRate        string   `json:"inflation_rate"`        // e.g., "IPCA: 4.8% a.a."
-	InterestRate         string   `json:"interest_rate"`         // e.g., "SELIC: 11.75%"
-	ExchangeRate         string   `json:"exchange_rate"`         // e.g., "USD/BRL: 5.20"
-	UnemploymentRate     string   `json:"unemployment_rate"`     // e.g., "7.2%"
-	PoliticalStability   string   `json:"political_stability"`   // e.g., "Moderate risk due to reforms"
-	EconomicOutlook      string   `json:"economic_outlook"`      // Brief summary
-	RecentPolicyChanges  []string `json:"recent_policy_changes"` // e.g., ["Tax reform 2025", "New carbon policies"]
+	Country             string   `json:"country"`               // e.g., "Brazil"
+	GDPGrowth           string   `json:"gdp_growth"`            // e.g., "+2.5% (2025 forecast)"
+	InflationRate       string   `json:"inflation_rate"`        // e.g., "IPCA: 4.8% a.a."
+	InterestRate        string   `json:"interest_rate"`         // e.g., "SELIC: 11.75%"
+	ExchangeRate        string   `json:"exchange_rate"`         // e.g., "USD/BRL: 5.20"
+	UnemploymentRate    string   `json:"unemployment_rate"`     // e.g., "7.2%"
+	PoliticalStability  string   `json:"political_stability"`   // e.g., "Moderate risk due to reforms"
+	EconomicOutlook     string   `json:"economic_outlook"`      // Brief summary
+	RecentPolicyChanges []string `json:"recent_policy_changes"` // e.g., ["Tax reform 2025", "New carbon policies"]
 }
 
 type IndustryTrends struct {
-	IndustrySector       string   `json:"industry_sector"`        // e.g., "Agribusiness Technology"
-	GrowthRate           string   `json:"growth_rate"`            // e.g., "+12% CAGR (2024-2028)"
-	KeyTrends            []string `json:"key_trends"`             // e.g., ["IoT adoption", "Sustainability focus", "Digital transformation"]
-	TechnologyAdoption   string   `json:"technology_adoption"`    // e.g., "High adoption of cloud/AI in sector"
-	MarketConcentration  string   `json:"market_concentration"`   // e.g., "Fragmented - no dominant player"
-	BarriersToEntry      string   `json:"barriers_to_entry"`      // e.g., "Medium - requires tech expertise and capital"
-	MergersAcquisitions  []string `json:"mergers_acquisitions"`   // Recent M&A activity
+	IndustrySector      string   `json:"industry_sector"`      // e.g., "Agribusiness Technology"
+	GrowthRate          string   `json:"growth_rate"`          // e.g., "+12% CAGR (2024-2028)"
+	KeyTrends           []string `json:"key_trends"`           // e.g., ["IoT adoption", "Sustainability focus", "Digital transformation"]
+	TechnologyAdoption  string   `json:"technology_adoption"`  // e.g., "High adoption of cloud/AI in sector"
+	MarketConcentration string   `json:"market_concentration"` // e.g., "Fragmented - no dominant player"
+	BarriersToEntry     string   `json:"barriers_to_entry"`    // e.g., "Medium - requires tech expertise and capital"
+	MergersAcquisitions []string `json:"mergers_acquisitions"` // Recent M&A activity
 }
 
 type RegulatoryLandscape struct {
-	RecentRegulations    []string `json:"recent_regulations"`    // e.g., ["Lei do Agro 2025", "New environmental compliance"]
-	UpcomingChanges      []string `json:"upcoming_changes"`      // e.g., ["Carbon tax proposal", "Data privacy law update"]
-	ComplianceRequirements string `json:"compliance_requirements"` // Key compliance needs
-	IndustryStandards    []string `json:"industry_standards"`    // Relevant standards (ISO, etc.)
+	RecentRegulations      []string `json:"recent_regulations"`      // e.g., ["Lei do Agro 2025", "New environmental compliance"]
+	UpcomingChanges        []string `json:"upcoming_changes"`        // e.g., ["Carbon tax proposal", "Data privacy law update"]
+	ComplianceRequirements string   `json:"compliance_requirements"` // Key compliance needs
+	IndustryStandards      []string `json:"industry_standards"`      // Relevant standards (ISO, etc.)
 }
 
 type MarketSignals struct {
-	CommodityPrices      []string `json:"commodity_prices"`       // e.g., ["Steel prices up 12% YoY", "Copper prices stable"]
-	SupplyChainStatus    string   `json:"supply_chain_status"`    // e.g., "Moderate delays in electronics components"
-	ConsumerSentiment    string   `json:"consumer_sentiment"`     // e.g., "Cautious due to inflation concerns"
-	CompetitorActivity   []string `json:"competitor_activity"`    // e.g., ["Competitor X launched new product", "Competitor Y expanded to new region"]
-	EmergingThreats      []string `json:"emerging_threats"`       // e.g., ["New low-cost entrant from China", "Substitute technology gaining traction"]
+	CommodityPrices    []string `json:"commodity_prices"`    // e.g., ["Steel prices up 12% YoY", "Copper prices stable"]
+	SupplyChainStatus  string   `json:"supply_chain_status"` // e.g., "Moderate delays in electronics components"
+	ConsumerSentiment  string   `json:"consumer_sentiment"`  // e.g., "Cautious due to inflation concerns"
+	CompetitorActivity []string `json:"competitor_activity"` // e.g., ["Competitor X launched new product", "Competitor Y expanded to new region"]
+	EmergingThreats    []string `json:"emerging_threats"`    // e.g., ["New low-cost entrant from China", "Substitute technology gaining traction"]
 }
 
 // =================================================================
@@ -143,7 +158,13 @@ type Enrichment struct {
 
 	// Generic JSON storage for flexibility
 	SourcesStatus JSONMap `json:"sourcesStatus,omitempty" db:"sources_status"`
+	SourcesUsed   *string `json:"sourcesUsed,omitempty" db:"sources_used"` // PostgreSQL ARRAY type, nullable
 	EnrichedData  JSONMap `json:"enrichedData,omitempty" db:"data"`
+
+	EnrichmentScore  *float64   `json:"enrichmentScore,omitempty" db:"enrichment_score"`
+	ProcessingTimeMs *int64     `json:"processingTimeMs,omitempty" db:"processing_time_ms"`
+	ApprovedAt       *time.Time `json:"approvedAt,omitempty" db:"approved_at"`
+	ApprovedBy       *uuid.UUID `json:"approvedBy,omitempty" db:"approved_by"`
 
 	StartedAt    *time.Time `json:"startedAt,omitempty" db:"started_at"`
 	CompletedAt  *time.Time `json:"completedAt,omitempty" db:"completed_at"`
@@ -158,9 +179,9 @@ type Enrichment struct {
 type Status string
 
 const (
-	StatusPending  Status = "pending"  // Queued, worker not started
+	StatusPending   Status = "pending"   // Queued, worker not started
 	StatusCompleted Status = "completed" // Worker completed enrichment
-	StatusApproved Status = "approved" // Admin approved, ready for analysis
+	StatusApproved  Status = "approved"  // Admin approved, ready for analysis
 	// Note: Removed StatusProcessing and StatusFailed
 	// Failures keep status as "pending" with error_message populated
 )

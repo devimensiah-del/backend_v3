@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"backend_v3/config"
 	"backend_v3/domain/submission"
@@ -49,6 +50,11 @@ func (s *Service) GetBySubmissionID(ctx context.Context, submissionID uuid.UUID)
 	return s.repo.GetBySubmissionID(ctx, submissionID)
 }
 
+// Create creates a new enrichment record
+func (s *Service) Create(ctx context.Context, e *Enrichment) error {
+	return s.repo.Create(ctx, e)
+}
+
 // UpdateEnrichmentData is called by the User Interface (API).
 func (s *Service) UpdateEnrichmentData(ctx context.Context, id uuid.UUID, data map[string]interface{}) error {
 	enrichment, err := s.repo.GetByID(ctx, id)
@@ -61,6 +67,19 @@ func (s *Service) UpdateEnrichmentData(ctx context.Context, id uuid.UUID, data m
 
 	// Force the lock and update
 	return s.repo.UpdateUser(ctx, enrichment)
+}
+
+// UpdateProgress updates the progress and current step of an enrichment
+func (s *Service) UpdateProgress(ctx context.Context, id uuid.UUID, progress int, step string) error {
+	enrichment, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	enrichment.UpdateProgress(step, progress)
+
+	// Update system (bypassing user locks if any, though progress is system-owned)
+	return s.repo.UpdateSystem(ctx, enrichment)
 }
 
 // UpdateFields updates enrichment fields (admin edit)
@@ -79,6 +98,11 @@ func (s *Service) UpdateFields(ctx context.Context, id uuid.UUID, updateData map
 		return nil, fmt.Errorf("cannot edit enrichment after it has been approved")
 	}
 
+	// Validate: Cannot edit while worker is actively processing
+	if enrichment.Status == StatusPending && enrichment.StartedAt != nil && enrichment.CompletedAt == nil {
+		return nil, fmt.Errorf("cannot edit enrichment while worker is processing (progress: %d%%) - please wait for completion", enrichment.Progress)
+	}
+
 	// Deep merge update data into existing enriched_data
 	enrichment.EnrichedData = deepMerge(enrichment.EnrichedData, updateData)
 
@@ -88,6 +112,20 @@ func (s *Service) UpdateFields(ctx context.Context, id uuid.UUID, updateData map
 	}
 
 	return enrichment, nil
+}
+
+// UpdateUnlock manually unlocks an enrichment (recovery endpoint)
+// Used when an enrichment gets stuck due to locking issues
+func (s *Service) UpdateUnlock(ctx context.Context, e *Enrichment) error {
+	e.IsLocked = false
+	e.UpdatedAt = time.Now()
+
+	// Use ForceUpdateAndUnlock to bypass any existing locks
+	if err := s.repo.ForceUpdateAndUnlock(ctx, e); err != nil {
+		return fmt.Errorf("failed to unlock enrichment: %w", err)
+	}
+
+	return nil
 }
 
 // deepMerge recursively merges source into destination
@@ -128,9 +166,9 @@ func (s *Service) Approve(ctx context.Context, id uuid.UUID) error {
 		return fmt.Errorf("enrichment must be in 'completed' status to approve, current status: %s", enrichment.Status)
 	}
 
-	// Update status to approved (system update, doesn't lock)
+	// Update status to approved and force unlock (admin action overrides user lock)
 	enrichment.Status = StatusApproved
-	if err := s.repo.UpdateSystem(ctx, enrichment); err != nil {
+	if err := s.repo.ForceUpdateAndUnlock(ctx, enrichment); err != nil {
 		return fmt.Errorf("failed to update enrichment status: %w", err)
 	}
 

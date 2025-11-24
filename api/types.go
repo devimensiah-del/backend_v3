@@ -230,6 +230,7 @@ type EnrichmentResponse struct {
 	Progress     int                    `json:"progress"`
 	CurrentStep  string                 `json:"currentStep"`
 	Data         map[string]interface{} `json:"data"` // Renamed from EnrichedData for frontend compatibility
+	IsLocked     bool                   `json:"isLocked"`
 	CreatedAt    time.Time              `json:"createdAt"`
 	UpdatedAt    time.Time              `json:"updatedAt"`
 }

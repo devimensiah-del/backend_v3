@@ -211,73 +211,6 @@ func (h *Handler) CreateAnalysisVersion(c *gin.Context) {
 	})
 }
 
-// ApproveAnalysis handles POST /api/v1/admin/analysis/:id/approve
-// Changes status from "completed" → "approved" and triggers PDF generation
-func (h *Handler) ApproveAnalysis(c *gin.Context) {
-	analysisID := c.Param("id")
-
-	// Get analysis to verify it exists and is in "completed" state
-	analysis, err := h.analysisSvc.GetByID(c.Request.Context(), analysisID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, ErrorResponse{
-			Error:   "Not found",
-			Message: "Analysis not found",
-		})
-		return
-	}
-
-	// Validate status is "completed"
-	if analysis.Status != "completed" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Error:   "Invalid status",
-			Message: "Analysis must be in 'completed' status to approve",
-		})
-		return
-	}
-
-	// Approve analysis (service handles status update AND PDF job enqueueing)
-	err = h.analysisSvc.Approve(c.Request.Context(), analysisID)
-	if err != nil {
-		h.logger.Error().Err(err).Str("analysis_id", analysisID).Msg("Failed to approve analysis")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:   "Approval failed",
-			Message: err.Error(),
-		})
-		return
-	}
-
-	// Fetch updated analysis
-	updatedAnalysis, err := h.analysisSvc.GetByID(c.Request.Context(), analysisID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:   "Fetch failed",
-			Message: "Approved but failed to fetch updated analysis",
-		})
-		return
-	}
-
-	// Transform to response
-	analysisData := make(map[string]interface{})
-	analysisBytes, _ := json.Marshal(updatedAnalysis)
-	json.Unmarshal(analysisBytes, &analysisData)
-
-	response := AnalysisResponse{
-		ID:           updatedAnalysis.ID,
-		SubmissionID: updatedAnalysis.SubmissionID,
-		Status:       updatedAnalysis.Status,
-		Version:      updatedAnalysis.Version,
-		ParentID:     updatedAnalysis.ParentAnalysisID,
-		Analysis:     analysisData,
-		CreatedAt:    updatedAnalysis.CreatedAt,
-		UpdatedAt:    updatedAnalysis.UpdatedAt,
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"analysis": response,
-		"message":  "Analysis approved, PDF generation job enqueued",
-	})
-}
-
 // SendAnalysis handles POST /api/v1/admin/analysis/:id/send
 // Changes status from "approved" → "sent" and notifies user
 func (h *Handler) SendAnalysis(c *gin.Context) {
@@ -359,6 +292,54 @@ func (h *Handler) SendAnalysis(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"analysis": response,
 		"message":  "Analysis sent to user successfully",
+	})
+}
+
+// ApproveAnalysis handles POST /api/v1/admin/analysis/:id/approve
+// Changes status from "completed" → "approved" and triggers PDF generation
+func (h *Handler) ApproveAnalysis(c *gin.Context) {
+	analysisID := c.Param("id")
+
+	// Approve analysis (service handles status update AND job enqueueing)
+	err := h.analysisSvc.Approve(c.Request.Context(), analysisID)
+	if err != nil {
+		h.logger.Error().Err(err).Str("analysis_id", analysisID).Msg("Failed to approve analysis")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Approval failed",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	// Fetch updated analysis
+	updatedAnalysis, err := h.analysisSvc.GetByID(c.Request.Context(), analysisID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Fetch failed",
+			Message: "Approved but failed to fetch updated analysis",
+		})
+		return
+	}
+
+	// Transform to response
+	analysisData := make(map[string]interface{})
+	analysisBytes, _ := json.Marshal(updatedAnalysis)
+	json.Unmarshal(analysisBytes, &analysisData)
+
+	response := AnalysisResponse{
+		ID:           updatedAnalysis.ID,
+		SubmissionID: updatedAnalysis.SubmissionID,
+		Status:       updatedAnalysis.Status,
+		Version:      updatedAnalysis.Version,
+		ParentID:     updatedAnalysis.ParentAnalysisID,
+		Analysis:     analysisData,
+		CreatedAt:    updatedAnalysis.CreatedAt,
+		UpdatedAt:    updatedAnalysis.UpdatedAt,
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"analysis": response,
+		"message":  "Analysis approved successfully",
 	})
 }
 

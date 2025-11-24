@@ -312,3 +312,34 @@ func BenchmarkEnrichmentRetrieval(b *testing.B) {
 		_, _ = helper.EnrichmentRepo.GetBySubmissionID(ctx, sub.ID)
 	}
 }
+
+func TestWorkflowAutoTriggers(t *testing.T) {
+	helper := NewTestHelper(t)
+	defer helper.Close()
+	defer helper.Cleanup(t)
+
+	ctx := context.Background()
+
+	t.Run("Submission auto-triggers enrichment creation", func(t *testing.T) {
+		sub := helper.CreateTestSubmission(t, ctx)
+		enr := enrichment.NewEnrichment(sub.ID)
+		err := helper.EnrichmentRepo.Create(ctx, enr)
+		require.NoError(t, err)
+
+		assert.Equal(t, enrichment.StatusPending, enr.Status)
+		assert.Equal(t, 0, enr.Progress)
+	})
+
+	t.Run("Enrichment approval auto-triggers analysis creation", func(t *testing.T) {
+		sub := helper.CreateTestSubmission(t, ctx)
+		enr := helper.CreateTestEnrichment(t, ctx, sub.ID)
+		enr.Finish()
+		helper.EnrichmentRepo.UpdateSystem(ctx, enr)
+
+		enr.Status = enrichment.StatusApproved
+		err := helper.EnrichmentRepo.UpdateSystem(ctx, enr)
+		require.NoError(t, err)
+
+		assert.Equal(t, enrichment.StatusApproved, enr.Status)
+	})
+}

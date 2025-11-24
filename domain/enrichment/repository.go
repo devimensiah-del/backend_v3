@@ -20,6 +20,8 @@ type Repository interface {
 	UpdateSystem(ctx context.Context, e *Enrichment) error
 	// UpdateUser updates enrichment and LOCKS it (used by API)
 	UpdateUser(ctx context.Context, e *Enrichment) error
+	// ForceUpdateAndUnlock updates enrichment and forces unlock (used by Worker on completion)
+	ForceUpdateAndUnlock(ctx context.Context, e *Enrichment) error
 }
 
 // PostgresRepository implements Repository using PostgreSQL
@@ -80,13 +82,20 @@ func (r *PostgresRepository) GetBySubmissionID(ctx context.Context, submissionID
 		LIMIT 1
 	`
 
+	fmt.Printf("[DEBUG] GetBySubmissionID: querying for submission_id=%s\n", submissionID.String())
+
 	var e Enrichment
 	if err := r.db.GetContext(ctx, &e, query, submissionID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
+			fmt.Printf("[DEBUG] GetBySubmissionID: no rows found for submission_id=%s\n", submissionID.String())
 			return nil, fmt.Errorf("enrichment not found")
 		}
+		fmt.Printf("[DEBUG] GetBySubmissionID: query failed with error: %v\n", err)
 		return nil, fmt.Errorf("failed to get enrichment: %w", err)
 	}
+
+	fmt.Printf("[DEBUG] GetBySubmissionID: found enrichment id=%s, status=%s, data_size=%d\n",
+		e.ID.String(), e.Status, len(e.EnrichedData))
 
 	return &e, nil
 }
@@ -117,10 +126,16 @@ func (r *PostgresRepository) UpdateSystem(ctx context.Context, e *Enrichment) er
 		return fmt.Errorf("failed to update enrichment: %w", err)
 	}
 
-	// If 0 rows affected, it means the user locked it.
-	// We intentionally DO NOT return an error here, because the worker should just "skip" saving.
-	// The user's data is now the source of truth.
-	_, _ = result.RowsAffected()
+	// Check if any rows were affected
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	// If 0 rows affected, enrichment is locked by user
+	if rows == 0 {
+		return fmt.Errorf("enrichment is locked by user - cannot update (progress: %d%%)", e.Progress)
+	}
 
 	return nil
 }
@@ -142,6 +157,45 @@ func (r *PostgresRepository) UpdateUser(ctx context.Context, e *Enrichment) erro
 	result, err := r.db.NamedExecContext(ctx, query, e)
 	if err != nil {
 		return fmt.Errorf("failed to update enrichment: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rows == 0 {
+		return fmt.Errorf("enrichment not found")
+	}
+
+	return nil
+}
+
+// ForceUpdateAndUnlock updates enrichment and forces unlock
+// This is used by the worker to complete enrichment even if user locked it
+func (r *PostgresRepository) ForceUpdateAndUnlock(ctx context.Context, e *Enrichment) error {
+	e.UpdatedAt = time.Now()
+	e.IsLocked = false // Force unlock
+
+	query := `
+		UPDATE enrichments SET
+			status = :status,
+			progress = :progress,
+			current_step = :current_step,
+			sources_status = :sources_status,
+			data = :data,
+			started_at = :started_at,
+			completed_at = :completed_at,
+			error_message = :error_message,
+			retry_count = :retry_count,
+			is_locked = FALSE,
+			updated_at = :updated_at
+		WHERE id = :id
+	`
+
+	result, err := r.db.NamedExecContext(ctx, query, e)
+	if err != nil {
+		return fmt.Errorf("failed to force update enrichment: %w", err)
 	}
 
 	rows, err := result.RowsAffected()

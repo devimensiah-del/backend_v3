@@ -86,6 +86,7 @@ func SetupRouter(handler *Handler, logger zerolog.Logger, jwtSecret string, allo
 		// Submission management
 		adminAPI.GET("/submissions", handler.ListSubmissions)
 		adminAPI.GET("/submissions/:id", handler.GetSubmissionAdmin)
+		adminAPI.GET("/submissions/:id/enrichment", handler.GetEnrichmentBySubmissionAdmin)
 		// REMOVED: PUT /submissions/:id/status - Violates "Single Status Rule"
 		// Submissions always have status "received". Status is derived from Enrichment/Analysis.
 		adminAPI.POST("/submissions/:id/retry-enrichment", handler.RetryEnrichment)
@@ -96,6 +97,7 @@ func SetupRouter(handler *Handler, logger zerolog.Logger, jwtSecret string, allo
 		adminAPI.GET("/enrichment/:id", handler.GetEnrichmentAdmin)
 		adminAPI.PUT("/enrichment/:id", handler.UpdateEnrichment)
 		adminAPI.POST("/enrichment/:id/approve", handler.ApproveEnrichment)
+		adminAPI.POST("/enrichment/:id/unlock", handler.UnlockEnrichment)
 
 		// Analysis management
 		adminAPI.GET("/analysis/:id", handler.GetAnalysisAdmin)

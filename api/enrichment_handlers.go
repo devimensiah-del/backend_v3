@@ -3,7 +3,10 @@ package api
 import (
 	"net/http"
 
+	"backend_v3/domain/enrichment"
+
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog/log"
 )
 
 // GetEnrichment handles GET /api/v1/submissions/:id/enrichment
@@ -79,16 +82,8 @@ func (h *Handler) GetEnrichment(c *gin.Context) {
 	}
 
 	// Transform to DTO to fix field name mismatch (enrichedData -> data)
-	response := EnrichmentResponse{
-		ID:           enrichment.ID.String(),
-		SubmissionID: enrichment.SubmissionID.String(),
-		Status:       string(enrichment.Status),
-		Progress:     enrichment.Progress,
-		CurrentStep:  enrichment.CurrentStep,
-		Data:         enrichment.EnrichedData, // Maps enrichedData -> data
-		CreatedAt:    enrichment.CreatedAt,
-		UpdatedAt:    enrichment.UpdatedAt,
-	}
+	// Use helper function for inferred progress
+	response := buildEnrichmentResponse(enrichment)
 
 	c.JSON(http.StatusOK, gin.H{
 		"enrichment": response,
@@ -133,19 +128,36 @@ func (h *Handler) UpdateEnrichment(c *gin.Context) {
 	}
 
 	// Transform to DTO
-	response := EnrichmentResponse{
-		ID:           updatedEnrichment.ID.String(),
-		SubmissionID: updatedEnrichment.SubmissionID.String(),
-		Status:       string(updatedEnrichment.Status),
-		Progress:     updatedEnrichment.Progress,
-		CurrentStep:  updatedEnrichment.CurrentStep,
-		Data:         updatedEnrichment.EnrichedData,
-		CreatedAt:    updatedEnrichment.CreatedAt,
-		UpdatedAt:    updatedEnrichment.UpdatedAt,
-	}
+	response := buildEnrichmentResponse(updatedEnrichment)
 
 	c.JSON(http.StatusOK, gin.H{
 		"enrichment": response,
+	})
+}
+
+// GetEnrichmentProgress handles GET /api/v1/enrichment/:id/progress
+// Public endpoint (or protected) for polling progress
+func (h *Handler) GetEnrichmentProgress(c *gin.Context) {
+	enrichmentID := c.Param("id")
+
+	// Parse UUID
+	enrichUUID, err := parseUUID(enrichmentID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid enrichment ID format"})
+		return
+	}
+
+	// Get enrichment
+	enrichment, err := h.enrichmentSvc.GetByID(c.Request.Context(), enrichUUID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Enrichment not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"progress":    enrichment.Progress,
+		"currentStep": enrichment.CurrentStep,
+		"status":      enrichment.Status,
 	})
 }
 
@@ -186,20 +198,58 @@ func (h *Handler) ApproveEnrichment(c *gin.Context) {
 	}
 
 	// Transform to DTO
-	enrichmentResponse := EnrichmentResponse{
-		ID:           updatedEnrichment.ID.String(),
-		SubmissionID: updatedEnrichment.SubmissionID.String(),
-		Status:       string(updatedEnrichment.Status),
-		Progress:     updatedEnrichment.Progress,
-		CurrentStep:  updatedEnrichment.CurrentStep,
-		Data:         updatedEnrichment.EnrichedData,
-		CreatedAt:    updatedEnrichment.CreatedAt,
-		UpdatedAt:    updatedEnrichment.UpdatedAt,
-	}
+	enrichmentResponse := buildEnrichmentResponse(updatedEnrichment)
 
 	c.JSON(http.StatusOK, gin.H{
 		"enrichment": enrichmentResponse,
 		"message":    "Enrichment approved, analysis job enqueued",
+	})
+}
+
+// UnlockEnrichment handles POST /api/v1/admin/enrichment/:id/unlock
+// Manually unlocks a stuck enrichment (recovery endpoint)
+func (h *Handler) UnlockEnrichment(c *gin.Context) {
+	enrichmentID := c.Param("id")
+
+	// Parse and validate UUID
+	enrichUUID, err := parseUUID(enrichmentID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid ID",
+			Message: "Invalid enrichment ID format",
+		})
+		return
+	}
+
+	// Get enrichment
+	enrichment, err := h.enrichmentSvc.GetByID(c.Request.Context(), enrichUUID)
+	if err != nil {
+		h.logger.Error().Err(err).Str("enrichment_id", enrichmentID).Msg("Failed to fetch enrichment")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Fetch failed",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	// Unlock the enrichment
+	enrichment.IsLocked = false
+	err = h.enrichmentSvc.UpdateUnlock(c.Request.Context(), enrichment)
+	if err != nil {
+		h.logger.Error().Err(err).Str("enrichment_id", enrichmentID).Msg("Failed to unlock enrichment")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Unlock failed",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	// Transform to DTO
+	enrichmentResponse := buildEnrichmentResponse(enrichment)
+
+	c.JSON(http.StatusOK, gin.H{
+		"enrichment": enrichmentResponse,
+		"message":    "Enrichment unlocked successfully",
 	})
 }
 
@@ -229,16 +279,102 @@ func (h *Handler) GetEnrichmentAdmin(c *gin.Context) {
 	}
 
 	// Transform to DTO
-	response := EnrichmentResponse{
-		ID:           enrichment.ID.String(),
-		SubmissionID: enrichment.SubmissionID.String(),
-		Status:       string(enrichment.Status),
-		Progress:     enrichment.Progress,
-		CurrentStep:  enrichment.CurrentStep,
-		Data:         enrichment.EnrichedData,
-		CreatedAt:    enrichment.CreatedAt,
-		UpdatedAt:    enrichment.UpdatedAt,
+	response := buildEnrichmentResponse(enrichment)
+
+	c.JSON(http.StatusOK, gin.H{
+		"enrichment": response,
+	})
+}
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+// calculateInferredProgress dynamically calculates progress based on status and current_step
+// This implements the "inferred progress" pattern to avoid storing redundant state in DB
+func calculateInferredProgress(status string, currentStep string) int {
+	// Completed or approved = 100%
+	if status == "completed" || status == "approved" {
+		return 100
 	}
+
+	// Pending = infer from current step
+	if status == "pending" {
+		switch currentStep {
+		case "Scanning digital footprint (Transient)...":
+			return 10
+		case "Agent is synthesizing Intelligence Profile...":
+			return 50
+		case "Finalizing profile...":
+			return 90
+		default:
+			return 5 // Just started
+		}
+	}
+
+	return 0
+}
+
+// buildEnrichmentResponse creates an EnrichmentResponse from domain model
+// Uses inferred progress instead of database field for better accuracy
+func buildEnrichmentResponse(e *enrichment.Enrichment) EnrichmentResponse {
+	// DEBUG: Log the enriched data to verify it's being populated
+	log.Debug().
+		Str("enrichment_id", e.ID.String()).
+		Interface("enriched_data", e.EnrichedData).
+		Int("data_size", len(e.EnrichedData)).
+		Msg("Building enrichment response")
+
+	return EnrichmentResponse{
+		ID:           e.ID.String(),
+		SubmissionID: e.SubmissionID.String(),
+		Status:       string(e.Status),
+		Progress:     calculateInferredProgress(string(e.Status), e.CurrentStep),
+		CurrentStep:  e.CurrentStep,
+		Data:         e.EnrichedData,
+		IsLocked:     e.IsLocked,
+		CreatedAt:    e.CreatedAt,
+		UpdatedAt:    e.UpdatedAt,
+	}
+}
+
+// GetEnrichmentBySubmissionAdmin handles GET /api/v1/admin/submissions/:id/enrichment
+// Admin can fetch enrichment by submission ID (for admin edit page)
+func (h *Handler) GetEnrichmentBySubmissionAdmin(c *gin.Context) {
+	submissionID := c.Param("id")
+
+	// Parse and validate UUID
+	subUUID, err := parseUUID(submissionID)
+	if err != nil {
+		log.Error().Err(err).Str("submission_id", submissionID).Msg("Invalid submission ID format")
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid ID",
+			Message: "Invalid submission ID format",
+		})
+		return
+	}
+
+	log.Debug().Str("submission_id", subUUID.String()).Msg("Fetching enrichment by submission ID")
+
+	// Get enrichment by submission ID (admin access, no ownership check needed)
+	enrichment, err := h.enrichmentSvc.GetBySubmissionID(c.Request.Context(), subUUID)
+	if err != nil {
+		log.Error().Err(err).Str("submission_id", subUUID.String()).Msg("Failed to fetch enrichment")
+		c.JSON(http.StatusNotFound, ErrorResponse{
+			Error:   "Not found",
+			Message: "Enrichment not found for this submission",
+		})
+		return
+	}
+
+	log.Debug().
+		Str("enrichment_id", enrichment.ID.String()).
+		Str("submission_id", subUUID.String()).
+		Str("status", string(enrichment.Status)).
+		Msg("Enrichment fetched successfully")
+
+	// Transform to DTO
+	response := buildEnrichmentResponse(enrichment)
 
 	c.JSON(http.StatusOK, gin.H{
 		"enrichment": response,

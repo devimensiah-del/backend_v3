@@ -1,19 +1,17 @@
 package api
 
 import (
+	"backend_v3/domain/enrichment"
+	"backend_v3/domain/submission"
 	"encoding/json"
 	"fmt"
 	"net/http"
 
-	"backend_v3/domain/submission"
-
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
 )
 
-// --- PUBLIC SUBMISSION ENDPOINTS ---
-
-// CreateSubmission starts the workflow
 func (h *Handler) CreateSubmission(c *gin.Context) {
 	var req CreateSubmissionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -61,9 +59,7 @@ func (h *Handler) CreateSubmission(c *gin.Context) {
 	if req.StrategicGoal == "" {
 		req.StrategicGoal = "Em definição"
 	}
-	if req.CurrentChallenges == "" {
-		req.CurrentChallenges = "A definir"
-	}
+	// Note: CurrentChallenges deliberately left empty - will be populated during enrichment phase
 	if req.CompetitivePosition == "" {
 		req.CompetitivePosition = "Em análise"
 	}
@@ -100,8 +96,8 @@ func (h *Handler) CreateSubmission(c *gin.Context) {
 		AnnualRevenueMax: additionalInfo.AnnualRevenueMax,
 		FundingStage:     stringToPtr(additionalInfo.FundingStage),
 
-		// Strategic information
-		BusinessChallenge: fmt.Sprintf("%s | %s | %s", req.StrategicGoal, req.CurrentChallenges, req.CompetitivePosition),
+		// Strategic information - concatenate with " | " separator, skipping empty fields
+		BusinessChallenge: buildBusinessChallengeString(req.StrategicGoal, req.CurrentChallenges, req.CompetitivePosition),
 		AdditionalNotes:   stringToPtr(additionalInfo.AdditionalNotes),
 		LinkedInURL:       stringToPtr(additionalInfo.LinkedInURL),
 		TwitterHandle:     stringToPtr(additionalInfo.TwitterHandle),
@@ -110,13 +106,35 @@ func (h *Handler) CreateSubmission(c *gin.Context) {
 		UserID: userID,
 	}
 
-	// Use SubmitForm which saves to DB AND triggers enrichment workflow
+	// Use SubmitForm which saves to DB
 	sub, err := h.submissionSvc.SubmitForm(c.Request.Context(), submitReq)
 
 	if err != nil {
 		h.logger.Error().Err(err).Msg("Failed to create submission")
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Submission failed", Message: err.Error()})
 		return
+	}
+
+	// -------------------------------------------------------------------------
+	// AUTO-TRIGGER ENRICHMENT WORKFLOW
+	// -------------------------------------------------------------------------
+
+	// 1. Create Enrichment Record (Status: Pending)
+	enrichmentRecord := enrichment.NewEnrichment(sub.ID)
+	if err := h.enrichmentSvc.Create(c.Request.Context(), enrichmentRecord); err != nil {
+		h.logger.Error().Err(err).Str("sub_id", sub.ID.String()).Msg("Failed to create enrichment record")
+		// We don't fail the request, but we log it. The user might see "Analysis not started".
+	} else {
+		// 2. Enqueue Enrichment Job
+		payload, _ := json.Marshal(map[string]interface{}{
+			"submission_id": sub.ID.String(),
+		})
+		task := asynq.NewTask("enrichment_job", payload)
+		if _, err := h.asynqClient.Enqueue(task, asynq.MaxRetry(3)); err != nil {
+			h.logger.Error().Err(err).Str("sub_id", sub.ID.String()).Msg("Failed to enqueue enrichment job")
+		} else {
+			h.logger.Info().Str("sub_id", sub.ID.String()).Msg("Enrichment workflow auto-triggered")
+		}
 	}
 
 	// Frontend expects wrapped response: { submission: {...} }
@@ -232,7 +250,7 @@ func (h *Handler) ListUserSubmissions(c *gin.Context) {
 		Offset:  offset,
 		OrderBy: "created_at",
 		Order:   "DESC",
-		UserID:  &userUUID,  // Filter by user ID
+		UserID:  &userUUID, // Filter by user ID
 	}
 
 	// Add status filter if provided

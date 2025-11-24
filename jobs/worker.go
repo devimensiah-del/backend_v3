@@ -202,6 +202,11 @@ func (w *Worker) HandleEnrichmentJob(ctx context.Context, task *asynq.Task) erro
 		Msg("Enrichment job started")
 
 	// 3. Run enrichment agent
+	// Update progress: Started
+	if err := w.enrichmentService.UpdateProgress(ctx, submissionID, 10, "Scanning digital footprint (Transient)..."); err != nil {
+		jobLogger.Warn().Err(err).Msg("Failed to update progress")
+	}
+
 	enrichmentData, err := w.enrichmentService.EnrichSubmission(ctx, submissionID)
 	if err != nil {
 		jobLogger.Error().
@@ -217,6 +222,11 @@ func (w *Worker) HandleEnrichmentJob(ctx context.Context, task *asynq.Task) erro
 
 		// Permanent failure - skip retry
 		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
+	}
+
+	// Update progress: Completed
+	if err := w.enrichmentService.UpdateProgress(ctx, submissionID, 100, "Enrichment completed"); err != nil {
+		jobLogger.Warn().Err(err).Msg("Failed to update progress")
 	}
 
 	// 4. Success
@@ -389,12 +399,12 @@ func (w *Worker) moveToDLQ(ctx context.Context, task *asynq.Task, err error) {
 	retried, _ := asynq.GetRetryCount(ctx)
 
 	dlqEntry := map[string]interface{}{
-		"task_type":    task.Type(),
-		"payload":      string(task.Payload()),
-		"error":        err.Error(),
-		"failed_at":    time.Now().Format(time.RFC3339),
-		"retry_count":  retried,
-		"task_id":      task.ResultWriter().TaskID(),
+		"task_type":   task.Type(),
+		"payload":     string(task.Payload()),
+		"error":       err.Error(),
+		"failed_at":   time.Now().Format(time.RFC3339),
+		"retry_count": retried,
+		"task_id":     task.ResultWriter().TaskID(),
 	}
 
 	data, marshalErr := json.Marshal(dlqEntry)

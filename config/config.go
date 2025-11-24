@@ -49,16 +49,16 @@ type Config struct {
 	RedisPassword string
 
 	// Worker configuration
-	WorkerEnabled           bool
-	WorkerConcurrency       int
-	WorkerQueues            string
-	EnrichmentTimeout       int // seconds
-	AnalysisTimeout         int // seconds
-	EnrichmentMaxRetries    int
-	AnalysisMaxRetries      int
-	JobRetryInitialDelay    int // seconds
-	JobRetryMaxDelay        int // seconds
-	DeadLetterQueueTTL      int // hours
+	WorkerEnabled        bool
+	WorkerConcurrency    int
+	WorkerQueues         string
+	EnrichmentTimeout    int // seconds
+	AnalysisTimeout      int // seconds
+	EnrichmentMaxRetries int
+	AnalysisMaxRetries   int
+	JobRetryInitialDelay int // seconds
+	JobRetryMaxDelay     int // seconds
+	DeadLetterQueueTTL   int // hours
 
 	// External Services
 	GotenbergURL      string
@@ -87,8 +87,8 @@ func Load() (*Config, error) {
 
 		// Database Connection Pool (Railway PostgreSQL typically allows 50-100 connections)
 		// Production values should be tuned based on: (API instances × max_connections) + worker_connections < DB_limit
-		DBMaxOpenConns:    getEnvInt("DB_MAX_OPEN_CONNS", 25),         // Maximum open connections
-		DBMaxIdleConns:    getEnvInt("DB_MAX_IDLE_CONNS", 5),          // Idle connections to keep alive
+		DBMaxOpenConns:    getEnvInt("DB_MAX_OPEN_CONNS", 25), // Maximum open connections
+		DBMaxIdleConns:    getEnvInt("DB_MAX_IDLE_CONNS", 5),  // Idle connections to keep alive
 		DBConnMaxLifetime: time.Duration(getEnvInt("DB_CONN_MAX_LIFETIME_MINUTES", 5)) * time.Minute,
 
 		// AI Configuration
@@ -104,13 +104,13 @@ func Load() (*Config, error) {
 		WorkerEnabled:        getEnvBool("WORKER_ENABLED", true),
 		WorkerConcurrency:    getEnvInt("ASYNQ_CONCURRENCY", 10),
 		WorkerQueues:         "critical:6,default:3,low:1",
-		EnrichmentTimeout:    getEnvInt("ENRICHMENT_TIMEOUT", 300),      // 5 minutes
-		AnalysisTimeout:      getEnvInt("ANALYSIS_TIMEOUT", 900),        // 15 minutes
-		EnrichmentMaxRetries: getEnvInt("ENRICHMENT_MAX_RETRIES", 3),    // 3 retries
-		AnalysisMaxRetries:   getEnvInt("ANALYSIS_MAX_RETRIES", 2),      // 2 retries
-		JobRetryInitialDelay: getEnvInt("JOB_RETRY_INITIAL_DELAY", 60),  // 1 minute
-		JobRetryMaxDelay:     getEnvInt("JOB_RETRY_MAX_DELAY", 3600),    // 1 hour
-		DeadLetterQueueTTL:   getEnvInt("DLQ_TTL_HOURS", 168),           // 7 days
+		EnrichmentTimeout:    getEnvInt("ENRICHMENT_TIMEOUT", 300),     // 5 minutes
+		AnalysisTimeout:      getEnvInt("ANALYSIS_TIMEOUT", 900),       // 15 minutes
+		EnrichmentMaxRetries: getEnvInt("ENRICHMENT_MAX_RETRIES", 3),   // 3 retries
+		AnalysisMaxRetries:   getEnvInt("ANALYSIS_MAX_RETRIES", 2),     // 2 retries
+		JobRetryInitialDelay: getEnvInt("JOB_RETRY_INITIAL_DELAY", 60), // 1 minute
+		JobRetryMaxDelay:     getEnvInt("JOB_RETRY_MAX_DELAY", 3600),   // 1 hour
+		DeadLetterQueueTTL:   getEnvInt("DLQ_TTL_HOURS", 168),          // 7 days
 
 		// External Services
 		// Note: Default Gotenberg URL assumes docker-compose service name "gotenberg"
@@ -291,8 +291,10 @@ func loadFrameworkConfigs() map[string]FrameworkConfig {
 	configs["porter"] = loadFrameworkConfig("porter", "AI_PORTER_MODEL", "AI_PORTER_TEMP", "AI_PORTER_MAX_TOKENS",
 		"openai/gpt-4o", 0.3, 1500)
 
+	// FIX: Use Claude 3.7 Sonnet for better market sizing estimation (validated in tests)
+	// Allows "partial data" responses instead of failing with empty output
 	configs["tam_sam_som"] = loadFrameworkConfig("tam_sam_som", "AI_TAM_MODEL", "AI_TAM_TEMP", "AI_TAM_MAX_TOKENS",
-		"openai/o3-mini", 0.1, 1200)
+		"anthropic/claude-3.7-sonnet", 0.6, 2000)
 
 	// Layer 2: Positioning
 	configs["swot"] = loadFrameworkConfig("swot", "AI_SWOT_MODEL", "AI_SWOT_TEMP", "AI_SWOT_MAX_TOKENS",
@@ -318,8 +320,10 @@ func loadFrameworkConfigs() map[string]FrameworkConfig {
 	configs["bsc"] = loadFrameworkConfig("bsc", "AI_BSC_MODEL", "AI_BSC_TEMP", "AI_BSC_MAX_TOKENS",
 		"openai/gpt-4o-mini", 0.35, 1500)
 
+	// FIX: Increase token limit to prevent JSON truncation (validated in tests)
+	// 1500 tokens insufficient for 3 detailed recommendations, increased to 2500
 	configs["decision_matrix"] = loadFrameworkConfig("decision_matrix", "AI_DECISION_MATRIX_MODEL", "AI_DECISION_MATRIX_TEMP", "AI_DECISION_MATRIX_MAX_TOKENS",
-		"openai/o3-mini", 0.2, 1500)
+		"openai/o3-mini", 0.2, 2500)
 
 	// Synthesis Layer
 	configs["synthesis"] = loadFrameworkConfig("synthesis", "AI_SYNTHESIS_MODEL", "AI_SYNTHESIS_TEMP", "AI_SYNTHESIS_MAX_TOKENS",
