@@ -16,23 +16,23 @@ type AuthRateLimiter struct {
 	mu       sync.RWMutex
 
 	// Configuration
-	maxAttempts    int           // Maximum attempts allowed
-	window         time.Duration // Time window for attempts
-	lockoutTime    time.Duration // How long to lock out after max attempts
+	maxAttempts int           // Maximum attempts allowed
+	window      time.Duration // Time window for attempts
+	lockoutTime time.Duration // How long to lock out after max attempts
 }
 
 type authAttempt struct {
-	count       int
+	count        int
 	firstAttempt time.Time
 	lockedUntil  time.Time
-	mu          sync.Mutex
+	mu           sync.Mutex
 }
 
 // NewAuthRateLimiter creates a rate limiter for authentication endpoints
 func NewAuthRateLimiter() *AuthRateLimiter {
 	limiter := &AuthRateLimiter{
 		attempts:    make(map[string]*authAttempt),
-		maxAttempts: 5,              // 5 attempts
+		maxAttempts: 5,                // 5 attempts
 		window:      15 * time.Minute, // per 15 minutes
 		lockoutTime: 15 * time.Minute, // 15 minute lockout
 	}
@@ -55,7 +55,7 @@ func (a *AuthRateLimiter) cleanup() {
 			attempt.mu.Lock()
 			// Remove if lockout expired and attempt window expired
 			if now.After(attempt.lockedUntil) &&
-			   now.Sub(attempt.firstAttempt) > a.window {
+				now.Sub(attempt.firstAttempt) > a.window {
 				delete(a.attempts, key)
 			}
 			attempt.mu.Unlock()

@@ -8,18 +8,18 @@
 
 ## Page-by-Page Analysis
 
+### Roadmap
+- **Size:** 5016 bytes
+- **Issues Found:** 1
+  - ⚠️ Contains very long text blocks (>300 chars) that may overflow
+
+### Cover
+- **Size:** 5205 bytes
+- **Issues Found:** 1
+  - ⚠️ Contains very long text blocks (>300 chars) that may overflow
+
 ### DividerPart1
 - **Size:** 3974 bytes
-- **Issues Found:** 1
-  - ⚠️ Contains very long text blocks (>300 chars) that may overflow
-
-### PESTEL_PES
-- **Size:** 5326 bytes
-- **Issues Found:** 1
-  - ⚠️ Contains very long text blocks (>300 chars) that may overflow
-
-### GrowthLoops
-- **Size:** 10042 bytes
 - **Issues Found:** 1
   - ⚠️ Contains very long text blocks (>300 chars) that may overflow
 
@@ -28,13 +28,18 @@
 - **Issues Found:** 1
   - ⚠️ Contains very long text blocks (>300 chars) that may overflow
 
-### Roadmap
-- **Size:** 5016 bytes
+### CompetitiveAnalysis
+- **Size:** 4610 bytes
 - **Issues Found:** 1
   - ⚠️ Contains very long text blocks (>300 chars) that may overflow
 
 ### Appendix
 - **Size:** 6632 bytes
+- **Issues Found:** 1
+  - ⚠️ Contains very long text blocks (>300 chars) that may overflow
+
+### TableOfContents
+- **Size:** 8411 bytes
 - **Issues Found:** 1
   - ⚠️ Contains very long text blocks (>300 chars) that may overflow
 
@@ -49,23 +54,8 @@
   - ⚠️ Porter's analysis may be incomplete (found 1 force references, expected 7+)
   - ⚠️ Contains very long text blocks (>300 chars) that may overflow
 
-### SWOT
-- **Size:** 12770 bytes
-- **Issues Found:** 1
-  - ⚠️ Contains very long text blocks (>300 chars) that may overflow
-
-### BlueOcean
-- **Size:** 6938 bytes
-- **Issues Found:** 1
-  - ⚠️ Contains very long text blocks (>300 chars) that may overflow
-
-### DividerPart3
-- **Size:** 3871 bytes
-- **Issues Found:** 1
-  - ⚠️ Contains very long text blocks (>300 chars) that may overflow
-
-### DividerPart4
-- **Size:** 3761 bytes
+### MarketSizing
+- **Size:** 5095 bytes
 - **Issues Found:** 1
   - ⚠️ Contains very long text blocks (>300 chars) that may overflow
 
@@ -79,18 +69,23 @@
 - **Issues Found:** 1
   - ⚠️ Contains very long text blocks (>300 chars) that may overflow
 
-### Cover
-- **Size:** 5205 bytes
+### ExecutiveSummary
+- **Size:** 7990 bytes
 - **Issues Found:** 1
   - ⚠️ Contains very long text blocks (>300 chars) that may overflow
 
-### TableOfContents
-- **Size:** 8411 bytes
+### BlueOcean
+- **Size:** 6938 bytes
 - **Issues Found:** 1
   - ⚠️ Contains very long text blocks (>300 chars) that may overflow
 
-### DividerPart2
-- **Size:** 3791 bytes
+### DividerPart3
+- **Size:** 3871 bytes
+- **Issues Found:** 1
+  - ⚠️ Contains very long text blocks (>300 chars) that may overflow
+
+### GrowthLoops
+- **Size:** 10042 bytes
 - **Issues Found:** 1
   - ⚠️ Contains very long text blocks (>300 chars) that may overflow
 
@@ -104,18 +99,18 @@
 - **Issues Found:** 1
   - ⚠️ Contains very long text blocks (>300 chars) that may overflow
 
-### RiskAssessment
-- **Size:** 5303 bytes
+### PESTEL_PES
+- **Size:** 5326 bytes
 - **Issues Found:** 1
   - ⚠️ Contains very long text blocks (>300 chars) that may overflow
 
-### ExecutiveSummary
-- **Size:** 7990 bytes
+### SWOT
+- **Size:** 12770 bytes
 - **Issues Found:** 1
   - ⚠️ Contains very long text blocks (>300 chars) that may overflow
 
-### MarketSizing
-- **Size:** 5095 bytes
+### DividerPart2
+- **Size:** 3791 bytes
 - **Issues Found:** 1
   - ⚠️ Contains very long text blocks (>300 chars) that may overflow
 
@@ -124,8 +119,13 @@
 - **Issues Found:** 1
   - ⚠️ Contains very long text blocks (>300 chars) that may overflow
 
-### CompetitiveAnalysis
-- **Size:** 4610 bytes
+### DividerPart4
+- **Size:** 3761 bytes
+- **Issues Found:** 1
+  - ⚠️ Contains very long text blocks (>300 chars) that may overflow
+
+### RiskAssessment
+- **Size:** 5303 bytes
 - **Issues Found:** 1
   - ⚠️ Contains very long text blocks (>300 chars) that may overflow
 

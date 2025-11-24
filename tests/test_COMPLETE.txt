@@ -1,4 +1,0 @@
-# backend_v3/tests
-tests\workflow_test.go:9:2: package imensiah/backend_v3/domain/analysis is not in std (C:\Program Files\Go\src\imensiah\backend_v3\domain\analysis)
-FAIL	backend_v3/tests [setup failed]
-FAIL

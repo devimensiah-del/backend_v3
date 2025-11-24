@@ -71,6 +71,11 @@ func (m *MockRepository) GetAllVersionsBySubmissionID(ctx context.Context, submi
 	return args.Get(0).([]*Analysis), args.Error(1)
 }
 
+func (m *MockRepository) ClearLatest(ctx context.Context, submissionID string) error {
+	args := m.Called(ctx, submissionID)
+	return args.Error(0)
+}
+
 func (m *MockRepository) List(ctx context.Context, limit, offset int) ([]*Analysis, error) {
 	args := m.Called(ctx, limit, offset)
 	if args.Get(0) == nil {
@@ -422,6 +427,7 @@ func TestService_CreateVersion_IncrementsVersion(t *testing.T) {
 	parentAnalysis.Version = 1
 
 	mockRepo.On("GetByID", mock.Anything, parentAnalysis.ID).Return(parentAnalysis, nil)
+	mockRepo.On("ClearLatest", mock.Anything, parentAnalysis.SubmissionID).Return(nil)
 	mockRepo.On("Create", mock.Anything, mock.MatchedBy(func(a *Analysis) bool {
 		return a.Version == 2 && a.ParentAnalysisID != nil && *a.ParentAnalysisID == parentAnalysis.ID
 	})).Return(nil)
@@ -449,6 +455,7 @@ func TestService_CreateVersion_WithEdits(t *testing.T) {
 	}
 
 	mockRepo.On("GetByID", mock.Anything, parentAnalysis.ID).Return(parentAnalysis, nil)
+	mockRepo.On("ClearLatest", mock.Anything, parentAnalysis.SubmissionID).Return(nil)
 	mockRepo.On("Create", mock.Anything, mock.MatchedBy(func(a *Analysis) bool {
 		return a.PESTEL.Summary == "Edited PESTEL summary" && a.Version == 2
 	})).Return(nil)

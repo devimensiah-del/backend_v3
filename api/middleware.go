@@ -190,7 +190,7 @@ func AdminAuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-			// Check if role is admin, super_admin, or service_role (Supabase)
+		// Check if role is admin, super_admin, or service_role (Supabase)
 		userRole := fmt.Sprintf("%v", role)
 		if userRole != "admin" && userRole != "super_admin" && userRole != "service_role" {
 			// SECURITY: Log authorization failure

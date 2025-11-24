@@ -9,7 +9,6 @@ import (
 )
 
 // Repository defines data access methods for analysis
-// Frontend developers: This handles all database operations for analyses
 type Repository interface {
 	Create(ctx context.Context, analysis *Analysis) error
 	Update(ctx context.Context, analysis *Analysis) error
@@ -18,6 +17,7 @@ type Repository interface {
 	GetBySubmissionID(ctx context.Context, submissionID string) (*Analysis, error)
 	GetLatestVersionBySubmissionID(ctx context.Context, submissionID string) (*Analysis, error)
 	GetAllVersionsBySubmissionID(ctx context.Context, submissionID string) ([]*Analysis, error)
+	ClearLatest(ctx context.Context, submissionID string) error
 	List(ctx context.Context, limit, offset int) ([]*Analysis, error)
 	Delete(ctx context.Context, id string) error
 	BeginTx(ctx context.Context) (*sqlx.Tx, error) // Begin transaction
@@ -111,7 +111,6 @@ func (r *PostgresRepository) Update(ctx context.Context, analysis *Analysis) err
 }
 
 // UpdateWithTx modifies an existing analysis record within a transaction
-// CRITICAL: Use this for atomic checkpoint saves to prevent race conditions
 func (r *PostgresRepository) UpdateWithTx(ctx context.Context, tx *sqlx.Tx, analysis *Analysis) error {
 	query := `
 		UPDATE analyses SET
@@ -195,8 +194,7 @@ func (r *PostgresRepository) GetByID(ctx context.Context, id string) (*Analysis,
 	return &analysis, nil
 }
 
-// GetBySubmissionID retrieves an analysis by submission ID
-// Deprecated: Use GetLatestVersionBySubmissionID instead
+// GetBySubmissionID retrieves an analysis by submission ID (latest version)
 func (r *PostgresRepository) GetBySubmissionID(ctx context.Context, submissionID string) (*Analysis, error) {
 	return r.GetLatestVersionBySubmissionID(ctx, submissionID)
 }
@@ -253,8 +251,20 @@ func (r *PostgresRepository) GetAllVersionsBySubmissionID(ctx context.Context, s
 	return analyses, nil
 }
 
+// ClearLatest resets is_latest=false for all analyses of a submission
+func (r *PostgresRepository) ClearLatest(ctx context.Context, submissionID string) error {
+	query := `
+		UPDATE analyses
+		SET is_latest = false, updated_at = NOW()
+		WHERE submission_id = $1 AND deleted_at IS NULL
+	`
+	if _, err := r.db.ExecContext(ctx, query, submissionID); err != nil {
+		return fmt.Errorf("failed to clear latest analyses: %w", err)
+	}
+	return nil
+}
+
 // List retrieves all analyses with pagination
-// Frontend developers: Use this for admin dashboard listing
 func (r *PostgresRepository) List(ctx context.Context, limit, offset int) ([]*Analysis, error) {
 	query := `
 		SELECT

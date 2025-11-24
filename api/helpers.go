@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/rs/zerolog"
 )
 
 // parseUUID safely parses a UUID string and returns an error if invalid
@@ -75,4 +77,20 @@ func buildBusinessChallengeString(strategicGoal, currentChallenges, competitiveP
 	}
 
 	return strings.Join(parts, " | ")
+}
+
+// respondError centralizes JSON error responses with logging.
+// userMsg should be localized for the frontend (Portuguese).
+func respondError(c *gin.Context, logger zerolog.Logger, status int, err error, userMsg string) {
+	if err != nil {
+		logger.Error().
+			Err(err).
+			Str("path", c.FullPath()).
+			Str("method", c.Request.Method).
+			Msg("API error")
+	}
+	c.JSON(status, ErrorResponse{
+		Error:   userMsg,
+		Message: userMsg,
+	})
 }

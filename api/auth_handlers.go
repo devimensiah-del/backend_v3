@@ -6,22 +6,54 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
+	"github.com/rs/zerolog"
 )
 
-// --- AUTH ENDPOINTS ---
+// AuthHandlers holds all service dependencies and configuration for auth handlers
+type AuthHandlers struct {
+	DB              *sqlx.DB
+	Logger          zerolog.Logger
+	SupabaseURL     string
+	SupabaseAnonKey string
+	JWTSecret       string
+	MockMode        bool
+}
+
+// NewAuthHandlers creates a new auth handler set with all dependencies
+func NewAuthHandlers(
+	db *sqlx.DB,
+	logger zerolog.Logger,
+	supabaseURL string,
+	supabaseAnonKey string,
+	jwtSecret string,
+) *AuthHandlers {
+	mockMode := strings.EqualFold(supabaseURL, "mock") || strings.EqualFold(os.Getenv("MOCK_AUTH"), "true")
+	return &AuthHandlers{
+		DB:              db,
+		Logger:          logger,
+		SupabaseURL:     supabaseURL,
+		SupabaseAnonKey: supabaseAnonKey,
+		JWTSecret:       jwtSecret,
+		MockMode:        mockMode,
+	}
+}
 
 // GetCurrentUser returns the authenticated user's profile
-func (h *Handler) GetCurrentUser(c *gin.Context) {
-	// Get user ID from AuthMiddleware
+func (h *AuthHandlers) GetCurrentUser(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Unauthorized", Message: "User not authenticated"})
 		return
 	}
 
-	// Query user_profiles table
 	var profile UserProfile
 	query := `
 		SELECT id, email, full_name, role, is_active, created_at, updated_at
@@ -29,9 +61,9 @@ func (h *Handler) GetCurrentUser(c *gin.Context) {
 		WHERE id = $1
 	`
 
-	err := h.db.Get(&profile, query, userID)
+	err := h.DB.Get(&profile, query, userID)
 	if err != nil {
-		h.logger.Error().Err(err).Str("user_id", userID.(string)).Msg("Failed to fetch user profile")
+		h.Logger.Error().Err(err).Str("user_id", fmt.Sprintf("%v", userID)).Msg("Failed to fetch user profile")
 		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "User profile not found"})
 		return
 	}
@@ -40,18 +72,42 @@ func (h *Handler) GetCurrentUser(c *gin.Context) {
 }
 
 // Login handles POST /api/v1/auth/login
-func (h *Handler) Login(c *gin.Context) {
+func (h *AuthHandlers) Login(c *gin.Context) {
 	var req LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Error:   "Invalid request",
-			Message: "Por favor, preencha email e senha válidos",
+			Message: "Please provide a valid email and password",
 		})
 		return
 	}
 
-	// Supabase Auth API endpoint for login
-	authURL := fmt.Sprintf("%s/auth/v1/token?grant_type=password", h.supabaseURL)
+	if h.MockMode {
+		userID, role, err := h.ensureUserExists(req.Email)
+		if err != nil {
+			h.Logger.Error().Err(err).Msg("Mock login failed: ensure user")
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Login failed", Message: "mock auth error"})
+			return
+		}
+		token, err := h.issueMockToken(userID, role, req.Email)
+		if err != nil {
+			h.Logger.Error().Err(err).Msg("Mock login failed: token")
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Login failed", Message: "mock token error"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"access_token": token,
+			"token":        token,
+			"user": gin.H{
+				"id":    userID,
+				"email": req.Email,
+				"role":  role,
+			},
+		})
+		return
+	}
+
+	authURL := fmt.Sprintf("%s/auth/v1/token?grant_type=password", h.SupabaseURL)
 
 	payload := map[string]string{
 		"email":    req.Email,
@@ -60,13 +116,11 @@ func (h *Handler) Login(c *gin.Context) {
 
 	resp, err := h.callSupabaseAuth("POST", authURL, payload)
 	if err != nil {
-		h.logger.Error().Err(err).Msg("Login failed")
+		h.Logger.Error().Err(err).Msg("Login failed")
 		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Login failed", Message: "Invalid credentials"})
 		return
 	}
 
-	// Frontend expects "token" field, Supabase returns "access_token"
-	// Add "token" as alias for compatibility
 	if accessToken, ok := resp["access_token"].(string); ok {
 		resp["token"] = accessToken
 	}
@@ -75,18 +129,42 @@ func (h *Handler) Login(c *gin.Context) {
 }
 
 // Signup handles POST /api/v1/auth/signup
-func (h *Handler) Signup(c *gin.Context) {
+func (h *AuthHandlers) Signup(c *gin.Context) {
 	var req SignupRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Error:   "Invalid request",
-			Message: "Por favor, preencha todos os campos obrigatórios corretamente",
+			Message: "Please provide all required fields",
 		})
 		return
 	}
 
-	// Supabase Auth API endpoint for signup
-	authURL := fmt.Sprintf("%s/auth/v1/signup", h.supabaseURL)
+	if h.MockMode {
+		userID, role, err := h.ensureUserExists(req.Email)
+		if err != nil {
+			h.Logger.Error().Err(err).Msg("Mock signup failed: ensure user")
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Signup failed", Message: "mock auth error"})
+			return
+		}
+		token, err := h.issueMockToken(userID, role, req.Email)
+		if err != nil {
+			h.Logger.Error().Err(err).Msg("Mock signup failed: token")
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Signup failed", Message: "mock token error"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"access_token": token,
+			"token":        token,
+			"user": gin.H{
+				"id":    userID,
+				"email": req.Email,
+				"role":  role,
+			},
+		})
+		return
+	}
+
+	authURL := fmt.Sprintf("%s/auth/v1/signup", h.SupabaseURL)
 
 	payload := map[string]interface{}{
 		"email":    req.Email,
@@ -98,13 +176,11 @@ func (h *Handler) Signup(c *gin.Context) {
 
 	resp, err := h.callSupabaseAuth("POST", authURL, payload)
 	if err != nil {
-		h.logger.Error().Err(err).Msg("Signup failed")
+		h.Logger.Error().Err(err).Msg("Signup failed")
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Signup failed", Message: err.Error()})
 		return
 	}
 
-	// Frontend expects "token" field, Supabase returns "access_token"
-	// Add "token" as alias for compatibility
 	if accessToken, ok := resp["access_token"].(string); ok {
 		resp["token"] = accessToken
 	}
@@ -113,31 +189,31 @@ func (h *Handler) Signup(c *gin.Context) {
 }
 
 // Logout handles POST /api/v1/auth/logout
-func (h *Handler) Logout(c *gin.Context) {
-	// Extract JWT token from Authorization header
+func (h *AuthHandlers) Logout(c *gin.Context) {
+	if h.MockMode {
+		c.JSON(http.StatusOK, MessageResponse{Message: "Logged out successfully (mock)"})
+		return
+	}
+
 	token := c.GetHeader("Authorization")
 	if token == "" {
 		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Unauthorized", Message: "No token provided"})
 		return
 	}
-
-	// Remove "Bearer " prefix
-	if len(token) > 7 && token[:7] == "Bearer " {
+	if len(token) > 7 && strings.HasPrefix(token, "Bearer ") {
 		token = token[7:]
 	}
 
-	// Supabase Auth API endpoint for logout
-	authURL := fmt.Sprintf("%s/auth/v1/logout", h.supabaseURL)
+	authURL := fmt.Sprintf("%s/auth/v1/logout", h.SupabaseURL)
 
-	// Call Supabase with the user's token
 	req, _ := http.NewRequest("POST", authURL, nil)
-	req.Header.Set("apikey", h.supabaseAnonKey)
+	req.Header.Set("apikey", h.SupabaseAnonKey)
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 
 	client := &http.Client{}
 	httpResp, err := client.Do(req)
 	if err != nil {
-		h.logger.Error().Err(err).Msg("Logout request failed")
+		h.Logger.Error().Err(err).Msg("Logout request failed")
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Logout failed", Message: err.Error()})
 		return
 	}
@@ -145,7 +221,7 @@ func (h *Handler) Logout(c *gin.Context) {
 
 	if httpResp.StatusCode != http.StatusNoContent && httpResp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(httpResp.Body)
-		h.logger.Error().Int("status", httpResp.StatusCode).Str("body", string(body)).Msg("Logout failed")
+		h.Logger.Error().Int("status", httpResp.StatusCode).Str("body", string(body)).Msg("Logout failed")
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "Logout failed",
 			Message: "Failed to invalidate session",
@@ -157,18 +233,24 @@ func (h *Handler) Logout(c *gin.Context) {
 }
 
 // ForgotPassword handles POST /api/v1/auth/forgot-password
-func (h *Handler) ForgotPassword(c *gin.Context) {
+func (h *AuthHandlers) ForgotPassword(c *gin.Context) {
 	var req ForgotPasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Error:   "Invalid request",
-			Message: "Por favor, forneça um email válido",
+			Message: "Please provide a valid email",
 		})
 		return
 	}
 
-	// Supabase Auth API endpoint for password recovery
-	authURL := fmt.Sprintf("%s/auth/v1/recover", h.supabaseURL)
+	if h.MockMode {
+		c.JSON(http.StatusOK, PasswordResetResponse{
+			Message: "Password reset email sent (mock)",
+		})
+		return
+	}
+
+	authURL := fmt.Sprintf("%s/auth/v1/recover", h.SupabaseURL)
 
 	payload := map[string]string{
 		"email": req.Email,
@@ -176,29 +258,31 @@ func (h *Handler) ForgotPassword(c *gin.Context) {
 
 	_, err := h.callSupabaseAuth("POST", authURL, payload)
 	if err != nil {
-		h.logger.Error().Err(err).Msg("Password reset request failed")
-		// Don't reveal if email exists or not for security
+		h.Logger.Error().Err(err).Msg("Password reset request failed")
 	}
 
-	// Always return success to prevent email enumeration
 	c.JSON(http.StatusOK, PasswordResetResponse{
 		Message: "If an account exists with this email, you will receive password reset instructions.",
 	})
 }
 
 // ResetPassword handles POST /api/v1/auth/reset-password
-func (h *Handler) ResetPassword(c *gin.Context) {
+func (h *AuthHandlers) ResetPassword(c *gin.Context) {
 	var req ResetPasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Error:   "Invalid request",
-			Message: "Token e nova senha são obrigatórios",
+			Message: "Token and new password are required",
 		})
 		return
 	}
 
-	// Supabase Auth API - verify token and update password
-	authURL := fmt.Sprintf("%s/auth/v1/token?grant_type=recovery", h.supabaseURL)
+	if h.MockMode {
+		c.JSON(http.StatusOK, MessageResponse{Message: "Password reset successful (mock)"})
+		return
+	}
+
+	authURL := fmt.Sprintf("%s/auth/v1/token?grant_type=recovery", h.SupabaseURL)
 
 	payload := map[string]string{
 		"token":    req.Token,
@@ -207,7 +291,7 @@ func (h *Handler) ResetPassword(c *gin.Context) {
 
 	resp, err := h.callSupabaseAuth("POST", authURL, payload)
 	if err != nil {
-		h.logger.Error().Err(err).Msg("Password reset failed")
+		h.Logger.Error().Err(err).Msg("Password reset failed")
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Password reset failed", Message: "Invalid or expired token"})
 		return
 	}
@@ -216,30 +300,31 @@ func (h *Handler) ResetPassword(c *gin.Context) {
 }
 
 // UpdatePassword handles PUT /api/v1/auth/update-password
-func (h *Handler) UpdatePassword(c *gin.Context) {
+func (h *AuthHandlers) UpdatePassword(c *gin.Context) {
 	var req UpdatePasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Error:   "Invalid request",
-			Message: "Senha atual e nova senha são obrigatórias",
+			Message: "Current password and new password are required",
 		})
 		return
 	}
 
-	// Extract JWT token from Authorization header
+	if h.MockMode {
+		c.JSON(http.StatusOK, MessageResponse{Message: "Password updated successfully (mock)"})
+		return
+	}
+
 	token := c.GetHeader("Authorization")
 	if token == "" {
 		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Unauthorized", Message: "No token provided"})
 		return
 	}
-
-	// Remove "Bearer " prefix
-	if len(token) > 7 && token[:7] == "Bearer " {
+	if len(token) > 7 && strings.HasPrefix(token, "Bearer ") {
 		token = token[7:]
 	}
 
-	// Supabase Auth API endpoint for updating user
-	authURL := fmt.Sprintf("%s/auth/v1/user", h.supabaseURL)
+	authURL := fmt.Sprintf("%s/auth/v1/user", h.SupabaseURL)
 
 	payload := map[string]string{
 		"password": req.NewPassword,
@@ -248,14 +333,14 @@ func (h *Handler) UpdatePassword(c *gin.Context) {
 	payloadBytes, _ := json.Marshal(payload)
 
 	httpReq, _ := http.NewRequest("PUT", authURL, bytes.NewBuffer(payloadBytes))
-	httpReq.Header.Set("apikey", h.supabaseAnonKey)
+	httpReq.Header.Set("apikey", h.SupabaseAnonKey)
 	httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}
 	httpResp, err := client.Do(httpReq)
 	if err != nil {
-		h.logger.Error().Err(err).Msg("Update password request failed")
+		h.Logger.Error().Err(err).Msg("Update password request failed")
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Update failed", Message: err.Error()})
 		return
 	}
@@ -264,7 +349,7 @@ func (h *Handler) UpdatePassword(c *gin.Context) {
 	body, _ := io.ReadAll(httpResp.Body)
 
 	if httpResp.StatusCode != http.StatusOK {
-		h.logger.Error().Int("status", httpResp.StatusCode).Str("body", string(body)).Msg("Update password failed")
+		h.Logger.Error().Int("status", httpResp.StatusCode).Str("body", string(body)).Msg("Update password failed")
 		c.JSON(httpResp.StatusCode, ErrorResponse{Error: "Update failed", Message: "Failed to update password"})
 		return
 	}
@@ -275,9 +360,44 @@ func (h *Handler) UpdatePassword(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+// Helpers for mock auth flow
+func (h *AuthHandlers) ensureUserExists(email string) (string, string, error) {
+	role := "user"
+	if strings.Contains(strings.ToLower(email), "admin") {
+		role = "admin"
+	}
+
+	var userID string
+	err := h.DB.Get(&userID, "SELECT id FROM user_profiles WHERE email = $1", email)
+	if err == nil && userID != "" {
+		return userID, role, nil
+	}
+
+	newID := uuid.New().String()
+	_, execErr := h.DB.Exec(
+		"INSERT INTO user_profiles (id, email, full_name, role, is_active, created_at, updated_at) VALUES ($1, $2, $3, $4, TRUE, NOW(), NOW())",
+		newID, email, email, role,
+	)
+	if execErr != nil {
+		return "", "", execErr
+	}
+	return newID, role, nil
+}
+
+func (h *AuthHandlers) issueMockToken(userID, role, email string) (string, error) {
+	claims := jwt.MapClaims{
+		"sub":   userID,
+		"email": email,
+		"role":  role,
+		"exp":   time.Now().Add(24 * time.Hour).Unix(),
+		"iat":   time.Now().Unix(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(h.JWTSecret))
+}
+
 // callSupabaseAuth is a helper function to make authenticated requests to Supabase Auth API
-// AUTH FIX: Now uses the correct Supabase Anon Key instead of JWT Secret
-func (h *Handler) callSupabaseAuth(method, url string, payload interface{}) (map[string]interface{}, error) {
+func (h *AuthHandlers) callSupabaseAuth(method, url string, payload interface{}) (map[string]interface{}, error) {
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
@@ -288,7 +408,7 @@ func (h *Handler) callSupabaseAuth(method, url string, payload interface{}) (map
 		return nil, err
 	}
 
-	req.Header.Set("apikey", h.supabaseAnonKey)
+	req.Header.Set("apikey", h.SupabaseAnonKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}
@@ -304,7 +424,7 @@ func (h *Handler) callSupabaseAuth(method, url string, payload interface{}) (map
 	}
 
 	if resp.StatusCode >= 400 {
-		h.logger.Error().Int("status", resp.StatusCode).Str("body", string(body)).Msg("Supabase Auth API error")
+		h.Logger.Error().Int("status", resp.StatusCode).Str("body", string(body)).Msg("Supabase Auth API error")
 		return nil, fmt.Errorf("authentication failed: %s", string(body))
 	}
 

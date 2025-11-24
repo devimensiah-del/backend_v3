@@ -69,13 +69,6 @@ type AdditionalInfoData struct {
 
 // ==================== ADMIN REQUEST TYPES ====================
 
-// DEPRECATED: Removed per "Single Status Rule" - Submissions always have status "received"
-// Status is derived from Enrichment and Analysis status, not directly updated
-// type UpdateSubmissionStatusRequest struct {
-// 	Status        string `json:"status" binding:"required"`
-// 	StatusMessage string `json:"statusMessage"`
-// }
-
 // ==================== RESPONSE TYPES ====================
 
 type ErrorResponse struct {
@@ -105,64 +98,42 @@ type PasswordResetResponse struct {
 
 // SubmissionResponse is the basic response for submission creation
 type SubmissionResponse struct {
-	ID            string    `json:"id"`
-	CompanyName   string    `json:"companyName"`
-	CNPJ          string    `json:"cnpj,omitempty"`
-	Industry      string    `json:"industry,omitempty"`
-	Status        string    `json:"status"`
-	StatusMessage string    `json:"status_message,omitempty"`
-	CreatedAt     time.Time `json:"createdAt"`
-	UpdatedAt     time.Time `json:"updatedAt"`
+	ID          string    `json:"id"`
+	CompanyName string    `json:"companyName"`
+	Status      string    `json:"status"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
-// SubmissionDetailResponse contains full submission data matching frontend Submission interface
+// SubmissionDetailResponse contains the public/admin submission payload used by the UI
 type SubmissionDetailResponse struct {
-	// IDs
-	ID     string  `json:"id"`
-	UserID *string `json:"userId,omitempty"`
-
-	// Company Information
-	CompanyName string  `json:"companyName"`
-	CNPJ        *string `json:"cnpj,omitempty"`
-	Website     *string `json:"website,omitempty"`
-	Email       *string `json:"email,omitempty"`
-	Industry    *string `json:"industry,omitempty"`
-	CompanySize *string `json:"companySize,omitempty"`
-
-	// Strategic Context
-	StrategicGoal       *string `json:"strategicGoal,omitempty"`
-	CurrentChallenges   *string `json:"currentChallenges,omitempty"`
-	CompetitivePosition *string `json:"competitivePosition,omitempty"`
-	AdditionalInfo      *string `json:"additionalInfo,omitempty"`
-
-	// Legacy fields (for backward compatibility)
-	ContactName      *string  `json:"contactName,omitempty"`
-	ContactEmail     *string  `json:"contactEmail,omitempty"`
-	ContactPhone     *string  `json:"contactPhone,omitempty"`
-	ContactPosition  *string  `json:"contactPosition,omitempty"`
-	TargetMarket     *string  `json:"targetMarket,omitempty"`
-	AnnualRevenueMin *float64 `json:"annualRevenueMin,omitempty"`
-	AnnualRevenueMax *float64 `json:"annualRevenueMax,omitempty"`
-	FundingStage     *string  `json:"fundingStage,omitempty"`
-	BusinessChallenge *string `json:"businessChallenge,omitempty"`
-	AdditionalNotes  *string  `json:"additionalNotes,omitempty"`
-	LinkedInURL      *string  `json:"linkedinUrl,omitempty"`
-	TwitterHandle    *string  `json:"twitterHandle,omitempty"`
-	Location         *string  `json:"location,omitempty"`
-
-	// Metadata
-	Status        string  `json:"status"`
-	PaymentStatus *string `json:"paymentStatus,omitempty"`
-	CreatedAt     string  `json:"createdAt"`
-	UpdatedAt     string  `json:"updatedAt"`
-
-	// Relationships
-	EnrichmentID *string `json:"enrichmentId,omitempty"`
-	AnalysisID   *string `json:"analysisId,omitempty"`
-	ReportID     *string `json:"reportId,omitempty"`
-
-	// PDF URL (Only present if status === 'completed')
-	PDFURL *string `json:"pdfUrl,omitempty"`
+	ID                string   `json:"id"`
+	UserID            *string  `json:"userId,omitempty"`
+	CompanyName       string   `json:"companyName"`
+	CNPJ              *string  `json:"cnpj,omitempty"`
+	CompanyWebsite    *string  `json:"companyWebsite,omitempty"`
+	CompanyIndustry   *string  `json:"companyIndustry,omitempty"`
+	CompanySize       *string  `json:"companySize,omitempty"`
+	CompanyLocation   *string  `json:"companyLocation,omitempty"`
+	ContactName       string   `json:"contactName"`
+	ContactEmail      string   `json:"contactEmail"`
+	ContactPhone      *string  `json:"contactPhone,omitempty"`
+	ContactPosition   *string  `json:"contactPosition,omitempty"`
+	TargetMarket      *string  `json:"targetMarket,omitempty"`
+	AnnualRevenueMin  *float64 `json:"annualRevenueMin,omitempty"`
+	AnnualRevenueMax  *float64 `json:"annualRevenueMax,omitempty"`
+	FundingStage      *string  `json:"fundingStage,omitempty"`
+	BusinessChallenge string   `json:"businessChallenge"`
+	AdditionalNotes   *string  `json:"additionalNotes,omitempty"`
+	LinkedInURL       *string  `json:"linkedinUrl,omitempty"`
+	TwitterHandle     *string  `json:"twitterHandle,omitempty"`
+	Status            string   `json:"status"`
+	CreatedAt         string   `json:"createdAt"`
+	UpdatedAt         string   `json:"updatedAt"`
+	EnrichmentID      *string  `json:"enrichmentId,omitempty"`
+	AnalysisID        *string  `json:"analysisId,omitempty"`
+	ReportID          *string  `json:"reportId,omitempty"`
+	PDFURL            *string  `json:"pdfUrl,omitempty"`
 }
 
 // ReportPreviewResponse returns the HTML for the Admin UI
@@ -188,7 +159,7 @@ type MessageResponse struct {
 }
 
 type SubmissionListResponse struct {
-	Data       interface{} `json:"data"`     // Changed from "submissions" to match frontend
+	Data       interface{} `json:"data"` // Changed from "submissions" to match frontend
 	Page       int         `json:"page"`
 	PageSize   int         `json:"pageSize"` // Changed from "limit" to match frontend
 	Total      int         `json:"total"`

@@ -4,13 +4,34 @@ import (
 	"net/http"
 
 	"backend_v3/domain/enrichment"
+	"backend_v3/domain/submission"
 
 	"github.com/gin-gonic/gin"
-	"github.com/rs/zerolog/log"
+	"github.com/rs/zerolog" // Changed from 'log' to 'zerolog' for explicit logger usage
 )
 
+// EnrichmentHandlers holds all service dependencies and configuration for enrichment handlers
+type EnrichmentHandlers struct {
+	SubmissionService *submission.Service
+	EnrichmentService *enrichment.Service
+	Logger            zerolog.Logger
+}
+
+// NewEnrichmentHandlers creates a new enrichment.Handlers instance with all dependencies
+func NewEnrichmentHandlers(
+	submissionSvc *submission.Service,
+	enrichmentSvc *enrichment.Service,
+	logger zerolog.Logger,
+) *EnrichmentHandlers {
+	return &EnrichmentHandlers{
+		SubmissionService: submissionSvc,
+		EnrichmentService: enrichmentSvc,
+		Logger:            logger,
+	}
+}
+
 // GetEnrichment handles GET /api/v1/submissions/:id/enrichment
-func (h *Handler) GetEnrichment(c *gin.Context) {
+func (h *EnrichmentHandlers) GetEnrichment(c *gin.Context) {
 	submissionID := c.Param("id")
 
 	// Parse and validate UUID
@@ -34,7 +55,7 @@ func (h *Handler) GetEnrichment(c *gin.Context) {
 	}
 
 	// Get submission to verify ownership (unless admin)
-	submission, err := h.submissionSvc.GetByID(c.Request.Context(), subUUID)
+	submission, err := h.SubmissionService.GetByID(c.Request.Context(), subUUID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, ErrorResponse{
 			Error:   "Not found",
@@ -72,7 +93,7 @@ func (h *Handler) GetEnrichment(c *gin.Context) {
 	}
 
 	// Get enrichment data
-	enrichment, err := h.enrichmentSvc.GetBySubmissionID(c.Request.Context(), subUUID)
+	enrichment, err := h.EnrichmentService.GetBySubmissionID(c.Request.Context(), subUUID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, ErrorResponse{
 			Error:   "Not found",
@@ -83,7 +104,7 @@ func (h *Handler) GetEnrichment(c *gin.Context) {
 
 	// Transform to DTO to fix field name mismatch (enrichedData -> data)
 	// Use helper function for inferred progress
-	response := buildEnrichmentResponse(enrichment)
+	response := h.buildEnrichmentResponse(enrichment)
 
 	c.JSON(http.StatusOK, gin.H{
 		"enrichment": response,
@@ -93,7 +114,7 @@ func (h *Handler) GetEnrichment(c *gin.Context) {
 // UpdateEnrichment handles PUT /api/v1/admin/enrichment/:id
 // Admin can edit enrichment fields BEFORE approval (status remains "completed")
 // Cannot edit after status is "approved"
-func (h *Handler) UpdateEnrichment(c *gin.Context) {
+func (h *EnrichmentHandlers) UpdateEnrichment(c *gin.Context) {
 	enrichmentID := c.Param("id")
 
 	// Parse and validate UUID
@@ -117,9 +138,9 @@ func (h *Handler) UpdateEnrichment(c *gin.Context) {
 	}
 
 	// Update enrichment fields via service
-	updatedEnrichment, err := h.enrichmentSvc.UpdateFields(c.Request.Context(), enrichUUID, updateData)
+	updatedEnrichment, err := h.EnrichmentService.UpdateFields(c.Request.Context(), enrichUUID, updateData)
 	if err != nil {
-		h.logger.Error().Err(err).Str("enrichment_id", enrichmentID).Msg("Failed to update enrichment")
+		h.Logger.Error().Err(err).Str("enrichment_id", enrichmentID).Msg("Failed to update enrichment")
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "Update failed",
 			Message: "Failed to update enrichment fields",
@@ -128,7 +149,7 @@ func (h *Handler) UpdateEnrichment(c *gin.Context) {
 	}
 
 	// Transform to DTO
-	response := buildEnrichmentResponse(updatedEnrichment)
+	response := h.buildEnrichmentResponse(updatedEnrichment)
 
 	c.JSON(http.StatusOK, gin.H{
 		"enrichment": response,
@@ -137,7 +158,7 @@ func (h *Handler) UpdateEnrichment(c *gin.Context) {
 
 // GetEnrichmentProgress handles GET /api/v1/enrichment/:id/progress
 // Public endpoint (or protected) for polling progress
-func (h *Handler) GetEnrichmentProgress(c *gin.Context) {
+func (h *EnrichmentHandlers) GetEnrichmentProgress(c *gin.Context) {
 	enrichmentID := c.Param("id")
 
 	// Parse UUID
@@ -148,7 +169,7 @@ func (h *Handler) GetEnrichmentProgress(c *gin.Context) {
 	}
 
 	// Get enrichment
-	enrichment, err := h.enrichmentSvc.GetByID(c.Request.Context(), enrichUUID)
+	enrichment, err := h.EnrichmentService.GetByID(c.Request.Context(), enrichUUID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Enrichment not found"})
 		return
@@ -163,52 +184,42 @@ func (h *Handler) GetEnrichmentProgress(c *gin.Context) {
 
 // ApproveEnrichment handles POST /api/v1/admin/enrichment/:id/approve
 // Changes status from "completed" → "approved" and triggers analysis creation
-func (h *Handler) ApproveEnrichment(c *gin.Context) {
+func (h *EnrichmentHandlers) ApproveEnrichment(c *gin.Context) {
 	enrichmentID := c.Param("id")
 
 	// Parse and validate UUID
 	enrichUUID, err := parseUUID(enrichmentID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Error:   "Invalid ID",
-			Message: "Invalid enrichment ID format",
-		})
+		respondError(c, h.Logger, http.StatusBadRequest, err, "ID de enriquecimento inválido.")
 		return
 	}
 
 	// Approve enrichment (service handles status update AND job enqueueing)
-	err = h.enrichmentSvc.Approve(c.Request.Context(), enrichUUID)
+	err = h.EnrichmentService.Approve(c.Request.Context(), enrichUUID)
 	if err != nil {
-		h.logger.Error().Err(err).Str("enrichment_id", enrichmentID).Msg("Failed to approve enrichment")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:   "Approval failed",
-			Message: err.Error(),
-		})
+		respondError(c, h.Logger, http.StatusBadRequest, err, "Não foi possível aprovar o enriquecimento.")
 		return
 	}
 
 	// Fetch updated enrichment
-	updatedEnrichment, err := h.enrichmentSvc.GetByID(c.Request.Context(), enrichUUID)
+	updatedEnrichment, err := h.EnrichmentService.GetByID(c.Request.Context(), enrichUUID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:   "Fetch failed",
-			Message: "Approved but failed to fetch updated enrichment",
-		})
+		respondError(c, h.Logger, http.StatusInternalServerError, err, "Aprovado, mas não foi possível carregar o enriquecimento atualizado.")
 		return
 	}
 
 	// Transform to DTO
-	enrichmentResponse := buildEnrichmentResponse(updatedEnrichment)
+	enrichmentResponse := h.buildEnrichmentResponse(updatedEnrichment)
 
 	c.JSON(http.StatusOK, gin.H{
 		"enrichment": enrichmentResponse,
-		"message":    "Enrichment approved, analysis job enqueued",
+		"message":    "Enriquecimento aprovado, análise iniciada.",
 	})
 }
 
 // UnlockEnrichment handles POST /api/v1/admin/enrichment/:id/unlock
 // Manually unlocks a stuck enrichment (recovery endpoint)
-func (h *Handler) UnlockEnrichment(c *gin.Context) {
+func (h *EnrichmentHandlers) UnlockEnrichment(c *gin.Context) {
 	enrichmentID := c.Param("id")
 
 	// Parse and validate UUID
@@ -222,9 +233,9 @@ func (h *Handler) UnlockEnrichment(c *gin.Context) {
 	}
 
 	// Get enrichment
-	enrichment, err := h.enrichmentSvc.GetByID(c.Request.Context(), enrichUUID)
+	enrichment, err := h.EnrichmentService.GetByID(c.Request.Context(), enrichUUID)
 	if err != nil {
-		h.logger.Error().Err(err).Str("enrichment_id", enrichmentID).Msg("Failed to fetch enrichment")
+		h.Logger.Error().Err(err).Str("enrichment_id", enrichmentID).Msg("Failed to fetch enrichment")
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "Fetch failed",
 			Message: err.Error(),
@@ -234,9 +245,9 @@ func (h *Handler) UnlockEnrichment(c *gin.Context) {
 
 	// Unlock the enrichment
 	enrichment.IsLocked = false
-	err = h.enrichmentSvc.UpdateUnlock(c.Request.Context(), enrichment)
+	err = h.EnrichmentService.UpdateUnlock(c.Request.Context(), enrichment)
 	if err != nil {
-		h.logger.Error().Err(err).Str("enrichment_id", enrichmentID).Msg("Failed to unlock enrichment")
+		h.Logger.Error().Err(err).Str("enrichment_id", enrichmentID).Msg("Failed to unlock enrichment")
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "Unlock failed",
 			Message: err.Error(),
@@ -245,7 +256,7 @@ func (h *Handler) UnlockEnrichment(c *gin.Context) {
 	}
 
 	// Transform to DTO
-	enrichmentResponse := buildEnrichmentResponse(enrichment)
+	enrichmentResponse := h.buildEnrichmentResponse(enrichment)
 
 	c.JSON(http.StatusOK, gin.H{
 		"enrichment": enrichmentResponse,
@@ -255,7 +266,7 @@ func (h *Handler) UnlockEnrichment(c *gin.Context) {
 
 // GetEnrichmentAdmin handles GET /api/v1/admin/enrichment/:id
 // Admin can fetch enrichment directly by enrichment ID (not just by submission ID)
-func (h *Handler) GetEnrichmentAdmin(c *gin.Context) {
+func (h *EnrichmentHandlers) GetEnrichmentAdmin(c *gin.Context) {
 	enrichmentID := c.Param("id")
 
 	// Parse and validate UUID
@@ -269,7 +280,7 @@ func (h *Handler) GetEnrichmentAdmin(c *gin.Context) {
 	}
 
 	// Get enrichment by ID (admin access, no ownership check needed)
-	enrichment, err := h.enrichmentSvc.GetByID(c.Request.Context(), enrichUUID)
+	enrichment, err := h.EnrichmentService.GetByID(c.Request.Context(), enrichUUID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, ErrorResponse{
 			Error:   "Not found",
@@ -279,7 +290,7 @@ func (h *Handler) GetEnrichmentAdmin(c *gin.Context) {
 	}
 
 	// Transform to DTO
-	response := buildEnrichmentResponse(enrichment)
+	response := h.buildEnrichmentResponse(enrichment)
 
 	c.JSON(http.StatusOK, gin.H{
 		"enrichment": response,
@@ -292,7 +303,7 @@ func (h *Handler) GetEnrichmentAdmin(c *gin.Context) {
 
 // calculateInferredProgress dynamically calculates progress based on status and current_step
 // This implements the "inferred progress" pattern to avoid storing redundant state in DB
-func calculateInferredProgress(status string, currentStep string) int {
+func (h *EnrichmentHandlers) calculateInferredProgress(status string, currentStep string) int {
 	// Completed or approved = 100%
 	if status == "completed" || status == "approved" {
 		return 100
@@ -317,9 +328,9 @@ func calculateInferredProgress(status string, currentStep string) int {
 
 // buildEnrichmentResponse creates an EnrichmentResponse from domain model
 // Uses inferred progress instead of database field for better accuracy
-func buildEnrichmentResponse(e *enrichment.Enrichment) EnrichmentResponse {
+func (h *EnrichmentHandlers) buildEnrichmentResponse(e *enrichment.Enrichment) EnrichmentResponse {
 	// DEBUG: Log the enriched data to verify it's being populated
-	log.Debug().
+	h.Logger.Debug().
 		Str("enrichment_id", e.ID.String()).
 		Interface("enriched_data", e.EnrichedData).
 		Int("data_size", len(e.EnrichedData)).
@@ -329,7 +340,7 @@ func buildEnrichmentResponse(e *enrichment.Enrichment) EnrichmentResponse {
 		ID:           e.ID.String(),
 		SubmissionID: e.SubmissionID.String(),
 		Status:       string(e.Status),
-		Progress:     calculateInferredProgress(string(e.Status), e.CurrentStep),
+		Progress:     h.calculateInferredProgress(string(e.Status), e.CurrentStep),
 		CurrentStep:  e.CurrentStep,
 		Data:         e.EnrichedData,
 		IsLocked:     e.IsLocked,
@@ -340,13 +351,13 @@ func buildEnrichmentResponse(e *enrichment.Enrichment) EnrichmentResponse {
 
 // GetEnrichmentBySubmissionAdmin handles GET /api/v1/admin/submissions/:id/enrichment
 // Admin can fetch enrichment by submission ID (for admin edit page)
-func (h *Handler) GetEnrichmentBySubmissionAdmin(c *gin.Context) {
+func (h *EnrichmentHandlers) GetEnrichmentBySubmissionAdmin(c *gin.Context) {
 	submissionID := c.Param("id")
 
 	// Parse and validate UUID
 	subUUID, err := parseUUID(submissionID)
 	if err != nil {
-		log.Error().Err(err).Str("submission_id", submissionID).Msg("Invalid submission ID format")
+		h.Logger.Error().Err(err).Str("submission_id", submissionID).Msg("Invalid submission ID format")
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Error:   "Invalid ID",
 			Message: "Invalid submission ID format",
@@ -354,12 +365,12 @@ func (h *Handler) GetEnrichmentBySubmissionAdmin(c *gin.Context) {
 		return
 	}
 
-	log.Debug().Str("submission_id", subUUID.String()).Msg("Fetching enrichment by submission ID")
+	h.Logger.Debug().Str("submission_id", subUUID.String()).Msg("Fetching enrichment by submission ID")
 
 	// Get enrichment by submission ID (admin access, no ownership check needed)
-	enrichment, err := h.enrichmentSvc.GetBySubmissionID(c.Request.Context(), subUUID)
+	enrichment, err := h.EnrichmentService.GetBySubmissionID(c.Request.Context(), subUUID)
 	if err != nil {
-		log.Error().Err(err).Str("submission_id", subUUID.String()).Msg("Failed to fetch enrichment")
+		h.Logger.Error().Err(err).Str("submission_id", subUUID.String()).Msg("Failed to fetch enrichment")
 		c.JSON(http.StatusNotFound, ErrorResponse{
 			Error:   "Not found",
 			Message: "Enrichment not found for this submission",
@@ -367,16 +378,13 @@ func (h *Handler) GetEnrichmentBySubmissionAdmin(c *gin.Context) {
 		return
 	}
 
-	log.Debug().
+	h.Logger.Debug().
 		Str("enrichment_id", enrichment.ID.String()).
 		Str("submission_id", subUUID.String()).
 		Str("status", string(enrichment.Status)).
 		Msg("Enrichment fetched successfully")
 
 	// Transform to DTO
-	response := buildEnrichmentResponse(enrichment)
-
-	c.JSON(http.StatusOK, gin.H{
-		"enrichment": response,
-	})
+	response := h.buildEnrichmentResponse(enrichment)
+	c.JSON(http.StatusOK, response)
 }

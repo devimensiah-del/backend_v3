@@ -3,27 +3,55 @@ package api
 import (
 	"net/http"
 
+	"backend_v3/domain/analysis"
+	"backend_v3/domain/report"
+	"backend_v3/domain/submission"
+
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog" // Needed for logger
 )
+
+// Handlers holds all service dependencies and configuration for report handlers
+type ReportHandlers struct {
+	AnalysisService   *analysis.Service
+	ReportService     *report.Service
+	SubmissionService *submission.Service
+	Logger            zerolog.Logger
+}
+
+// NewReportHandlers creates a new report.Handlers instance with all dependencies
+func NewReportHandlers(
+	analysisSvc *analysis.Service,
+	reportSvc *report.Service,
+	submissionSvc *submission.Service,
+	logger zerolog.Logger,
+) *ReportHandlers {
+	return &ReportHandlers{
+		AnalysisService:   analysisSvc,
+		ReportService:     reportSvc,
+		SubmissionService: submissionSvc,
+		Logger:            logger,
+	}
+}
 
 // --- REPORT ENDPOINTS ---
 
 // PreviewReport generates HTML on-the-fly for the Admin UI
 // GET /api/submissions/:id/report/preview
-func (h *Handler) PreviewReport(c *gin.Context) {
+func (h *ReportHandlers) PreviewReport(c *gin.Context) {
 	submissionID := c.Param("id")
 
 	// Get Analysis ID
-	anal, err := h.analysisSvc.GetBySubmissionID(c.Request.Context(), submissionID)
+	anal, err := h.AnalysisService.GetBySubmissionID(c.Request.Context(), submissionID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Analysis not ready", Message: "Wait for AI to finish."})
 		return
 	}
 
 	// Generate HTML (In Memory)
-	pagesMap, err := h.reportSvc.GeneratePreview(c.Request.Context(), submissionID, anal.ID)
+	pagesMap, err := h.ReportService.GeneratePreview(c.Request.Context(), submissionID, anal.ID)
 	if err != nil {
-		h.logger.Error().Err(err).Msg("Preview generation failed")
+		h.Logger.Error().Err(err).Msg("Preview generation failed")
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Preview failed", Message: err.Error()})
 		return
 	}
@@ -33,18 +61,18 @@ func (h *Handler) PreviewReport(c *gin.Context) {
 
 // PublishReport freezes the report and generates the PDF
 // POST /api/submissions/:id/report/publish
-func (h *Handler) PublishReport(c *gin.Context) {
+func (h *ReportHandlers) PublishReport(c *gin.Context) {
 	submissionID := c.Param("id")
 
-	anal, err := h.analysisSvc.GetBySubmissionID(c.Request.Context(), submissionID)
+	anal, err := h.AnalysisService.GetBySubmissionID(c.Request.Context(), submissionID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Analysis not ready"})
 		return
 	}
 
-	pdfURL, err := h.reportSvc.Publish(c.Request.Context(), submissionID, anal.ID)
+	pdfURL, err := h.ReportService.Publish(c.Request.Context(), submissionID, anal.ID)
 	if err != nil {
-		h.logger.Error().Err(err).Msg("Publish failed")
+		h.Logger.Error().Err(err).Msg("Publish failed")
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Publish failed", Message: err.Error()})
 		return
 	}
@@ -57,7 +85,7 @@ func (h *Handler) PublishReport(c *gin.Context) {
 
 // DownloadReport retrieves the PDF URL for a submission's report
 // GET /api/v1/submissions/:id/report/download
-func (h *Handler) DownloadReport(c *gin.Context) {
+func (h *ReportHandlers) DownloadReport(c *gin.Context) {
 	submissionID := c.Param("id")
 
 	// Parse and validate UUID
@@ -81,7 +109,7 @@ func (h *Handler) DownloadReport(c *gin.Context) {
 	}
 
 	// Get submission to verify ownership (unless admin)
-	submission, err := h.submissionSvc.GetByID(c.Request.Context(), subUUID)
+	submission, err := h.SubmissionService.GetByID(c.Request.Context(), subUUID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, ErrorResponse{
 			Error:   "Not found",
@@ -119,7 +147,7 @@ func (h *Handler) DownloadReport(c *gin.Context) {
 	}
 
 	// Get report by submission ID
-	report, err := h.reportSvc.GetBySubmissionID(c.Request.Context(), submissionID)
+	report, err := h.ReportService.GetBySubmissionID(c.Request.Context(), submissionID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, ErrorResponse{
 			Error:   "Not found",

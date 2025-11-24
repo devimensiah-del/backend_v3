@@ -4,11 +4,35 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"backend_v3/domain/analysis" // Assuming this domain exists
+	"backend_v3/domain/submission"
+
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog" // Needed for logger
 )
 
+// AnalysisHandlers holds all service dependencies and configuration for analysis handlers
+type AnalysisHandlers struct {
+	SubmissionService *submission.Service
+	AnalysisService   *analysis.Service
+	Logger            zerolog.Logger
+}
+
+// NewAnalysisHandlers creates a new analysis handler set with all dependencies
+func NewAnalysisHandlers(
+	submissionSvc *submission.Service,
+	analysisSvc *analysis.Service,
+	logger zerolog.Logger,
+) *AnalysisHandlers {
+	return &AnalysisHandlers{
+		SubmissionService: submissionSvc,
+		AnalysisService:   analysisSvc,
+		Logger:            logger,
+	}
+}
+
 // GetAnalysis handles GET /api/v1/submissions/:id/analysis
-func (h *Handler) GetAnalysis(c *gin.Context) {
+func (h *AnalysisHandlers) GetAnalysis(c *gin.Context) {
 	submissionID := c.Param("id")
 
 	// Parse and validate UUID
@@ -32,7 +56,7 @@ func (h *Handler) GetAnalysis(c *gin.Context) {
 	}
 
 	// Get submission to verify ownership (unless admin)
-	submission, err := h.submissionSvc.GetByID(c.Request.Context(), subUUID)
+	submission, err := h.SubmissionService.GetByID(c.Request.Context(), subUUID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, ErrorResponse{
 			Error:   "Not found",
@@ -70,7 +94,7 @@ func (h *Handler) GetAnalysis(c *gin.Context) {
 	}
 
 	// Get analysis data by submission ID
-	analysis, err := h.analysisSvc.GetBySubmissionID(c.Request.Context(), submissionID)
+	analysis, err := h.AnalysisService.GetBySubmissionID(c.Request.Context(), submissionID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, ErrorResponse{
 			Error:   "Not found",
@@ -120,7 +144,7 @@ func (h *Handler) GetAnalysis(c *gin.Context) {
 
 // UpdateAnalysis handles PUT /api/v1/admin/analysis/:id
 // Admin can edit analysis framework fields (status remains unchanged)
-func (h *Handler) UpdateAnalysis(c *gin.Context) {
+func (h *AnalysisHandlers) UpdateAnalysis(c *gin.Context) {
 	analysisID := c.Param("id")
 
 	// Parse request body (partial update - any framework fields)
@@ -134,9 +158,9 @@ func (h *Handler) UpdateAnalysis(c *gin.Context) {
 	}
 
 	// Update analysis fields via service
-	updatedAnalysis, err := h.analysisSvc.UpdateFields(c.Request.Context(), analysisID, updateData)
+	updatedAnalysis, err := h.AnalysisService.UpdateFields(c.Request.Context(), analysisID, updateData)
 	if err != nil {
-		h.logger.Error().Err(err).Str("analysis_id", analysisID).Msg("Failed to update analysis")
+		h.Logger.Error().Err(err).Str("analysis_id", analysisID).Msg("Failed to update analysis")
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "Update failed",
 			Message: "Failed to update analysis fields",
@@ -167,7 +191,7 @@ func (h *Handler) UpdateAnalysis(c *gin.Context) {
 
 // CreateAnalysisVersion handles POST /api/v1/admin/analysis/:id/version
 // Creates a new version of the analysis with optional edits
-func (h *Handler) CreateAnalysisVersion(c *gin.Context) {
+func (h *AnalysisHandlers) CreateAnalysisVersion(c *gin.Context) {
 	analysisID := c.Param("id")
 
 	// Parse request body (optional edits to apply to new version)
@@ -180,9 +204,9 @@ func (h *Handler) CreateAnalysisVersion(c *gin.Context) {
 	}
 
 	// Create new version via service
-	newVersion, err := h.analysisSvc.CreateVersion(c.Request.Context(), analysisID, req.Edits)
+	newVersion, err := h.AnalysisService.CreateVersion(c.Request.Context(), analysisID, req.Edits)
 	if err != nil {
-		h.logger.Error().Err(err).Str("analysis_id", analysisID).Msg("Failed to create analysis version")
+		h.Logger.Error().Err(err).Str("analysis_id", analysisID).Msg("Failed to create analysis version")
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "Version creation failed",
 			Message: "Failed to create new analysis version",
@@ -213,7 +237,7 @@ func (h *Handler) CreateAnalysisVersion(c *gin.Context) {
 
 // SendAnalysis handles POST /api/v1/admin/analysis/:id/send
 // Changes status from "approved" → "sent" and notifies user
-func (h *Handler) SendAnalysis(c *gin.Context) {
+func (h *AnalysisHandlers) SendAnalysis(c *gin.Context) {
 	analysisID := c.Param("id")
 
 	// Parse request body (user email to send to)
@@ -229,7 +253,7 @@ func (h *Handler) SendAnalysis(c *gin.Context) {
 	}
 
 	// Get analysis to verify it exists and is in "approved" state
-	analysis, err := h.analysisSvc.GetByID(c.Request.Context(), analysisID)
+	analysis, err := h.AnalysisService.GetByID(c.Request.Context(), analysisID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, ErrorResponse{
 			Error:   "Not found",
@@ -253,9 +277,9 @@ func (h *Handler) SendAnalysis(c *gin.Context) {
 	// 2. Update analysis status to "sent"
 	// 3. Update sent_at timestamp and sent_to email
 	// 4. Trigger user notification
-	err = h.analysisSvc.Send(c.Request.Context(), analysisID, req.UserEmail)
+	err = h.AnalysisService.Send(c.Request.Context(), analysisID, req.UserEmail)
 	if err != nil {
-		h.logger.Error().Err(err).Str("analysis_id", analysisID).Msg("Failed to send analysis")
+		h.Logger.Error().Err(err).Str("analysis_id", analysisID).Msg("Failed to send analysis")
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "Send failed",
 			Message: "Failed to send analysis to user",
@@ -264,7 +288,7 @@ func (h *Handler) SendAnalysis(c *gin.Context) {
 	}
 
 	// Fetch updated analysis
-	updatedAnalysis, err := h.analysisSvc.GetByID(c.Request.Context(), analysisID)
+	updatedAnalysis, err := h.AnalysisService.GetByID(c.Request.Context(), analysisID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "Fetch failed",
@@ -297,13 +321,13 @@ func (h *Handler) SendAnalysis(c *gin.Context) {
 
 // ApproveAnalysis handles POST /api/v1/admin/analysis/:id/approve
 // Changes status from "completed" → "approved" and triggers PDF generation
-func (h *Handler) ApproveAnalysis(c *gin.Context) {
+func (h *AnalysisHandlers) ApproveAnalysis(c *gin.Context) {
 	analysisID := c.Param("id")
 
 	// Approve analysis (service handles status update AND job enqueueing)
-	err := h.analysisSvc.Approve(c.Request.Context(), analysisID)
+	err := h.AnalysisService.Approve(c.Request.Context(), analysisID)
 	if err != nil {
-		h.logger.Error().Err(err).Str("analysis_id", analysisID).Msg("Failed to approve analysis")
+		h.Logger.Error().Err(err).Str("analysis_id", analysisID).Msg("Failed to approve analysis")
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "Approval failed",
 			Message: err.Error(),
@@ -312,7 +336,7 @@ func (h *Handler) ApproveAnalysis(c *gin.Context) {
 	}
 
 	// Fetch updated analysis
-	updatedAnalysis, err := h.analysisSvc.GetByID(c.Request.Context(), analysisID)
+	updatedAnalysis, err := h.AnalysisService.GetByID(c.Request.Context(), analysisID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "Fetch failed",
@@ -345,11 +369,11 @@ func (h *Handler) ApproveAnalysis(c *gin.Context) {
 
 // GetAnalysisAdmin handles GET /api/v1/admin/analysis/:id
 // Admin can fetch analysis directly by analysis ID (not just by submission ID)
-func (h *Handler) GetAnalysisAdmin(c *gin.Context) {
+func (h *AnalysisHandlers) GetAnalysisAdmin(c *gin.Context) {
 	analysisID := c.Param("id")
 
 	// Get analysis by ID (admin access, no ownership check needed)
-	analysis, err := h.analysisSvc.GetByID(c.Request.Context(), analysisID)
+	analysis, err := h.AnalysisService.GetByID(c.Request.Context(), analysisID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, ErrorResponse{
 			Error:   "Not found",

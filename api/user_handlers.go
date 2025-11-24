@@ -4,10 +4,29 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jmoiron/sqlx" // Added for db
+	"github.com/rs/zerolog"   // Added for logger
 )
 
+// Handlers holds all service dependencies and configuration for user handlers
+type UserHandlers struct {
+	DB     *sqlx.DB
+	Logger zerolog.Logger
+}
+
+// NewUserHandlers creates a new user.Handlers instance with all dependencies
+func NewUserHandlers(
+	db *sqlx.DB,
+	logger zerolog.Logger,
+) *UserHandlers {
+	return &UserHandlers{
+		DB:     db,
+		Logger: logger,
+	}
+}
+
 // UpdateUserProfile handles PUT /api/v1/user/profile
-func (h *Handler) UpdateUserProfile(c *gin.Context) {
+func (h *UserHandlers) UpdateUserProfile(c *gin.Context) {
 	// Get user ID from context (set by AuthMiddleware)
 	userID, exists := c.Get("userID")
 	if !exists {
@@ -44,9 +63,9 @@ func (h *Handler) UpdateUserProfile(c *gin.Context) {
 	query := `UPDATE user_profiles SET full_name = $1, updated_at = NOW() WHERE id = $2 RETURNING id, email, full_name, role, is_active, created_at, updated_at`
 
 	var profile UserProfile
-	err := h.db.Get(&profile, query, req.FullName, userIDStr)
+	err := h.DB.Get(&profile, query, req.FullName, userIDStr)
 	if err != nil {
-		h.logger.Error().Err(err).Str("user_id", userIDStr).Msg("Failed to update user profile")
+		h.Logger.Error().Err(err).Str("user_id", userIDStr).Msg("Failed to update user profile")
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "Failed to update profile",
 			Message: "Could not update user profile",

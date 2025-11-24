@@ -337,6 +337,7 @@ func (a *Analysis) CreateNewVersion() *Analysis {
 		// Versioning
 		Version:          a.Version + 1,
 		ParentAnalysisID: &a.ID,
+		IsLatest:         true,
 
 		// Copy all framework data
 		PESTEL:         a.PESTEL,

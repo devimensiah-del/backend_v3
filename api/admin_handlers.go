@@ -5,16 +5,44 @@ import (
 	"fmt"
 	"net/http"
 
+	"backend_v3/domain/enrichment" // Added for RetryAnalysis
 	"backend_v3/domain/submission"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hibiken/asynq"
+	"github.com/rs/zerolog"
 )
+
+// Handlers holds all service dependencies and configuration for admin handlers
+type AdminHandlers struct {
+	SubmissionService         *submission.Service
+	EnrichmentService         *enrichment.Service // For RetryAnalysis
+	AsynqClient               *asynq.Client
+	Logger                    zerolog.Logger
+	SubmissionResponseBuilder *SubmissionResponseBuilder // New field
+}
+
+// NewAdminHandlers creates a new admin handler set with all dependencies
+func NewAdminHandlers(
+	submissionSvc *submission.Service,
+	enrichmentSvc *enrichment.Service,
+	asynqClient *asynq.Client,
+	logger zerolog.Logger,
+	submissionResponseBuilder *SubmissionResponseBuilder, // New parameter
+) *AdminHandlers {
+	return &AdminHandlers{
+		SubmissionService:         submissionSvc,
+		EnrichmentService:         enrichmentSvc,
+		AsynqClient:               asynqClient,
+		Logger:                    logger,
+		SubmissionResponseBuilder: submissionResponseBuilder,
+	}
+}
 
 // --- ADMIN ENDPOINTS ---
 
 // ListSubmissions handles GET /api/v1/admin/submissions
-func (h *Handler) ListSubmissions(c *gin.Context) {
+func (h *AdminHandlers) ListSubmissions(c *gin.Context) {
 	// Parse query parameters
 	page := 1
 	limit := 20
@@ -49,9 +77,9 @@ func (h *Handler) ListSubmissions(c *gin.Context) {
 	}
 
 	// Query submissions
-	submissions, total, err := h.submissionSvc.ListAll(c.Request.Context(), opts)
+	submissions, total, err := h.SubmissionService.ListAll(c.Request.Context(), opts)
 	if err != nil {
-		h.logger.Error().Err(err).Msg("Failed to list submissions")
+		h.Logger.Error().Err(err).Msg("Failed to list submissions")
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "Failed to retrieve submissions",
 			Message: err.Error(),
@@ -63,8 +91,7 @@ func (h *Handler) ListSubmissions(c *gin.Context) {
 	// This is required for frontend filtering (e.g., analysis page filters by analysisId)
 	detailedSubmissions := make([]SubmissionDetailResponse, len(submissions))
 	for i, sub := range submissions {
-		subUUID, _ := parseUUID(sub.ID.String())
-		detailedSubmissions[i] = buildSubmissionDetailResponse(sub, h, c.Request.Context(), subUUID, sub.ID.String())
+		detailedSubmissions[i] = h.SubmissionResponseBuilder.buildSubmissionDetailResponse(sub, c.Request.Context(), sub.ID.String())
 	}
 
 	// Calculate total pages
@@ -83,7 +110,7 @@ func (h *Handler) ListSubmissions(c *gin.Context) {
 }
 
 // GetSubmissionAdmin handles GET /api/v1/admin/submissions/:id
-func (h *Handler) GetSubmissionAdmin(c *gin.Context) {
+func (h *AdminHandlers) GetSubmissionAdmin(c *gin.Context) {
 	// Defensive check: verify admin role (middleware should have verified, but double-check)
 	role, exists := c.Get("userRole")
 	if !exists || (role != "admin" && role != "super_admin" && role != "service_role") {
@@ -101,34 +128,24 @@ func (h *Handler) GetSubmissionAdmin(c *gin.Context) {
 	}
 
 	// Get submission (admin can access any submission)
-	sub, err := h.submissionSvc.GetByID(c.Request.Context(), subUUID)
+	sub, err := h.SubmissionService.GetByID(c.Request.Context(), subUUID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Submission not found"})
 		return
 	}
 
 	// Build detailed response with all fields
-	resp := buildSubmissionDetailResponse(sub, h, c.Request.Context(), subUUID, submissionID)
+	resp := h.SubmissionResponseBuilder.buildSubmissionDetailResponse(sub, c.Request.Context(), submissionID)
 
 	c.JSON(http.StatusOK, gin.H{"submission": resp})
 }
 
-// UpdateSubmissionStatus handles PUT /api/v1/admin/submissions/:id/status
-// DEPRECATED: Submission status is always "received" and never changes
-// Workflow state is tracked in Enrichment and Analysis entities
-func (h *Handler) UpdateSubmissionStatus(c *gin.Context) {
-	c.JSON(http.StatusBadRequest, ErrorResponse{
-		Error:   "Operation not allowed",
-		Message: "Submission status is always 'received' and cannot be changed. Workflow state is tracked in enrichment and analysis entities.",
-	})
-}
-
 // RetryEnrichment handles POST /api/v1/admin/submissions/:id/retry-enrichment
-func (h *Handler) RetryEnrichment(c *gin.Context) {
+func (h *AdminHandlers) RetryEnrichment(c *gin.Context) {
 	submissionID := c.Param("id")
 
 	// Validate submission exists
-	_, err := h.submissionSvc.GetByID(c.Request.Context(), submissionID)
+	_, err := h.SubmissionService.GetByID(c.Request.Context(), submissionID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Submission not found"})
 		return
@@ -141,16 +158,16 @@ func (h *Handler) RetryEnrichment(c *gin.Context) {
 
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
-		h.logger.Error().Err(err).Msg("Failed to marshal enrichment job payload")
+		h.Logger.Error().Err(err).Msg("Failed to marshal enrichment job payload")
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Enqueue failed", Message: err.Error()})
 		return
 	}
 
 	// Enqueue enrichment job
 	task := asynq.NewTask("enrichment_job", payloadBytes)
-	_, err = h.asynqClient.Enqueue(task)
+	_, err = h.AsynqClient.Enqueue(task)
 	if err != nil {
-		h.logger.Error().Err(err).Str("submission_id", submissionID).Msg("Failed to enqueue enrichment job")
+		h.Logger.Error().Err(err).Str("submission_id", submissionID).Msg("Failed to enqueue enrichment job")
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "Enqueue failed",
 			Message: err.Error(),
@@ -158,7 +175,7 @@ func (h *Handler) RetryEnrichment(c *gin.Context) {
 		return
 	}
 
-	h.logger.Info().Str("submission_id", submissionID).Msg("Enrichment retry enqueued")
+	h.Logger.Info().Str("submission_id", submissionID).Msg("Enrichment retry enqueued")
 
 	c.JSON(http.StatusOK, MessageResponse{
 		Message: "Enrichment retry enqueued successfully",
@@ -169,7 +186,7 @@ func (h *Handler) RetryEnrichment(c *gin.Context) {
 }
 
 // RetryAnalysis handles POST /api/v1/admin/submissions/:id/retry-analysis
-func (h *Handler) RetryAnalysis(c *gin.Context) {
+func (h *AdminHandlers) RetryAnalysis(c *gin.Context) {
 	submissionID := c.Param("id")
 
 	// Parse and validate UUID
@@ -180,14 +197,14 @@ func (h *Handler) RetryAnalysis(c *gin.Context) {
 	}
 
 	// Validate submission exists
-	_, err = h.submissionSvc.GetByID(c.Request.Context(), subUUID)
+	_, err = h.SubmissionService.GetByID(c.Request.Context(), subUUID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Submission not found"})
 		return
 	}
 
 	// Get enrichment record
-	enrichmentRecord, err := h.enrichmentSvc.GetBySubmissionID(c.Request.Context(), subUUID)
+	enrichmentRecord, err := h.EnrichmentService.GetBySubmissionID(c.Request.Context(), subUUID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Error:   "Enrichment required",
@@ -195,8 +212,6 @@ func (h *Handler) RetryAnalysis(c *gin.Context) {
 		})
 		return
 	}
-
-	// NOTE: Removed submission status update - submission status always "received"
 
 	// Create analysis job payload
 	payload := map[string]string{
@@ -206,16 +221,16 @@ func (h *Handler) RetryAnalysis(c *gin.Context) {
 
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
-		h.logger.Error().Err(err).Msg("Failed to marshal analysis job payload")
+		h.Logger.Error().Err(err).Msg("Failed to marshal analysis job payload")
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Enqueue failed", Message: err.Error()})
 		return
 	}
 
 	// Enqueue analysis job
 	task := asynq.NewTask("analysis_job", payloadBytes)
-	_, err = h.asynqClient.Enqueue(task)
+	_, err = h.AsynqClient.Enqueue(task)
 	if err != nil {
-		h.logger.Error().Err(err).Str("submission_id", submissionID).Msg("Failed to enqueue analysis job")
+		h.Logger.Error().Err(err).Str("submission_id", submissionID).Msg("Failed to enqueue analysis job")
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "Enqueue failed",
 			Message: err.Error(),
@@ -223,7 +238,7 @@ func (h *Handler) RetryAnalysis(c *gin.Context) {
 		return
 	}
 
-	h.logger.Info().Str("submission_id", submissionID).Msg("Analysis retry enqueued")
+	h.Logger.Info().Str("submission_id", submissionID).Msg("Analysis retry enqueued")
 
 	c.JSON(http.StatusOK, MessageResponse{
 		Message: "Analysis retry enqueued successfully",
@@ -234,11 +249,11 @@ func (h *Handler) RetryAnalysis(c *gin.Context) {
 }
 
 // GetAnalytics handles GET /api/v1/admin/analytics
-func (h *Handler) GetAnalytics(c *gin.Context) {
+func (h *AdminHandlers) GetAnalytics(c *gin.Context) {
 	// Get analytics data from service
-	analytics, err := h.submissionSvc.GetAnalytics(c.Request.Context())
+	analytics, err := h.SubmissionService.GetAnalytics(c.Request.Context())
 	if err != nil {
-		h.logger.Error().Err(err).Msg("Failed to get analytics")
+		h.Logger.Error().Err(err).Msg("Failed to get analytics")
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "Failed to retrieve analytics",
 			Message: err.Error(),

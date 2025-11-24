@@ -122,7 +122,10 @@ func (s *Service) CreateVersion(ctx context.Context, analysisID string, edits ma
 	// Generate new ID for the new version
 	newVersion.ID = generateAnalysisID()
 
-	// Save the new version
+	// Clear previous latest and save the new version as latest
+	if err := s.repo.ClearLatest(ctx, currentAnalysis.SubmissionID); err != nil {
+		return nil, fmt.Errorf("failed to clear latest flag: %w", err)
+	}
 	err = s.repo.Create(ctx, newVersion)
 	if err != nil {
 		return nil, err

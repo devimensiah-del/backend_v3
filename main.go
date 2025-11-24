@@ -99,8 +99,8 @@ func main() {
 	if err := rClient.Ping(ctx).Err(); err != nil {
 		log.Fatal().Err(err).Str("addr", cfg.RedisURL).Msg("FATAL: Failed to connect to Redis")
 	}
-	rClient.Close()
 	log.Info().Msg("Redis connection verified")
+	defer rClient.Close()
 
 	// 4. EXTERNAL CLIENTS
 	log.Info().Msg("Initializing external service clients...")
@@ -223,28 +223,22 @@ func main() {
 
 	// 8. HTTP API
 	log.Info().Msg("Setting up HTTP server and routes...")
-	handler := api.NewHandler(
-		subSvc,
-		enrichSvc,
-		analysisSvc,
-		reportSvc,
-		asynqClient,
-		db,
-		nil, // redisClient (nil for now)
-		log.Logger,
-		cfg.SupabaseURL,
-		cfg.SupabaseAnonKey,   // For auth API calls
-		cfg.SupabaseJWTSecret, // For JWT validation
-	)
 
-	// CRITICAL: Pass Config values to Router
 	router := api.SetupRouter(
-		handler,
 		log.Logger,
 		cfg.SupabaseJWTSecret, // For AuthMiddleware
 		cfg.AllowedOrigins,    // For CORSMiddleware
 		cfg.Environment == "production",
-		db, // For role lookup in AuthMiddleware
+		db,         // For role lookup in AuthMiddleware
+		rClient,    // Redis client for health and caching
+		asynqClient,
+		cfg.SupabaseURL,
+		cfg.SupabaseAnonKey,   // For auth API calls
+		cfg.SupabaseJWTSecret, // For JWT validation
+		subSvc,
+		enrichSvc,
+		analysisSvc,
+		reportSvc,
 	)
 
 	srv := &http.Server{
