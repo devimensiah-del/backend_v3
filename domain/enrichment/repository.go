@@ -61,14 +61,21 @@ func (r *PostgresRepository) Create(ctx context.Context, e *Enrichment) error {
 func (r *PostgresRepository) GetByID(ctx context.Context, id uuid.UUID) (*Enrichment, error) {
 	query := `SELECT * FROM enrichments WHERE id = $1`
 
+	fmt.Printf("[DEBUG] GetByID: querying for id=%s\n", id.String())
+
 	var e Enrichment
 	// sqlx automatically calls .Scan() on JSONMap fields
 	if err := r.db.GetContext(ctx, &e, query, id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
+			fmt.Printf("[DEBUG] GetByID: no rows found for id=%s\n", id.String())
 			return nil, fmt.Errorf("enrichment not found")
 		}
+		fmt.Printf("[DEBUG] GetByID: query failed with error: %v\n", err)
 		return nil, fmt.Errorf("failed to get enrichment: %w", err)
 	}
+
+	fmt.Printf("[DEBUG] GetByID: found enrichment id=%s, status=%s, data_size=%d\n",
+		e.ID.String(), e.Status, len(e.EnrichedData))
 
 	return &e, nil
 }
