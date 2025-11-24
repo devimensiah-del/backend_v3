@@ -207,9 +207,8 @@ func (s *Service) MarkAsFailed(ctx context.Context, submissionID uuid.UUID, erro
 		return fmt.Errorf("failed to get enrichment: %w", err)
 	}
 
+	// Fail() already sets ErrorMessage, but we set it explicitly for clarity
 	enrichment.Fail(fmt.Errorf(errorMsg))
-
-	enrichment.ErrorMessage = errorMsg
 
 	if err := s.repo.UpdateSystem(ctx, enrichment); err != nil {
 		return fmt.Errorf("failed to update enrichment error message: %w", err)

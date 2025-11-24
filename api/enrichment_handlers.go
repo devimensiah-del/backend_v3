@@ -355,8 +355,9 @@ func (h *EnrichmentHandlers) buildEnrichmentResponse(e *enrichment.Enrichment) E
 		Msg("Building enrichment response")
 
 	// Calculate progress and determine the appropriate step message
-	progress := h.calculateInferredProgress(string(e.Status), e.CurrentStep)
-	currentStep := h.getDisplayStep(string(e.Status), e.CurrentStep)
+	// NullableString must be converted to string for these helper functions
+	progress := h.calculateInferredProgress(string(e.Status), string(e.CurrentStep))
+	currentStep := h.getDisplayStep(string(e.Status), string(e.CurrentStep))
 
 	return EnrichmentResponse{
 		ID:           e.ID.String(),

@@ -1,6 +1,7 @@
 package enrichment
 
 import (
+	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
@@ -10,6 +11,30 @@ import (
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
+
+// NullableString handles NULL string values from database
+// It scans NULL as empty string instead of failing
+type NullableString string
+
+func (ns *NullableString) Scan(value interface{}) error {
+	var s sql.NullString
+	if err := s.Scan(value); err != nil {
+		return err
+	}
+	if s.Valid {
+		*ns = NullableString(s.String)
+	} else {
+		*ns = ""
+	}
+	return nil
+}
+
+func (ns NullableString) Value() (driver.Value, error) {
+	if ns == "" {
+		return nil, nil
+	}
+	return string(ns), nil
+}
 
 // JSONMap handles the JSONB interaction with Postgres
 type JSONMap map[string]interface{}
@@ -151,9 +176,9 @@ type Enrichment struct {
 	ID           uuid.UUID `json:"id" db:"id"`
 	SubmissionID uuid.UUID `json:"submissionId" db:"submission_id"`
 
-	Status      Status `json:"status" db:"status"`
-	Progress    int    `json:"progress" db:"progress"`
-	CurrentStep string `json:"currentStep" db:"current_step"`
+	Status      Status         `json:"status" db:"status"`
+	Progress    int            `json:"progress" db:"progress"`
+	CurrentStep NullableString `json:"currentStep" db:"current_step"` // Can be NULL in DB
 
 	IsLocked bool `json:"isLocked" db:"is_locked"`
 
@@ -162,11 +187,11 @@ type Enrichment struct {
 	SourcesUsed   pq.StringArray `json:"sourcesUsed,omitempty" db:"sources_used"` // PostgreSQL text[] array
 	EnrichedData  JSONMap        `json:"enrichedData,omitempty" db:"data"`
 
-	StartedAt *time.Time `json:"startedAt,omitempty" db:"started_at"`
-	CompletedAt  *time.Time `json:"completedAt,omitempty" db:"completed_at"`
-	ErrorMessage string     `json:"errorMessage,omitempty" db:"error_message"`
-	RetryCount   int        `json:"retryCount" db:"retry_count"`
-	MaxRetries   int        `json:"maxRetries" db:"max_retries"`
+	StartedAt    *time.Time     `json:"startedAt,omitempty" db:"started_at"`
+	CompletedAt  *time.Time     `json:"completedAt,omitempty" db:"completed_at"`
+	ErrorMessage NullableString `json:"errorMessage,omitempty" db:"error_message"` // Can be NULL in DB
+	RetryCount   int            `json:"retryCount" db:"retry_count"`
+	MaxRetries   int            `json:"maxRetries" db:"max_retries"`
 
 	CreatedAt time.Time `json:"createdAt" db:"created_at"`
 	UpdatedAt time.Time `json:"updatedAt" db:"updated_at"`
@@ -187,7 +212,7 @@ func NewEnrichment(submissionID uuid.UUID) *Enrichment {
 		SubmissionID:  submissionID,
 		Status:        StatusPending,
 		Progress:      0,
-		CurrentStep:   "Queued for enrichment",
+		CurrentStep:   NullableString("Queued for enrichment"),
 		IsLocked:      false,
 		SourcesStatus: make(JSONMap),
 		SourcesUsed:   pq.StringArray{},
@@ -209,12 +234,12 @@ func (e *Enrichment) Finish() {
 	n := time.Now()
 	e.CompletedAt = &n
 	e.Progress = 100
-	e.CurrentStep = "Enrichment complete"
+	e.CurrentStep = NullableString("Enrichment complete")
 	e.UpdatedAt = n
 }
 
 func (e *Enrichment) UpdateProgress(step string, pct int) {
-	e.CurrentStep = step
+	e.CurrentStep = NullableString(step)
 	e.Progress = pct
 	e.UpdatedAt = time.Now()
 }
@@ -222,6 +247,6 @@ func (e *Enrichment) UpdateProgress(step string, pct int) {
 func (e *Enrichment) Fail(err error) {
 	// Status stays "pending" on failure - error is stored in ErrorMessage
 	// Admin can retry or manually update
-	e.ErrorMessage = err.Error()
+	e.ErrorMessage = NullableString(err.Error())
 	e.UpdatedAt = time.Now()
 }
