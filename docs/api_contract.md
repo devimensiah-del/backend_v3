@@ -22,6 +22,7 @@ Single `api` package with handlers composed in `router.go`. All routes are under
 - `GET /submissions/:id/report/preview` — preview report (auth).
 - `GET /submissions/:id/report/download` — download report (auth).
 - `PUT /user/profile` — update profile.
+- `DELETE /user` — deactivate account (soft delete).
 
 ## Admin (auth + admin role)
 - `GET /admin/submissions` — list all submissions (filters: status, email, pagination).

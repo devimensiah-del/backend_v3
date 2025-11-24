@@ -156,6 +156,7 @@ func SetupRouter(
 	{
 		userAPI.GET("/profile", mainHandler.AuthHandlers.GetCurrentUser)
 		userAPI.PUT("/profile", mainHandler.UserHandlers.UpdateUserProfile)
+		userAPI.DELETE("", mainHandler.UserHandlers.DeleteAccount)
 	}
 
 	// Protected User Routes (v1)

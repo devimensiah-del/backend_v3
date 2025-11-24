@@ -127,3 +127,4 @@ VALUES (
     'draft',
     'https://example.com/mock-report.pdf'
 ) ON CONFLICT (id) DO NOTHING;
+

@@ -190,6 +190,7 @@ type UserProfile struct {
 	UpdatedAt time.Time `json:"updatedAt" db:"updated_at"`
 }
 
+
 // ==================== ENRICHMENT RESPONSE TYPES ====================
 
 // EnrichmentResponse maps domain Enrichment to frontend-expected structure

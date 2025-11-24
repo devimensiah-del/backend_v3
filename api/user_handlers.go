@@ -77,3 +77,52 @@ func (h *UserHandlers) UpdateUserProfile(c *gin.Context) {
 		User: profile,
 	})
 }
+
+// DeleteAccount handles DELETE /api/v1/user
+// Soft-deactivates the account (is_active = FALSE) to preserve referential integrity.
+func (h *UserHandlers) DeleteAccount(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{
+			Error:   "Unauthorized",
+			Message: "User ID not found in context",
+		})
+		return
+	}
+
+	userIDStr, ok := userID.(string)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Internal error",
+			Message: "Invalid user ID format",
+		})
+		return
+	}
+
+	result, err := h.DB.Exec(`
+		UPDATE user_profiles
+		SET is_active = FALSE, updated_at = NOW()
+		WHERE id = $1
+	`, userIDStr)
+	if err != nil {
+		h.Logger.Error().Err(err).Str("user_id", userIDStr).Msg("Failed to deactivate account")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Failed to delete account",
+			Message: "Could not deactivate account",
+		})
+		return
+	}
+
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		c.JSON(http.StatusNotFound, ErrorResponse{
+			Error:   "Not found",
+			Message: "User not found",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Account deactivated",
+	})
+}
