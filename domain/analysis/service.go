@@ -127,6 +127,11 @@ func (s *Service) CreateVersion(ctx context.Context, analysisID string, edits ma
 		return nil, err
 	}
 
+	// Do not allow new versions once the analysis has been sent
+	if currentAnalysis.Status == string(StatusSent) {
+		return nil, fmt.Errorf("cannot create new version after analysis has been sent")
+	}
+
 	// Create a new version based on the current one
 	newVersion := currentAnalysis.CreateNewVersion()
 
@@ -306,6 +311,11 @@ func (s *Service) UpdateFields(ctx context.Context, analysisID string, updateDat
 	currentAnalysis, err := s.repo.GetByID(ctx, analysisID)
 	if err != nil {
 		return nil, err
+	}
+
+	// Do not allow edits after analysis has been sent
+	if currentAnalysis.Status == string(StatusSent) {
+		return nil, fmt.Errorf("cannot edit analysis after it has been sent")
 	}
 
 	// Apply edits to analysis
