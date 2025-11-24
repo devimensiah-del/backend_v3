@@ -371,8 +371,16 @@ func (s *Service) Send(ctx context.Context, analysisID string, userEmail string)
 		return fmt.Errorf("analysis must be in 'approved' status to send, current status: %s", analysis.Status)
 	}
 
-	// TODO: Validate PDF exists (requires report service integration)
-	// For now, we'll assume PDF generation was successful since status is "approved"
+	// Validate report exists with a PDF (best-effort guard)
+	if s.reportService != nil {
+		rep, repErr := s.reportService.GetBySubmissionID(ctx, analysis.SubmissionID)
+		if repErr != nil {
+			return fmt.Errorf("analysis approved but report not found: %w", repErr)
+		}
+		if rep.PDFURL == "" {
+			return fmt.Errorf("analysis approved but PDF não está disponível ainda")
+		}
+	}
 
 	// Update status to sent
 	analysis.Status = string(StatusSent)
