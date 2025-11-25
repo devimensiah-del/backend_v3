@@ -78,9 +78,16 @@ func (r *PostgresRepository) Create(ctx context.Context, s *Submission) error {
 }
 
 // GetByID retrieves a submission by ID
+// Uses explicit column list to ensure model/schema alignment
 func (r *PostgresRepository) GetByID(ctx context.Context, id uuid.UUID) (*Submission, error) {
 	query := `
-		SELECT * FROM submissions
+		SELECT
+			id, company_name, cnpj, company_website, company_industry, company_size, company_location,
+			contact_name, contact_email, contact_phone, contact_position,
+			target_market, annual_revenue_min, annual_revenue_max, funding_stage,
+			business_challenge, additional_notes, linkedin_url, twitter_handle,
+			status, user_id, created_at, updated_at, deleted_at
+		FROM submissions
 		WHERE id = $1 AND deleted_at IS NULL
 	`
 
@@ -96,9 +103,16 @@ func (r *PostgresRepository) GetByID(ctx context.Context, id uuid.UUID) (*Submis
 }
 
 // GetByEmail retrieves all submissions for an email address
+// Uses explicit column list to ensure model/schema alignment
 func (r *PostgresRepository) GetByEmail(ctx context.Context, email string) ([]*Submission, error) {
 	query := `
-		SELECT * FROM submissions
+		SELECT
+			id, company_name, cnpj, company_website, company_industry, company_size, company_location,
+			contact_name, contact_email, contact_phone, contact_position,
+			target_market, annual_revenue_min, annual_revenue_max, funding_stage,
+			business_challenge, additional_notes, linkedin_url, twitter_handle,
+			status, user_id, created_at, updated_at, deleted_at
+		FROM submissions
 		WHERE contact_email = $1 AND deleted_at IS NULL
 		ORDER BY created_at DESC
 	`
@@ -188,8 +202,13 @@ func (r *PostgresRepository) List(ctx context.Context, opts *ListOptions) ([]*Su
 		return nil, 0, fmt.Errorf("invalid order value: %s", opts.Order)
 	}
 
-	// Build query
-	query := "SELECT * FROM submissions WHERE deleted_at IS NULL"
+	// Build query with explicit columns to ensure model/schema alignment
+	selectCols := `id, company_name, cnpj, company_website, company_industry, company_size, company_location,
+		contact_name, contact_email, contact_phone, contact_position,
+		target_market, annual_revenue_min, annual_revenue_max, funding_stage,
+		business_challenge, additional_notes, linkedin_url, twitter_handle,
+		status, user_id, created_at, updated_at, deleted_at`
+	query := "SELECT " + selectCols + " FROM submissions WHERE deleted_at IS NULL"
 	countQuery := "SELECT COUNT(*) FROM submissions WHERE deleted_at IS NULL"
 	args := []interface{}{}
 	argPos := 1
