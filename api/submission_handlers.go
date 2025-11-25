@@ -224,18 +224,14 @@ func (h *SubmissionHandlers) GetSubmission(c *gin.Context) {
 }
 
 // ListUserSubmissions handles GET /api/v1/submissions (authenticated user's submissions only)
+// Filters submissions by matching the user's email with submission contact_email
 func (h *SubmissionHandlers) ListUserSubmissions(c *gin.Context) {
-	// Get authenticated user ID
-	userID, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Unauthorized", Message: "User not authenticated"})
-		return
-	}
+	// Get authenticated user email (preferred) or ID
+	userEmail, emailExists := c.Get("userEmail")
+	userID, idExists := c.Get("userID")
 
-	userIDStr, ok := userID.(string)
-	if !ok {
-		h.Logger.Error().Msgf("Invalid userID type: %T", userID)
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Internal error", Message: "Authentication error"})
+	if !emailExists && !idExists {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Unauthorized", Message: "User not authenticated"})
 		return
 	}
 
@@ -257,21 +253,34 @@ func (h *SubmissionHandlers) ListUserSubmissions(c *gin.Context) {
 	// Calculate offset
 	offset := (page - 1) * limit
 
-	// Parse user ID as UUID
-	userUUID, err := parseUUID(userIDStr)
-	if err != nil {
-		h.Logger.Error().Err(err).Str("user_id", userIDStr).Msg("Invalid user ID format")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Internal error", Message: "Invalid user ID"})
-		return
-	}
-
-	// Build list options for this user only
+	// Build list options - prefer filtering by email for better matching
 	opts := &submission.ListOptions{
 		Limit:   limit,
 		Offset:  offset,
 		OrderBy: "created_at",
 		Order:   "DESC",
-		UserID:  &userUUID, // Filter by user ID
+	}
+
+	// Primary filter: by user email (matches submission's contact_email)
+	if emailExists {
+		if emailStr, ok := userEmail.(string); ok && emailStr != "" {
+			opts.Email = &emailStr
+			h.Logger.Debug().Str("email", emailStr).Msg("Filtering submissions by user email")
+		}
+	}
+
+	// Fallback filter: by user ID (if email not available)
+	if opts.Email == nil && idExists {
+		if userIDStr, ok := userID.(string); ok {
+			userUUID, err := parseUUID(userIDStr)
+			if err != nil {
+				h.Logger.Error().Err(err).Str("user_id", userIDStr).Msg("Invalid user ID format")
+				c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Internal error", Message: "Invalid user ID"})
+				return
+			}
+			opts.UserID = &userUUID
+			h.Logger.Debug().Str("user_id", userIDStr).Msg("Filtering submissions by user ID (email not available)")
+		}
 	}
 
 	// Add status filter if provided

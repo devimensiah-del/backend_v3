@@ -163,13 +163,26 @@ func AuthMiddleware(jwtSecret string, db *sqlx.DB) gin.HandlerFunc {
 				c.Set("userID", sub)
 			}
 
-			// Fetch role from database instead of JWT token
+			// Supabase may also store email in "email" claim
+			if email, ok := claims["email"].(string); ok {
+				c.Set("userEmail", email)
+			}
+
+			// Fetch role and email from database
 			role := "user" // Default fallback
 			if userID != "" && db != nil {
-				var dbRole string
-				err := db.Get(&dbRole, "SELECT role FROM user_profiles WHERE id = $1", userID)
+				// Fetch both role and email in one query
+				var userInfo struct {
+					Role  string `db:"role"`
+					Email string `db:"email"`
+				}
+				err := db.Get(&userInfo, "SELECT role, email FROM user_profiles WHERE id = $1", userID)
 				if err == nil {
-					role = dbRole
+					role = userInfo.Role
+					// Set email from database if not already set from JWT
+					if _, exists := c.Get("userEmail"); !exists && userInfo.Email != "" {
+						c.Set("userEmail", userInfo.Email)
+					}
 				}
 				// If error (user not found), default to "user" role
 			}
