@@ -36,11 +36,24 @@ type Config struct {
 	DBMaxIdleConns    int
 	DBConnMaxLifetime time.Duration
 
-	// AI/LLM Configuration
+	// AI/LLM Configuration (Simplified 4-Model Approach)
 	OpenRouterAPIKey string
-	FallbackModel    string // Global fallback model when primary fails (e.g., gpt-4o-mini)
 
-	// Framework-specific model configurations (heterogeneous approach)
+	// Primary model: Used for enrichment and all 11 analysis frameworks
+	PrimaryModel    string
+	PrimaryFallback string
+
+	// Synthesis model: Premium model for executive summary
+	SynthesisModel    string
+	SynthesisFallback string
+
+	// Shared settings
+	AITemperature         float64
+	MaxTokensEnrichment   int
+	MaxTokensAnalysis     int
+	MaxTokensSynthesis    int
+
+	// Framework-specific model configurations (auto-generated from simplified config)
 	Frameworks map[string]FrameworkConfig
 
 	// Redis for background jobs
@@ -93,9 +106,16 @@ func Load() (*Config, error) {
 		DBMaxIdleConns:    getEnvInt("DB_MAX_IDLE_CONNS", 5),  // Idle connections to keep alive
 		DBConnMaxLifetime: time.Duration(getEnvInt("DB_CONN_MAX_LIFETIME_MINUTES", 5)) * time.Minute,
 
-		// AI Configuration
-		OpenRouterAPIKey: getEnv("OPENAI_API_KEY", ""),
-		FallbackModel:    getEnv("AI_FALLBACK_MODEL", "openai/gpt-4o-mini"), // Reliable fallback for all frameworks
+		// AI Configuration (Simplified 4-Model Approach)
+		OpenRouterAPIKey:  getEnv("OPENAI_API_KEY", ""),
+		PrimaryModel:      getEnv("AI_PRIMARY_MODEL", "google/gemini-2.5-flash"),
+		PrimaryFallback:   getEnv("AI_PRIMARY_FALLBACK", "openai/gpt-4.1-mini"),
+		SynthesisModel:    getEnv("AI_SYNTHESIS_MODEL", "google/gemini-2.5-pro-preview"),
+		SynthesisFallback: getEnv("AI_SYNTHESIS_FALLBACK", "openai/gpt-4.1"),
+		AITemperature:     getEnvFloat("AI_TEMPERATURE", 0.5),
+		MaxTokensEnrichment: getEnvInt("AI_MAX_TOKENS_ENRICHMENT", 10000),
+		MaxTokensAnalysis:   getEnvInt("AI_MAX_TOKENS_ANALYSIS", 4000),
+		MaxTokensSynthesis:  getEnvInt("AI_MAX_TOKENS_SYNTHESIS", 6000),
 
 		// Redis & Worker
 		// Parse Redis connection from REDIS_URL (Railway) or fall back to REDIS_ADDR (local)
@@ -280,101 +300,64 @@ func getEnvFloat(key string, fallback float64) float64 {
 	return fallback
 }
 
-// loadFrameworkConfigs loads heterogeneous model configurations for all analysis frameworks
-// Each framework gets its primary model + global fallback for resilience
+// loadFrameworkConfigs generates framework configurations from simplified 4-model approach
+// All analysis frameworks use PrimaryModel, Synthesis uses SynthesisModel
 func loadFrameworkConfigs() map[string]FrameworkConfig {
 	configs := make(map[string]FrameworkConfig)
 
-	// Global fallback model - used when any primary model fails
-	fallbackModel := getEnv("AI_FALLBACK_MODEL", "openai/gpt-4o-mini")
+	// Load simplified 4-model configuration
+	primaryModel := getEnv("AI_PRIMARY_MODEL", "google/gemini-2.5-flash")
+	primaryFallback := getEnv("AI_PRIMARY_FALLBACK", "openai/gpt-4.1-mini")
+	synthesisModel := getEnv("AI_SYNTHESIS_MODEL", "google/gemini-2.5-pro-preview")
+	synthesisFallback := getEnv("AI_SYNTHESIS_FALLBACK", "openai/gpt-4.1")
+	temperature := getEnvFloat("AI_TEMPERATURE", 0.5)
+	tokensEnrichment := getEnvInt("AI_MAX_TOKENS_ENRICHMENT", 10000)
+	tokensAnalysis := getEnvInt("AI_MAX_TOKENS_ANALYSIS", 4000)
+	tokensSynthesis := getEnvInt("AI_MAX_TOKENS_SYNTHESIS", 6000)
 
 	log.Info().
-		Str("fallback_model", fallbackModel).
-		Msg("Loading framework-specific AI model configurations")
+		Str("primary_model", primaryModel).
+		Str("primary_fallback", primaryFallback).
+		Str("synthesis_model", synthesisModel).
+		Str("synthesis_fallback", synthesisFallback).
+		Float64("temperature", temperature).
+		Msg("Loading simplified 4-model AI configuration")
 
 	// Enrichment Layer (Layer 0) - Discovery & Data Gathering
-	configs["enrichment"] = loadFrameworkConfigWithFallback("enrichment",
-		"AI_ENRICHMENT_MODEL", "AI_ENRICHMENT_TEMP", "AI_ENRICHMENT_MAX_TOKENS",
-		"google/gemini-2.0-flash-001", 0.5, 8000, fallbackModel)
+	configs["enrichment"] = FrameworkConfig{
+		Model:         primaryModel,
+		Temperature:   temperature,
+		MaxTokens:     tokensEnrichment,
+		FallbackModel: primaryFallback,
+	}
 
-	// Layer 1: Environment Scanning
-	configs["pestel"] = loadFrameworkConfigWithFallback("pestel",
-		"AI_PESTEL_MODEL", "AI_PESTEL_TEMP", "AI_PESTEL_MAX_TOKENS",
-		"openai/gpt-4o", 0.2, 1500, fallbackModel)
+	// All 11 Analysis Frameworks use Primary Model
+	analysisFrameworks := []string{
+		"pestel", "porter", "tam_sam_som",  // Layer 1: Environment
+		"swot", "benchmarking",              // Layer 2: Positioning
+		"blue_ocean", "growth_hacking", "scenarios", // Layer 3: Strategy
+		"okrs", "bsc", "decision_matrix",    // Layer 4: Execution
+	}
 
-	configs["porter"] = loadFrameworkConfigWithFallback("porter",
-		"AI_PORTER_MODEL", "AI_PORTER_TEMP", "AI_PORTER_MAX_TOKENS",
-		"openai/gpt-4o", 0.3, 1500, fallbackModel)
+	for _, framework := range analysisFrameworks {
+		configs[framework] = FrameworkConfig{
+			Model:         primaryModel,
+			Temperature:   temperature,
+			MaxTokens:     tokensAnalysis,
+			FallbackModel: primaryFallback,
+		}
+	}
 
-	configs["tam_sam_som"] = loadFrameworkConfigWithFallback("tam_sam_som",
-		"AI_TAM_MODEL", "AI_TAM_TEMP", "AI_TAM_MAX_TOKENS",
-		"openai/gpt-4o", 0.4, 2000, fallbackModel)
-
-	// Layer 2: Positioning
-	configs["swot"] = loadFrameworkConfigWithFallback("swot",
-		"AI_SWOT_MODEL", "AI_SWOT_TEMP", "AI_SWOT_MAX_TOKENS",
-		"openai/gpt-4o-mini", 0.4, 1500, fallbackModel)
-
-	configs["benchmarking"] = loadFrameworkConfigWithFallback("benchmarking",
-		"AI_BENCHMARKING_MODEL", "AI_BENCHMARKING_TEMP", "AI_BENCHMARKING_MAX_TOKENS",
-		"openai/gpt-4o-mini", 0.35, 1500, fallbackModel)
-
-	// Layer 3: Strategy
-	configs["blue_ocean"] = loadFrameworkConfigWithFallback("blue_ocean",
-		"AI_BLUE_OCEAN_MODEL", "AI_BLUE_OCEAN_TEMP", "AI_BLUE_OCEAN_MAX_TOKENS",
-		"openai/gpt-4o", 0.7, 1500, fallbackModel)
-
-	configs["growth_hacking"] = loadFrameworkConfigWithFallback("growth_hacking",
-		"AI_GROWTH_HACKING_MODEL", "AI_GROWTH_HACKING_TEMP", "AI_GROWTH_HACKING_MAX_TOKENS",
-		"openai/gpt-4o-mini", 0.6, 1500, fallbackModel)
-
-	configs["scenarios"] = loadFrameworkConfigWithFallback("scenarios",
-		"AI_SCENARIOS_MODEL", "AI_SCENARIOS_TEMP", "AI_SCENARIOS_MAX_TOKENS",
-		"openai/gpt-4o", 0.6, 1800, fallbackModel)
-
-	// Layer 4: Execution
-	configs["okrs"] = loadFrameworkConfigWithFallback("okrs",
-		"AI_OKRS_MODEL", "AI_OKRS_TEMP", "AI_OKRS_MAX_TOKENS",
-		"openai/gpt-4o", 0.25, 1500, fallbackModel)
-
-	configs["bsc"] = loadFrameworkConfigWithFallback("bsc",
-		"AI_BSC_MODEL", "AI_BSC_TEMP", "AI_BSC_MAX_TOKENS",
-		"openai/gpt-4o-mini", 0.35, 1500, fallbackModel)
-
-	configs["decision_matrix"] = loadFrameworkConfigWithFallback("decision_matrix",
-		"AI_DECISION_MATRIX_MODEL", "AI_DECISION_MATRIX_TEMP", "AI_DECISION_MATRIX_MAX_TOKENS",
-		"openai/gpt-4o", 0.2, 2500, fallbackModel)
-
-	// Synthesis Layer - Final Executive Summary
-	configs["synthesis"] = loadFrameworkConfigWithFallback("synthesis",
-		"AI_SYNTHESIS_MODEL", "AI_SYNTHESIS_TEMP", "AI_SYNTHESIS_MAX_TOKENS",
-		"openai/gpt-4o", 0.4, 3000, fallbackModel)
+	// Synthesis Layer - Final Executive Summary (Premium Model)
+	configs["synthesis"] = FrameworkConfig{
+		Model:         synthesisModel,
+		Temperature:   temperature,
+		MaxTokens:     tokensSynthesis,
+		FallbackModel: synthesisFallback,
+	}
 
 	log.Info().Int("frameworks_loaded", len(configs)).Msg("Framework configurations loaded successfully")
 	return configs
-}
-
-// loadFrameworkConfigWithFallback loads a framework configuration with fallback model support
-func loadFrameworkConfigWithFallback(frameworkName, modelEnv, tempEnv, tokensEnv, defaultModel string, defaultTemp float64, defaultTokens int, fallbackModel string) FrameworkConfig {
-	model := getEnv(modelEnv, defaultModel)
-	temp := getEnvFloat(tempEnv, defaultTemp)
-	tokens := getEnvInt(tokensEnv, defaultTokens)
-
-	// Log the configuration (only warn if env var explicitly set but empty)
-	log.Debug().
-		Str("framework", frameworkName).
-		Str("model", model).
-		Str("fallback", fallbackModel).
-		Float64("temperature", temp).
-		Int("max_tokens", tokens).
-		Msg("Framework AI configuration loaded")
-
-	return FrameworkConfig{
-		Model:         model,
-		Temperature:   temp,
-		MaxTokens:     tokens,
-		FallbackModel: fallbackModel,
-	}
 }
 
 func setupLogger(environment string) {
