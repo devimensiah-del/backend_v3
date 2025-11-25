@@ -303,7 +303,16 @@ func (s *Service) Approve(ctx context.Context, analysisID string) error {
 
 	s.logger.Info().
 		Str("analysis_id", analysisID).
-		Msg("Analysis approved, triggering PDF generation")
+		Msg("Analysis approved")
+
+	// PDF DISABLED - TEMPORARY
+	// PDF generation has been temporarily disabled. To re-enable:
+	// 1. Uncomment the code block below
+	// 2. Re-enable frontend PDF UI components
+	/*
+	s.logger.Info().
+		Str("analysis_id", analysisID).
+		Msg("Triggering PDF generation")
 
 	// Enqueue PDF generation job
 	payload := map[string]string{
@@ -327,6 +336,7 @@ func (s *Service) Approve(ctx context.Context, analysisID string) error {
 		Str("analysis_id", analysisID).
 		Str("submission_id", analysis.SubmissionID).
 		Msg("PDF generation job enqueued successfully")
+	*/
 
 	return nil
 }
