@@ -31,6 +31,8 @@ func NewPostgresRepository(db *sqlx.DB) *PostgresRepository {
 }
 
 // Create inserts a new analysis record
+// Uses positional parameters ($1, $2, ...) instead of named parameters
+// to avoid lib/pq driver issues with custom JSONB types implementing driver.Valuer
 func (r *PostgresRepository) Create(ctx context.Context, analysis *Analysis) error {
 	query := `
 		INSERT INTO analyses (
@@ -40,15 +42,21 @@ func (r *PostgresRepository) Create(ctx context.Context, analysis *Analysis) err
 			approved_at, approved_by, sent_at, sent_to, deleted_at,
 			created_at, updated_at, completed_at
 		) VALUES (
-			:id, :submission_id, :enrichment_id,
-			:swot, :pestel, :porter, :okrs, :tam_sam_som, :benchmarking, :blue_ocean, :growth_hacking, :scenarios, :bsc, :decision_matrix,
-			:synthesis, :status, :error_message, :processing_time_ms,
-			:approved_at, :approved_by, :sent_at, :sent_to, :deleted_at,
-			:created_at, :updated_at, :completed_at
+			$1, $2, $3,
+			$4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+			$15, $16, $17, $18,
+			$19, $20, $21, $22, $23,
+			$24, $25, $26
 		)
 	`
 
-	_, err := r.db.NamedExecContext(ctx, query, analysis)
+	_, err := r.db.ExecContext(ctx, query,
+		analysis.ID, analysis.SubmissionID, analysis.EnrichmentID,
+		analysis.SWOT, analysis.PESTEL, analysis.Porter, analysis.OKRs, analysis.TamSamSom, analysis.Benchmarking, analysis.BlueOcean, analysis.GrowthHacking, analysis.Scenarios, analysis.BSC, analysis.DecisionMatrix,
+		analysis.Synthesis, analysis.Status, analysis.ErrorMessage, analysis.ProcessingTimeMs,
+		analysis.ApprovedAt, analysis.ApprovedBy, analysis.SentAt, analysis.SentTo, analysis.DeletedAt,
+		analysis.CreatedAt, analysis.UpdatedAt, analysis.CompletedAt,
+	)
 	if err != nil {
 		return fmt.Errorf("failed to create analysis: %w", err)
 	}
@@ -57,35 +65,42 @@ func (r *PostgresRepository) Create(ctx context.Context, analysis *Analysis) err
 }
 
 // Update modifies an existing analysis record
+// Uses positional parameters to avoid lib/pq driver issues with JSONB types
 func (r *PostgresRepository) Update(ctx context.Context, analysis *Analysis) error {
 	query := `
 		UPDATE analyses SET
-			swot = :swot,
-			pestel = :pestel,
-			porter = :porter,
-			okrs = :okrs,
-			tam_sam_som = :tam_sam_som,
-			benchmarking = :benchmarking,
-			blue_ocean = :blue_ocean,
-			growth_hacking = :growth_hacking,
-			scenarios = :scenarios,
-			bsc = :bsc,
-			decision_matrix = :decision_matrix,
-			synthesis = :synthesis,
-			status = :status,
-			error_message = :error_message,
-			processing_time_ms = :processing_time_ms,
-			approved_at = :approved_at,
-			approved_by = :approved_by,
-			sent_at = :sent_at,
-			sent_to = :sent_to,
-			deleted_at = :deleted_at,
-			updated_at = :updated_at,
-			completed_at = :completed_at
-		WHERE id = :id
+			swot = $1,
+			pestel = $2,
+			porter = $3,
+			okrs = $4,
+			tam_sam_som = $5,
+			benchmarking = $6,
+			blue_ocean = $7,
+			growth_hacking = $8,
+			scenarios = $9,
+			bsc = $10,
+			decision_matrix = $11,
+			synthesis = $12,
+			status = $13,
+			error_message = $14,
+			processing_time_ms = $15,
+			approved_at = $16,
+			approved_by = $17,
+			sent_at = $18,
+			sent_to = $19,
+			deleted_at = $20,
+			updated_at = $21,
+			completed_at = $22
+		WHERE id = $23
 	`
 
-	result, err := r.db.NamedExecContext(ctx, query, analysis)
+	result, err := r.db.ExecContext(ctx, query,
+		analysis.SWOT, analysis.PESTEL, analysis.Porter, analysis.OKRs, analysis.TamSamSom,
+		analysis.Benchmarking, analysis.BlueOcean, analysis.GrowthHacking, analysis.Scenarios, analysis.BSC,
+		analysis.DecisionMatrix, analysis.Synthesis, analysis.Status, analysis.ErrorMessage, analysis.ProcessingTimeMs,
+		analysis.ApprovedAt, analysis.ApprovedBy, analysis.SentAt, analysis.SentTo, analysis.DeletedAt,
+		analysis.UpdatedAt, analysis.CompletedAt, analysis.ID,
+	)
 	if err != nil {
 		return fmt.Errorf("failed to update analysis: %w", err)
 	}
@@ -103,35 +118,42 @@ func (r *PostgresRepository) Update(ctx context.Context, analysis *Analysis) err
 }
 
 // UpdateWithTx modifies an existing analysis record within a transaction
+// Uses positional parameters to avoid lib/pq driver issues with JSONB types
 func (r *PostgresRepository) UpdateWithTx(ctx context.Context, tx *sqlx.Tx, analysis *Analysis) error {
 	query := `
 		UPDATE analyses SET
-			swot = :swot,
-			pestel = :pestel,
-			porter = :porter,
-			okrs = :okrs,
-			tam_sam_som = :tam_sam_som,
-			benchmarking = :benchmarking,
-			blue_ocean = :blue_ocean,
-			growth_hacking = :growth_hacking,
-			scenarios = :scenarios,
-			bsc = :bsc,
-			decision_matrix = :decision_matrix,
-			synthesis = :synthesis,
-			status = :status,
-			error_message = :error_message,
-			processing_time_ms = :processing_time_ms,
-			approved_at = :approved_at,
-			approved_by = :approved_by,
-			sent_at = :sent_at,
-			sent_to = :sent_to,
-			deleted_at = :deleted_at,
-			updated_at = :updated_at,
-			completed_at = :completed_at
-		WHERE id = :id
+			swot = $1,
+			pestel = $2,
+			porter = $3,
+			okrs = $4,
+			tam_sam_som = $5,
+			benchmarking = $6,
+			blue_ocean = $7,
+			growth_hacking = $8,
+			scenarios = $9,
+			bsc = $10,
+			decision_matrix = $11,
+			synthesis = $12,
+			status = $13,
+			error_message = $14,
+			processing_time_ms = $15,
+			approved_at = $16,
+			approved_by = $17,
+			sent_at = $18,
+			sent_to = $19,
+			deleted_at = $20,
+			updated_at = $21,
+			completed_at = $22
+		WHERE id = $23
 	`
 
-	result, err := tx.NamedExecContext(ctx, query, analysis)
+	result, err := tx.ExecContext(ctx, query,
+		analysis.SWOT, analysis.PESTEL, analysis.Porter, analysis.OKRs, analysis.TamSamSom,
+		analysis.Benchmarking, analysis.BlueOcean, analysis.GrowthHacking, analysis.Scenarios, analysis.BSC,
+		analysis.DecisionMatrix, analysis.Synthesis, analysis.Status, analysis.ErrorMessage, analysis.ProcessingTimeMs,
+		analysis.ApprovedAt, analysis.ApprovedBy, analysis.SentAt, analysis.SentTo, analysis.DeletedAt,
+		analysis.UpdatedAt, analysis.CompletedAt, analysis.ID,
+	)
 	if err != nil {
 		return fmt.Errorf("failed to update analysis in transaction: %w", err)
 	}
