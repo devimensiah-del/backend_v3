@@ -163,13 +163,21 @@ func (s *Service) exec(wg *sync.WaitGroup, task func()) {
 }
 
 func (s *Service) startAnalysisRecord(ctx context.Context, subID, enrichID string) (*Analysis, error) {
+	s.logger.Info().Str("submission_id", subID).Str("enrichment_id", enrichID).Msg("startAnalysisRecord: BEGIN")
+
 	existing, err := s.repo.GetBySubmissionID(ctx, subID)
+	s.logger.Info().
+		Str("submission_id", subID).
+		Bool("found", err == nil && existing != nil).
+		Interface("error", err).
+		Msg("startAnalysisRecord: GetBySubmissionID result")
+
 	if err == nil && existing != nil {
-		s.logger.Debug().
+		s.logger.Info().
 			Str("submission_id", subID).
 			Str("existing_analysis_id", existing.ID).
 			Str("existing_status", existing.Status).
-			Msg("[DEBUG] Found existing analysis record")
+			Msg("startAnalysisRecord: Found existing analysis record")
 
 		switch existing.Status {
 		case string(StatusCompleted), string(StatusApproved), string(StatusSent):
@@ -178,7 +186,7 @@ func (s *Service) startAnalysisRecord(ctx context.Context, subID, enrichID strin
 				Str("submission_id", subID).
 				Str("analysis_id", existing.ID).
 				Str("old_status", existing.Status).
-				Msg("Resetting existing analysis to pending for re-run")
+				Msg("startAnalysisRecord: Resetting existing analysis to pending for re-run")
 
 			existing.Status = string(StatusPending)
 			existing.EnrichmentID = enrichID
@@ -214,11 +222,11 @@ func (s *Service) startAnalysisRecord(ctx context.Context, subID, enrichID strin
 			return existing, nil
 		}
 	} else if err != nil && !strings.Contains(err.Error(), "not found") {
-		s.logger.Error().Err(err).Str("submission_id", subID).Msg("[DEBUG] Error fetching existing analysis")
+		s.logger.Error().Err(err).Str("submission_id", subID).Msg("startAnalysisRecord: Error fetching existing analysis (not 'not found')")
 		return nil, err
 	}
 
-	s.logger.Debug().Str("submission_id", subID).Msg("[DEBUG] No existing analysis found, creating new record")
+	s.logger.Info().Str("submission_id", subID).Msg("startAnalysisRecord: No existing analysis found, creating new record")
 
 	// If not found or other retrieval error, create a new record
 	a := &Analysis{
