@@ -57,9 +57,17 @@ func (r *PostgresRepository) Create(ctx context.Context, e *Enrichment) error {
 	return nil
 }
 
+// enrichmentColumns lists all columns the Enrichment struct expects
+// This avoids SELECT * which fails if DB has extra columns
+const enrichmentColumns = `
+	id, submission_id, status, progress, current_step, is_locked,
+	sources_status, sources_used, data, started_at, completed_at,
+	error_message, retry_count, max_retries, created_at, updated_at
+`
+
 // GetByID retrieves an enrichment by ID
 func (r *PostgresRepository) GetByID(ctx context.Context, id uuid.UUID) (*Enrichment, error) {
-	query := `SELECT * FROM enrichments WHERE id = $1`
+	query := `SELECT ` + enrichmentColumns + ` FROM enrichments WHERE id = $1`
 
 	fmt.Printf("[DEBUG] GetByID: querying for id=%s\n", id.String())
 
@@ -83,7 +91,7 @@ func (r *PostgresRepository) GetByID(ctx context.Context, id uuid.UUID) (*Enrich
 // GetBySubmissionID retrieves enrichment for a submission
 func (r *PostgresRepository) GetBySubmissionID(ctx context.Context, submissionID uuid.UUID) (*Enrichment, error) {
 	query := `
-		SELECT * FROM enrichments
+		SELECT ` + enrichmentColumns + ` FROM enrichments
 		WHERE submission_id = $1
 		ORDER BY created_at DESC
 		LIMIT 1
