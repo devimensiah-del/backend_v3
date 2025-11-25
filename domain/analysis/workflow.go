@@ -165,17 +165,60 @@ func (s *Service) exec(wg *sync.WaitGroup, task func()) {
 func (s *Service) startAnalysisRecord(ctx context.Context, subID, enrichID string) (*Analysis, error) {
 	existing, err := s.repo.GetBySubmissionID(ctx, subID)
 	if err == nil && existing != nil {
+		s.logger.Debug().
+			Str("submission_id", subID).
+			Str("existing_analysis_id", existing.ID).
+			Str("existing_status", existing.Status).
+			Msg("[DEBUG] Found existing analysis record")
+
 		switch existing.Status {
 		case string(StatusCompleted), string(StatusApproved), string(StatusSent):
-			return nil, fmt.Errorf("analysis already exists for submission %s", subID)
+			// Allow re-running analysis by resetting the existing record
+			s.logger.Info().
+				Str("submission_id", subID).
+				Str("analysis_id", existing.ID).
+				Str("old_status", existing.Status).
+				Msg("Resetting existing analysis to pending for re-run")
+
+			existing.Status = string(StatusPending)
+			existing.EnrichmentID = enrichID
+			existing.UpdatedAt = time.Now()
+			existing.CompletedAt = nil
+			existing.ProcessingTimeMs = 0
+
+			// Clear previous analysis results for fresh run
+			existing.PESTEL = PESTELAnalysis{}
+			existing.Porter = PorterAnalysis{}
+			existing.TamSamSom = TamSamSomAnalysis{}
+			existing.SWOT = SWOTAnalysis{}
+			existing.Benchmarking = BenchmarkingAnalysis{}
+			existing.BlueOcean = BlueOceanAnalysis{}
+			existing.GrowthHacking = GrowthHackingAnalysis{}
+			existing.Scenarios = ScenarioAnalysis{}
+			existing.OKRs = OKRAnalysis{}
+			existing.BSC = BalancedScorecardAnalysis{}
+			existing.DecisionMatrix = DecisionMatrixAnalysis{}
+			existing.Synthesis = AnalysisSynthesis{}
+
+			if err := s.repo.Update(ctx, existing); err != nil {
+				s.logger.Error().Err(err).Str("analysis_id", existing.ID).Msg("Failed to reset analysis for re-run")
+				return nil, fmt.Errorf("failed to reset analysis for re-run: %w", err)
+			}
+
+			s.logger.Info().Str("analysis_id", existing.ID).Msg("Analysis reset successfully, starting fresh run")
+			return existing, nil
 		default:
 			// Pending state: reuse record (worker will continue/restart processing)
 			// If there was an error previously, it will be overwritten
+			s.logger.Debug().Str("analysis_id", existing.ID).Msg("Reusing existing pending analysis record")
 			return existing, nil
 		}
 	} else if err != nil && !strings.Contains(err.Error(), "not found") {
+		s.logger.Error().Err(err).Str("submission_id", subID).Msg("[DEBUG] Error fetching existing analysis")
 		return nil, err
 	}
+
+	s.logger.Debug().Str("submission_id", subID).Msg("[DEBUG] No existing analysis found, creating new record")
 
 	// If not found or other retrieval error, create a new record
 	a := &Analysis{
