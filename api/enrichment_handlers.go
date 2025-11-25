@@ -427,5 +427,7 @@ func (h *EnrichmentHandlers) GetEnrichmentBySubmissionAdmin(c *gin.Context) {
 
 	// Transform to DTO
 	response := h.buildEnrichmentResponse(enrichment)
-	c.JSON(http.StatusOK, response)
+	c.JSON(http.StatusOK, gin.H{
+		"enrichment": response,
+	})
 }
