@@ -346,3 +346,66 @@ func (h *AnalysisHandlers) GetAnalysisAdmin(c *gin.Context) {
 		"analysis": response,
 	})
 }
+
+// ToggleVisibility handles POST /api/v1/admin/analysis/:id/visibility
+// Admin toggles whether the analysis is visible to end users
+func (h *AnalysisHandlers) ToggleVisibility(c *gin.Context) {
+	analysisID := c.Param("id")
+
+	// Parse request body
+	var req struct {
+		Visible bool `json:"visible"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid request",
+			Message: "visible field is required (boolean)",
+		})
+		return
+	}
+
+	// Toggle visibility via service
+	err := h.AnalysisService.SetVisibility(c.Request.Context(), analysisID, req.Visible)
+	if err != nil {
+		h.Logger.Error().Err(err).Str("analysis_id", analysisID).Msg("Failed to toggle visibility")
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Toggle failed",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	// Fetch updated analysis
+	updatedAnalysis, err := h.AnalysisService.GetByID(c.Request.Context(), analysisID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Fetch failed",
+			Message: "Visibility toggled but failed to fetch updated analysis",
+		})
+		return
+	}
+
+	// Transform to response
+	analysisData := make(map[string]interface{})
+	analysisBytes, _ := json.Marshal(updatedAnalysis)
+	json.Unmarshal(analysisBytes, &analysisData)
+
+	response := AnalysisResponse{
+		ID:           updatedAnalysis.ID,
+		SubmissionID: updatedAnalysis.SubmissionID,
+		Status:       updatedAnalysis.Status,
+		Analysis:     analysisData,
+		CreatedAt:    updatedAnalysis.CreatedAt,
+		UpdatedAt:    updatedAnalysis.UpdatedAt,
+	}
+
+	action := "hidden from"
+	if req.Visible {
+		action = "made visible to"
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"analysis": response,
+		"message":  "Analysis " + action + " user successfully",
+	})
+}

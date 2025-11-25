@@ -76,6 +76,11 @@ func (m *MockRepository) BeginTx(ctx context.Context) (*sqlx.Tx, error) {
 	return args.Get(0).(*sqlx.Tx), args.Error(1)
 }
 
+func (m *MockRepository) SetVisibility(ctx context.Context, id string, visible bool) error {
+	args := m.Called(ctx, id, visible)
+	return args.Error(0)
+}
+
 type MockSubmissionRepository struct {
 	mock.Mock
 }

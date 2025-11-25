@@ -39,6 +39,10 @@ type Analysis struct {
 	SentAt     *time.Time `db:"sent_at" json:"sent_at,omitempty"`
 	SentTo     *string    `db:"sent_to" json:"sent_to,omitempty"` // Email address report was sent to
 
+	// Visibility control - Admin must explicitly make analysis visible to user
+	// Even after approval and PDF generation, analysis is NOT visible until toggled
+	IsVisibleToUser bool `db:"is_visible_to_user" json:"is_visible_to_user"`
+
 	// Soft delete support
 	DeletedAt *time.Time `db:"deleted_at" json:"deleted_at,omitempty"`
 

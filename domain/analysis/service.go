@@ -399,6 +399,33 @@ func (s *Service) Send(ctx context.Context, analysisID string, userEmail string)
 	return nil
 }
 
+// SetVisibility toggles user visibility for an analysis
+// Admin must explicitly make analysis visible after approval
+func (s *Service) SetVisibility(ctx context.Context, analysisID string, visible bool) error {
+	// Get analysis first to validate state
+	analysis, err := s.repo.GetByID(ctx, analysisID)
+	if err != nil {
+		return err
+	}
+
+	// Only allow visibility toggle on approved or sent analyses
+	// (analyses must have PDF generated before being visible)
+	if analysis.Status != string(StatusApproved) && analysis.Status != string(StatusSent) {
+		return fmt.Errorf("analysis must be approved before toggling visibility, current status: %s", analysis.Status)
+	}
+
+	if err := s.repo.SetVisibility(ctx, analysisID, visible); err != nil {
+		return err
+	}
+
+	s.logger.Info().
+		Str("analysis_id", analysisID).
+		Bool("visible", visible).
+		Msg("Analysis visibility updated")
+
+	return nil
+}
+
 // MarkAsFailed updates analysis with error message
 // Called by worker ErrorHandler after Asynq exhausts max retries
 // Status remains "pending" with error_message populated

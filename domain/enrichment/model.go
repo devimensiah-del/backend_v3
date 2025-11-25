@@ -73,17 +73,65 @@ func min(a, b int) int {
 }
 
 // =================================================================
+// SUBMITTED DATA (User form input - preserved exactly as submitted)
+// =================================================================
+
+type SubmittedData struct {
+	// Required fields (always present)
+	CompanyName       string `json:"company_name"`
+	ContactName       string `json:"contact_name"`
+	ContactEmail      string `json:"contact_email"`
+	BusinessChallenge string `json:"business_challenge"`
+
+	// Optional fields (may be empty)
+	CNPJ             string  `json:"cnpj,omitempty"`
+	Website          string  `json:"website,omitempty"`
+	Industry         string  `json:"industry,omitempty"`
+	CompanySize      string  `json:"company_size,omitempty"`
+	Location         string  `json:"location,omitempty"`
+	ContactPhone     string  `json:"contact_phone,omitempty"`
+	ContactPosition  string  `json:"contact_position,omitempty"`
+	TargetMarket     string  `json:"target_market,omitempty"`
+	FundingStage     string  `json:"funding_stage,omitempty"`
+	AnnualRevenueMin float64 `json:"annual_revenue_min,omitempty"`
+	AnnualRevenueMax float64 `json:"annual_revenue_max,omitempty"`
+	AdditionalNotes  string  `json:"additional_notes,omitempty"`
+	LinkedInURL      string  `json:"linkedin_url,omitempty"`
+	TwitterHandle    string  `json:"twitter_handle,omitempty"`
+}
+
+// =================================================================
+// DISCOVERED DATA (AI-enriched public information not provided by user)
+// =================================================================
+
+type DiscoveredData struct {
+	CNPJ                  string `json:"cnpj,omitempty"`
+	Website               string `json:"website,omitempty"`
+	LinkedInURL           string `json:"linkedin_url,omitempty"`
+	TwitterHandle         string `json:"twitter_handle,omitempty"`
+	Industry              string `json:"industry,omitempty"`
+	CompanySize           string `json:"company_size,omitempty"`
+	Location              string `json:"location,omitempty"`
+	FoundationYear        string `json:"foundation_year,omitempty"`
+	FundingStage          string `json:"funding_stage,omitempty"`
+	AnnualRevenueEstimate string `json:"annual_revenue_estimate,omitempty"`
+	TargetMarket          string `json:"target_market,omitempty"`
+}
+
+// =================================================================
 // UNIFIED INTELLIGENCE PROFILE
 // This matches the output of the UnifiedEnrichmentPrompt
 // =================================================================
 
 type UnifiedProfile struct {
+	SubmittedData        *SubmittedData       `json:"submitted_data,omitempty"`  // User form input
+	DiscoveredData       *DiscoveredData      `json:"discovered_data,omitempty"` // AI-discovered public data
 	ProfileOverview      ProfileOverview      `json:"profile_overview"`
 	MarketPosition       MarketPosition       `json:"market_position"`
 	Financials           Financials           `json:"financials"`
 	CompetitiveLandscape CompetitiveLandscape `json:"competitive_landscape"`
 	StrategicAssessment  StrategicAssessment  `json:"strategic_assessment"`
-	MacroContext         *MacroContext        `json:"macro_context,omitempty"` // NEW: Macro-economic and industry context
+	MacroContext         *MacroContext        `json:"macro_context,omitempty"` // Macro-economic and industry context
 }
 
 type ProfileOverview struct {

@@ -85,6 +85,10 @@ func (s *Service) EnrichSubmission(ctx context.Context, submissionID uuid.UUID) 
 		return nil, fmt.Errorf("failed to parse LLM response as JSON: %w (content: %s)", err, cleanJson)
 	}
 
+	// INJECT submitted_data section from the original submission form
+	// This ensures all user-provided fields are preserved and visible in the dashboard
+	finalProfile["submitted_data"] = s.buildSubmittedData(sub)
+
 	enrichment.EnrichedData = JSONMap(finalProfile)
 	enrichment.SourcesStatus = s.combineSources(technicalData.Sources, resp.Sources)
 
@@ -193,14 +197,122 @@ func (s *Service) saveProfile(ctx context.Context, e *Enrichment, err error) {
 }
 
 func (s *Service) compileUserDossier(sub *submission.Submission) string {
-	dossier := fmt.Sprintf("Nome: %s\n", sub.CompanyName)
-	if sub.CompanyWebsite != nil {
-		dossier += fmt.Sprintf("Site: %s\n", *sub.CompanyWebsite)
+	dossier := fmt.Sprintf("Nome da Empresa: %s\n", sub.CompanyName)
+
+	// Company Information
+	if sub.CNPJ != nil && *sub.CNPJ != "" {
+		dossier += fmt.Sprintf("CNPJ: %s\n", *sub.CNPJ)
 	}
+	if sub.CompanyWebsite != nil && *sub.CompanyWebsite != "" {
+		dossier += fmt.Sprintf("Website: %s\n", *sub.CompanyWebsite)
+	}
+	if sub.CompanyIndustry != nil && *sub.CompanyIndustry != "" {
+		dossier += fmt.Sprintf("Setor/Indústria: %s\n", *sub.CompanyIndustry)
+	}
+	if sub.CompanySize != nil && *sub.CompanySize != "" {
+		dossier += fmt.Sprintf("Tamanho da Empresa: %s\n", *sub.CompanySize)
+	}
+	if sub.CompanyLocation != nil && *sub.CompanyLocation != "" {
+		dossier += fmt.Sprintf("Localização: %s\n", *sub.CompanyLocation)
+	}
+
+	// Contact Information
+	dossier += fmt.Sprintf("Nome do Contato: %s\n", sub.ContactName)
+	dossier += fmt.Sprintf("Email do Contato: %s\n", sub.ContactEmail)
+	if sub.ContactPhone != nil && *sub.ContactPhone != "" {
+		dossier += fmt.Sprintf("Telefone: %s\n", *sub.ContactPhone)
+	}
+	if sub.ContactPosition != nil && *sub.ContactPosition != "" {
+		dossier += fmt.Sprintf("Cargo: %s\n", *sub.ContactPosition)
+	}
+
+	// Business Context
+	if sub.TargetMarket != nil && *sub.TargetMarket != "" {
+		dossier += fmt.Sprintf("Mercado Alvo: %s\n", *sub.TargetMarket)
+	}
+	if sub.FundingStage != nil && *sub.FundingStage != "" {
+		dossier += fmt.Sprintf("Estágio de Financiamento: %s\n", *sub.FundingStage)
+	}
+	if sub.AnnualRevenueMin != nil {
+		dossier += fmt.Sprintf("Receita Anual Mínima: R$ %.2f\n", *sub.AnnualRevenueMin)
+	}
+	if sub.AnnualRevenueMax != nil {
+		dossier += fmt.Sprintf("Receita Anual Máxima: R$ %.2f\n", *sub.AnnualRevenueMax)
+	}
+
+	// Strategic Challenge
 	if sub.BusinessChallenge != "" {
-		dossier += fmt.Sprintf("Desafio: %s\n", sub.BusinessChallenge)
+		dossier += fmt.Sprintf("Desafio Principal: %s\n", sub.BusinessChallenge)
 	}
+	if sub.AdditionalNotes != nil && *sub.AdditionalNotes != "" {
+		dossier += fmt.Sprintf("Notas Adicionais: %s\n", *sub.AdditionalNotes)
+	}
+
+	// Social Links
+	if sub.LinkedInURL != nil && *sub.LinkedInURL != "" {
+		dossier += fmt.Sprintf("LinkedIn: %s\n", *sub.LinkedInURL)
+	}
+	if sub.TwitterHandle != nil && *sub.TwitterHandle != "" {
+		dossier += fmt.Sprintf("Twitter/X: %s\n", *sub.TwitterHandle)
+	}
+
 	return dossier
+}
+
+// buildSubmittedData creates the submitted_data section from submission fields
+func (s *Service) buildSubmittedData(sub *submission.Submission) map[string]interface{} {
+	data := map[string]interface{}{
+		"company_name":       sub.CompanyName,
+		"contact_name":       sub.ContactName,
+		"contact_email":      sub.ContactEmail,
+		"business_challenge": sub.BusinessChallenge,
+	}
+
+	// Optional fields - only add if provided
+	if sub.CNPJ != nil && *sub.CNPJ != "" {
+		data["cnpj"] = *sub.CNPJ
+	}
+	if sub.CompanyWebsite != nil && *sub.CompanyWebsite != "" {
+		data["website"] = *sub.CompanyWebsite
+	}
+	if sub.CompanyIndustry != nil && *sub.CompanyIndustry != "" {
+		data["industry"] = *sub.CompanyIndustry
+	}
+	if sub.CompanySize != nil && *sub.CompanySize != "" {
+		data["company_size"] = *sub.CompanySize
+	}
+	if sub.CompanyLocation != nil && *sub.CompanyLocation != "" {
+		data["location"] = *sub.CompanyLocation
+	}
+	if sub.ContactPhone != nil && *sub.ContactPhone != "" {
+		data["contact_phone"] = *sub.ContactPhone
+	}
+	if sub.ContactPosition != nil && *sub.ContactPosition != "" {
+		data["contact_position"] = *sub.ContactPosition
+	}
+	if sub.TargetMarket != nil && *sub.TargetMarket != "" {
+		data["target_market"] = *sub.TargetMarket
+	}
+	if sub.FundingStage != nil && *sub.FundingStage != "" {
+		data["funding_stage"] = *sub.FundingStage
+	}
+	if sub.AnnualRevenueMin != nil {
+		data["annual_revenue_min"] = *sub.AnnualRevenueMin
+	}
+	if sub.AnnualRevenueMax != nil {
+		data["annual_revenue_max"] = *sub.AnnualRevenueMax
+	}
+	if sub.AdditionalNotes != nil && *sub.AdditionalNotes != "" {
+		data["additional_notes"] = *sub.AdditionalNotes
+	}
+	if sub.LinkedInURL != nil && *sub.LinkedInURL != "" {
+		data["linkedin_url"] = *sub.LinkedInURL
+	}
+	if sub.TwitterHandle != nil && *sub.TwitterHandle != "" {
+		data["twitter_handle"] = *sub.TwitterHandle
+	}
+
+	return data
 }
 
 // --- TRANSIENT DATA COLLECTOR ---

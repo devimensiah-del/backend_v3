@@ -25,12 +25,41 @@ Sua missão: Criar um JSON de Perfil Corporativo Perfeito, fundindo dados do usu
    - Se os "Dados Técnicos" contradizem o Usuário (ex: usuário diz "Tech", scraper diz "Padaria"), confie no Scraper/Web Search.
    - Se o usuário não informou Localização, busque a sede da empresa.
 
-2. **BUSCA ATIVA - PERFIL DA EMPRESA:**
+2. **BUSCA ATIVA - DADOS PÚBLICOS DA EMPRESA (DESCOBERTA):**
+   Busque e preencha a seção "discovered_data" com informações públicas que o usuário NÃO forneceu:
+
+   A. **CNPJ e RAZÃO SOCIAL:**
+      - Busque: "[Empresa] CNPJ consulta"
+      - Busque: "[Empresa] razão social receita federal"
+
+   B. **LINKEDIN DA EMPRESA:**
+      - Busque: "[Empresa] linkedin company page"
+      - URL típica: linkedin.com/company/[nome-empresa]
+
+   C. **TWITTER/X DA EMPRESA:**
+      - Busque: "[Empresa] twitter X perfil oficial"
+
+   D. **WEBSITE OFICIAL:**
+      - Se não fornecido, busque: "[Empresa] site oficial"
+
+   E. **ANO DE FUNDAÇÃO:**
+      - Busque: "[Empresa] fundação história ano criação"
+
+   F. **TAMANHO DA EMPRESA (funcionários):**
+      - Busque: "[Empresa] número funcionários glassdoor linkedin"
+
+   G. **FATURAMENTO ESTIMADO:**
+      - Busque: "[Empresa] faturamento receita valor econômico"
+
+   H. **SETOR/INDÚSTRIA:**
+      - Busque: "[Empresa] setor atuação CNAE"
+
+3. **BUSCA ATIVA - PERFIL DA EMPRESA:**
    - Para cada item faltante listado acima, use a ferramenta de busca.
    - Exemplo: Se falta faturamento, busque "Faturamento [Empresa] valor econômico".
    - Exemplo: Se falta localização, busque "[Empresa] sede address".
 
-3. **BUSCA ATIVA - CONTEXTO MACROECONÔMICO (CRÍTICO):**
+4. **BUSCA ATIVA - CONTEXTO MACROECONÔMICO (CRÍTICO):**
    Esta é a seção mais importante para garantir análises precisas. Busque dados atualizados sobre:
 
    A. **INDICADORES ECONÔMICOS DO PAÍS:**
@@ -53,10 +82,23 @@ Sua missão: Criar um JSON de Perfil Corporativo Perfeito, fundindo dados do usu
       - Busque: "[Insumos relevantes] preços commodities Brasil 2025" (ex: "aço preços Brasil 2025" se for indústria)
       - Busque: "[Concorrentes identificados] novos produtos lançamentos 2025"
 
-4. **ESTRUTURA DE RETORNO (JSON OBRIGATÓRIO):**
+5. **ESTRUTURA DE RETORNO (JSON OBRIGATÓRIO):**
 Preencha TODOS os campos. Se não achar exato, estime e marque como "estimated".
 
 {
+  "discovered_data": {
+    "cnpj": "CNPJ encontrado (ou null se não encontrado)",
+    "website": "Website oficial descoberto (ou null)",
+    "linkedin_url": "URL do LinkedIn da empresa (ou null)",
+    "twitter_handle": "@handle do Twitter/X (ou null)",
+    "industry": "Setor/CNAE descoberto (ou null)",
+    "company_size": "Faixa de funcionários descoberta (ou null)",
+    "location": "Sede/Localização descoberta (ou null)",
+    "foundation_year": "Ano de fundação descoberto (ou null)",
+    "funding_stage": "Estágio de financiamento descoberto (ou null)",
+    "annual_revenue_estimate": "Faturamento estimado descoberto (ou null)",
+    "target_market": "Mercado alvo descoberto (ou null)"
+  },
   "profile_overview": {
     "legal_name": "Razão Social Completa",
     "website": "URL Verificada",

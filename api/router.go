@@ -200,6 +200,7 @@ func SetupRouter(
 		adminAPI.PUT("/analysis/:id", mainHandler.AnalysisHandlers.UpdateAnalysis)
 		adminAPI.POST("/analysis/:id/approve", mainHandler.AnalysisHandlers.ApproveAnalysis)
 		adminAPI.POST("/analysis/:id/send", mainHandler.AnalysisHandlers.SendAnalysis)
+		adminAPI.POST("/analysis/:id/visibility", mainHandler.AnalysisHandlers.ToggleVisibility)
 	}
 
 	return router
