@@ -238,11 +238,18 @@ func (s *Service) startAnalysisRecord(ctx context.Context, subID, enrichID strin
 		UpdatedAt:    time.Now(),
 	}
 
+	s.logger.Info().
+		Str("analysis_id", a.ID).
+		Str("submission_id", subID).
+		Str("enrichment_id", enrichID).
+		Msg("startAnalysisRecord: Calling repo.Create")
+
 	if err := s.repo.Create(ctx, a); err != nil {
+		s.logger.Error().Err(err).Str("analysis_id", a.ID).Msg("startAnalysisRecord: Create FAILED")
 		return nil, fmt.Errorf("failed to create analysis: %w", err)
 	}
 
-	s.logger.Debug().Str("analysis_id", a.ID).Msg("Layer 1: Starting Environment analysis")
+	s.logger.Info().Str("analysis_id", a.ID).Msg("startAnalysisRecord: Create SUCCESS - analysis record created")
 	return a, nil
 }
 
