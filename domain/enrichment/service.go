@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"backend_v3/adapter/macrodata"
-	"backend_v3/adapter/scraper"
 	"backend_v3/config"
 	"backend_v3/domain/submission"
 	"backend_v3/llm"
@@ -18,27 +16,29 @@ import (
 )
 
 // Service handles business logic for enrichment
+// AI-Only Pipeline: Perplexity (pre-search) + Gemini (synthesis)
+// External adapters (DNS, scraper, macrodata APIs) have been REMOVED
+// Perplexity handles all data gathering including company identification, macro data, and technical context
 type Service struct {
 	repo           Repository
 	submissionRepo submission.Repository
 	llmClient      *llm.Client
-	scraper        *scraper.Client
 	queueClient    *asynq.Client          // For job orchestration
-	enrichmentCfg  config.FrameworkConfig // Specific config for this domain
-	macroProvider  *macrodata.MacroDataProvider // NEW: Real-time Brazilian economic data
+	enrichmentCfg  config.FrameworkConfig // Gemini config for synthesis
+	preSearchCfg   config.FrameworkConfig // Perplexity config for pre-search
 }
 
 // NewService creates a new enrichment service
-// CHANGED: Now accepts config.FrameworkConfig and queueClient directly.
-func NewService(repo Repository, submissionRepo submission.Repository, llmClient *llm.Client, queueClient *asynq.Client, cfg config.FrameworkConfig) *Service {
+// AI-Only pipeline: Perplexity pre-search + Gemini synthesis
+// No external adapters (DNS, scraper, macro APIs removed - Perplexity handles everything)
+func NewService(repo Repository, submissionRepo submission.Repository, llmClient *llm.Client, queueClient *asynq.Client, enrichmentCfg config.FrameworkConfig, preSearchCfg config.FrameworkConfig) *Service {
 	return &Service{
 		repo:           repo,
 		submissionRepo: submissionRepo,
 		llmClient:      llmClient,
-		scraper:        scraper.NewClient(),
 		queueClient:    queueClient,
-		enrichmentCfg:  cfg,                             // Wired immediately. No setters needed.
-		macroProvider:  macrodata.NewMacroDataProvider(), // NEW: Initialize macro data provider
+		enrichmentCfg:  enrichmentCfg, // Gemini with Google Search for synthesis
+		preSearchCfg:   preSearchCfg,  // Perplexity for company ID + macro data + technical context
 	}
 }
 

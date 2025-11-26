@@ -268,6 +268,7 @@ func (c *Client) makeRequest(ctx context.Context, req *Request) (*Response, erro
 
 	fmt.Printf("[LLM] Sending HTTP request...\n")
 	httpResp, err := c.httpClient.Do(httpReq)
+	latencyMS := int(time.Since(startTime).Milliseconds())
 	if err != nil {
 		fmt.Printf("[LLM] HTTP request failed after %v: %v\n", time.Since(startTime), err)
 		return nil, err
@@ -289,7 +290,14 @@ func (c *Client) makeRequest(ctx context.Context, req *Request) (*Response, erro
 		return nil, err
 	}
 
-	return c.parseResponse(result), nil
+	resp := c.parseResponse(result, req.Model)
+	resp.LatencyMS = latencyMS
+
+	// Log usage summary
+	fmt.Printf("[LLM] Usage: model=%s, input=%d, output=%d, total=%d, cost=$%.6f, latency=%dms\n",
+		req.Model, resp.InputTokens, resp.OutputTokens, resp.Tokens, resp.CostUSD, resp.LatencyMS)
+
+	return resp, nil
 }
 
 func (c *Client) buildRequestBody(req *Request) map[string]interface{} {
@@ -334,15 +342,30 @@ func (c *Client) buildRequestBody(req *Request) map[string]interface{} {
 	return body
 }
 
-func (c *Client) parseResponse(result map[string]interface{}) *Response {
-	resp := &Response{Sources: []Source{}}
+func (c *Client) parseResponse(result map[string]interface{}, model string) *Response {
+	resp := &Response{Sources: []Source{}, Model: model}
 
+	// Parse usage data (input/output/total tokens)
 	if usage, ok := result["usage"].(map[string]interface{}); ok {
+		if promptTokens, ok := usage["prompt_tokens"].(float64); ok {
+			resp.InputTokens = int(promptTokens)
+		}
+		if completionTokens, ok := usage["completion_tokens"].(float64); ok {
+			resp.OutputTokens = int(completionTokens)
+		}
 		if total, ok := usage["total_tokens"].(float64); ok {
 			resp.Tokens = int(total)
 		}
+		// If total not provided, calculate it
+		if resp.Tokens == 0 {
+			resp.Tokens = resp.InputTokens + resp.OutputTokens
+		}
 	}
 
+	// Calculate cost based on model pricing
+	resp.CostUSD = CalculateCost(model, resp.InputTokens, resp.OutputTokens)
+
+	// Parse response content
 	if choices, ok := result["choices"].([]interface{}); ok && len(choices) > 0 {
 		if choice, ok := choices[0].(map[string]interface{}); ok {
 			if message, ok := choice["message"].(map[string]interface{}); ok {
@@ -377,10 +400,14 @@ type Message struct {
 }
 
 type Response struct {
-	Content string
-	Sources []Source
-	Tokens  int
-	Model   string
+	Content      string
+	Sources      []Source
+	Tokens       int // Total tokens (kept for backwards compatibility)
+	InputTokens  int // Prompt tokens
+	OutputTokens int // Completion tokens
+	Model        string
+	CostUSD      float64 // Calculated cost
+	LatencyMS    int     // Response time in milliseconds
 }
 
 type Source struct {

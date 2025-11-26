@@ -42,7 +42,13 @@ func (v *ContentValidator) ValidateAndNormalize(analysis *Analysis) {
 	v.trimStringArray(&analysis.BSC.Internal, 10, "BSC.Internal")
 	v.trimStringArray(&analysis.BSC.LearningGrowth, 10, "BSC.LearningGrowth")
 
-	// OKRs: Max 4 quarters (relaxed from 3)
+	// OKRs: Support both V2 (Plan90Days) and V1 (Quarters) formats
+	// V2: Plan90Days should be exactly 3 months
+	if len(analysis.OKRs.Plan90Days) > 3 {
+		v.logger.Warn().Msg("Plan90Days exceeded 3 months, trimming")
+		analysis.OKRs.Plan90Days = analysis.OKRs.Plan90Days[:3]
+	}
+	// V1 Legacy: Max 4 quarters (relaxed from 3)
 	if len(analysis.OKRs.Quarters) > 4 {
 		v.logger.Warn().Msg("OKRs exceeded 4 quarters, trimming")
 		analysis.OKRs.Quarters = analysis.OKRs.Quarters[:4]

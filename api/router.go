@@ -192,6 +192,7 @@ func SetupRouter(
 		adminAPI.POST("/submissions/:id/retry-enrichment", mainHandler.AdminHandlers.RetryEnrichment)
 		adminAPI.POST("/submissions/:id/retry-analysis", mainHandler.AdminHandlers.RetryAnalysis)
 		adminAPI.GET("/analytics", mainHandler.AdminHandlers.GetAnalytics)
+		adminAPI.GET("/metrics", mainHandler.GetMetrics) // System-wide metrics (LLM costs, success rates)
 
 		// Enrichment management
 		adminAPI.GET("/enrichment/:id", mainHandler.EnrichmentHandlers.GetEnrichmentAdmin)

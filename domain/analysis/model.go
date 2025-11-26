@@ -144,6 +144,8 @@ type BalancedScorecardAnalysis struct {
 }
 
 // QuarterlyOKR represents OKRs for a specific quarter with investment estimates
+// DEPRECATED: Legacy format with hardcoded quarters (Q1 2025, Q2 2025, Q3 2025)
+// Kept for backwards compatibility with existing analyses
 type QuarterlyOKR struct {
 	Quarter    string   `json:"quarter"`     // "Q1 2025", "Q2 2025", "Q3 2025"
 	Objective  string   `json:"objective"`   // Main objective description
@@ -152,9 +154,28 @@ type QuarterlyOKR struct {
 	Timeline   string   `json:"timeline"`    // Duration (e.g., "3-4 meses")
 }
 
+// MonthlyOKR represents OKRs for a month within the 90-day plan
+// V2 format: Uses relative dates (Mês 1, Mês 2, Mês 3) instead of hardcoded quarters
+type MonthlyOKR struct {
+	Month                 string   `json:"month"`                  // "Mês 1", "Mês 2", "Mês 3"
+	Focus                 string   `json:"focus"`                  // "Fundação", "Crescimento", "Consolidação"
+	Objective             string   `json:"objective"`              // Main objective description
+	KeyResults            []string `json:"key_results"`            // KR1, KR2, KR3 (exactly 3)
+	Investment            string   `json:"investment"`             // Investment estimate for this month
+	AlignedRecommendation string   `json:"aligned_recommendation"` // Links to Decision Matrix recommendation
+}
+
 type OKRAnalysis struct {
-	Quarters []QuarterlyOKR `json:"quarters"` // Quarterly OKR structure (Q1, Q2, Q3)
-	Summary  string         `json:"summary"`
+	// V2: 90-Day Plan format with monthly milestones (preferred)
+	Plan90Days      []MonthlyOKR `json:"plan_90_days,omitempty"` // Monthly OKR structure (Mês 1, 2, 3)
+	TotalInvestment string       `json:"total_investment,omitempty"`
+	SuccessMetrics  []string     `json:"success_metrics,omitempty"`
+
+	// V1 Legacy: Quarterly format (for backwards compatibility)
+	// When reading existing data, check if Quarters has data; if Plan90Days is empty, use Quarters
+	Quarters []QuarterlyOKR `json:"quarters,omitempty"` // Quarterly OKR structure (Q1, Q2, Q3)
+
+	Summary string `json:"summary"`
 }
 
 // DEPRECATED: Legacy OKRObjective kept for backward compatibility
@@ -205,14 +226,32 @@ type TamSamSomAnalysis struct {
 	Assumptions []string `json:"assumptions"`
 	CAGR        string   `json:"cagr"`
 
-	// Data Quality & Partial Data Support (for "Data Insufficient" scenarios)
-	DataQuality        string   `json:"data_quality"`        // "complete" | "partial" | "insufficient"
-	NextSteps          []string `json:"next_steps"`          // Steps to gather missing data
-	ProxyIndicators    []string `json:"proxy_indicators"`    // Alternative metrics when data is insufficient
-	ExpectedOutputs    []string `json:"expected_outputs"`    // What complete analysis should include
-	MethodologicalNote string   `json:"methodological_note"` // Explanation of methodology or data limitations
+	// V2: Estimation transparency fields
+	ConfidenceLevel  int    `json:"confidence_level"`  // 0-100, based on data quality
+	EstimationMethod string `json:"estimation_method"` // How the estimate was derived
+	CalculationNotes string `json:"calculation_notes"` // Brief explanation of calculation
+
+	// Data sources breakdown for transparency
+	DataSourcesUsed *DataSourcesUsed `json:"data_sources_used,omitempty"`
+
+	// Legacy fields (kept for backwards compatibility)
+	DataQuality        string   `json:"data_quality,omitempty"`        // "complete" | "partial" | "insufficient"
+	NextSteps          []string `json:"next_steps,omitempty"`          // Steps to gather missing data
+	ProxyIndicators    []string `json:"proxy_indicators,omitempty"`    // Alternative metrics when data is insufficient
+	ExpectedOutputs    []string `json:"expected_outputs,omitempty"`    // What complete analysis should include
+	MethodologicalNote string   `json:"methodological_note,omitempty"` // Explanation of methodology or data limitations
+
+	// Caveat for low confidence estimates
+	CaveatMessage string `json:"caveat_message,omitempty"` // Warning if confidence < 50
 
 	Summary string `json:"summary"`
+}
+
+// DataSourcesUsed provides transparency about estimation methodology
+type DataSourcesUsed struct {
+	DirectData              []string `json:"direct_data,omitempty"`              // Actual market data found
+	ProxyCalculations       []string `json:"proxy_calculations,omitempty"`       // Derived from related metrics
+	BenchmarkExtrapolations []string `json:"benchmark_extrapolations,omitempty"` // Industry benchmarks applied
 }
 
 // PriorityRecommendation represents a prioritized strategic recommendation

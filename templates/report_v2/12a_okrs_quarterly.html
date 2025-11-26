@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>OKRs Trimestrais 2025</title>
+    <title>Plano Estratégico 90 Dias</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         @page { size: A4 landscape; margin: 0; }
@@ -44,7 +44,32 @@
         .page-title { font-size: 22px; font-weight: 300; color: #0A101D; margin-bottom: 4px; }
         .page-subtitle { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.15em; color: #B89E68; margin-bottom: 16px; }
 
-        .quarters-grid {
+        /* Total Investment Banner (V2 format) */
+        .total-investment-banner {
+            background: #F7F6F4;
+            padding: 10px 16px;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-left: 4px solid #B89E68;
+        }
+
+        .total-investment-label {
+            font-size: 8px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #71717A;
+        }
+
+        .total-investment-value {
+            font-size: 14px;
+            font-weight: 700;
+            color: #B89E68;
+        }
+
+        .months-grid, .quarters-grid {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
             gap: 14px;
@@ -52,7 +77,7 @@
             overflow: hidden;
         }
 
-        .quarter-card {
+        .month-card, .quarter-card {
             border: 1px solid #E5E0D6;
             padding: 14px;
             display: flex;
@@ -60,11 +85,17 @@
             overflow: hidden;
         }
 
+        /* V2: Monthly colors */
+        .month-card.m1 { border-top: 4px solid #3B82F6; }
+        .month-card.m2 { border-top: 4px solid #8B5CF6; }
+        .month-card.m3 { border-top: 4px solid #EC4899; }
+
+        /* V1 Legacy: Quarterly colors */
         .quarter-card.q1 { border-top: 4px solid #3B82F6; }
         .quarter-card.q2 { border-top: 4px solid #8B5CF6; }
         .quarter-card.q3 { border-top: 4px solid #EC4899; }
 
-        .quarter-header {
+        .month-header, .quarter-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -73,18 +104,29 @@
             border-bottom: 2px solid #E5E0D6;
         }
 
-        .quarter-badge {
+        .month-badge, .quarter-badge {
             font-size: 9px;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.1em;
         }
 
-        .quarter-badge.q1 { color: #3B82F6; }
-        .quarter-badge.q2 { color: #8B5CF6; }
-        .quarter-badge.q3 { color: #EC4899; }
+        .month-badge.m1, .quarter-badge.q1 { color: #3B82F6; }
+        .month-badge.m2, .quarter-badge.q2 { color: #8B5CF6; }
+        .month-badge.m3, .quarter-badge.q3 { color: #EC4899; }
 
-        .timeline {
+        .focus-badge {
+            font-size: 6px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            background: #0A101D;
+            color: #FFFFFF;
+            padding: 2px 6px;
+            border-radius: 2px;
+        }
+
+        .timeline, .investment-inline {
             font-size: 7px;
             color: #71717A;
             font-weight: 600;
@@ -162,6 +204,15 @@
             color: #B89E68;
         }
 
+        .aligned-recommendation {
+            font-size: 6px;
+            color: #71717A;
+            font-style: italic;
+            margin-top: 6px;
+            padding-top: 6px;
+            border-top: 1px dashed #E5E0D6;
+        }
+
         .footer {
             display: flex;
             justify-content: space-between;
@@ -188,8 +239,57 @@
             <div class="company-name-header">{{ .CompanyName }}</div>
         </div>
 
+        {{/* V2: 90-Day Plan Format */}}
+        {{ if .OKRs.Plan90Days }}
+        <h1 class="page-title">Plano Estratégico 90 Dias</h1>
+        <div class="page-subtitle">Objetivos e Resultados-Chave com Marcos Mensais</div>
+
+        {{ if .OKRs.TotalInvestment }}
+        <div class="total-investment-banner">
+            <div class="total-investment-label">Investimento Total (90 dias)</div>
+            <div class="total-investment-value">{{ .OKRs.TotalInvestment }}</div>
+        </div>
+        {{ end }}
+
+        <div class="months-grid">
+            {{ range $i, $month := .OKRs.Plan90Days }}
+            <div class="month-card m{{ add $i 1 }}">
+                <div class="month-header">
+                    <div>
+                        <div class="month-badge m{{ add $i 1 }}">{{ $month.Month }}</div>
+                        <div class="focus-badge">{{ $month.Focus }}</div>
+                    </div>
+                    <div class="investment-inline">{{ $month.Investment }}</div>
+                </div>
+
+                <div class="objective-section">
+                    <div class="objective-label">Objetivo</div>
+                    <div class="objective-text">{{ $month.Objective }}</div>
+                </div>
+
+                <ul class="kr-list">
+                    {{ range $month.KeyResults }}
+                    <li class="kr-item">{{ . }}</li>
+                    {{ end }}
+                </ul>
+
+                {{ if $month.AlignedRecommendation }}
+                <div class="aligned-recommendation">
+                    Alinhado com: {{ $month.AlignedRecommendation }}
+                </div>
+                {{ end }}
+            </div>
+            {{ end }}
+        </div>
+
+        <div class="note">
+            * Plano 90 dias alinhado com as Recomendações Prioritárias da Matriz de Decisão
+        </div>
+
+        {{/* V1 Legacy: Quarterly Format */}}
+        {{ else if .OKRs.Quarters }}
         <h1 class="page-title">OKRs Propostos</h1>
-        <div class="page-subtitle">Objetivos e Resultados-Chave Trimestrais 2025</div>
+        <div class="page-subtitle">Objetivos e Resultados-Chave Trimestrais</div>
 
         <div class="quarters-grid">
             {{ range .OKRs.Quarters }}
@@ -221,6 +321,7 @@
         <div class="note">
             * OKRs devem ser revisados e ajustados trimestralmente com base em resultados e mudanças de mercado
         </div>
+        {{ end }}
 
         <div class="footer">
             <div>IMENSIAH — Relatório de Inteligência Estratégica</div>

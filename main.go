@@ -159,17 +159,20 @@ func main() {
 	log.Info().Msg("Submission service initialized")
 
 	// Enrichment (The Researcher)
+	// NEW: Two-phase enrichment - Pre-Search (Perplexity) + Main Enrichment (Gemini)
 	enrichSvc := enrichment.NewService(
 		enrichRepo,
 		subRepo,
 		llmClient,
 		asynqClient,
-		cfg.Frameworks["enrichment"],
+		cfg.Frameworks["enrichment"], // Gemini with Google Search
+		cfg.Frameworks["presearch"],   // Perplexity for company identification
 	)
 	log.Info().
-		Str("model", cfg.Frameworks["enrichment"].Model).
+		Str("enrichment_model", cfg.Frameworks["enrichment"].Model).
+		Str("presearch_model", cfg.Frameworks["presearch"].Model).
 		Float64("temperature", cfg.Frameworks["enrichment"].Temperature).
-		Msg("Enrichment service initialized")
+		Msg("Enrichment service initialized with two-phase pipeline (PreSearch + Enrichment)")
 
 	// Analysis (The Strategy Team)
 	// Create submission repository adapter for analysis service

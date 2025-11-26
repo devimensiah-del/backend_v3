@@ -1,8 +1,6 @@
 package enrichment
 
 import (
-	"backend_v3/adapter/dns"
-	"backend_v3/adapter/scraper"
 	"backend_v3/domain/submission"
 	"backend_v3/llm"
 	"context"
@@ -15,7 +13,10 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// EnrichSubmission - The "Transient Data" Pipeline
+// EnrichSubmission - Simplified Two-Phase AI-Only Pipeline
+// Phase 1: Perplexity pre-search for company identification + data gathering
+// Phase 2: Gemini synthesis for final profile generation
+// NO external adapters (DNS, scraper, macrodata APIs removed - Perplexity handles everything)
 func (s *Service) EnrichSubmission(ctx context.Context, submissionID uuid.UUID) (*Enrichment, error) {
 	startTime := time.Now()
 
@@ -30,60 +31,44 @@ func (s *Service) EnrichSubmission(ctx context.Context, submissionID uuid.UUID) 
 		return nil, nil
 	}
 
-	// 2. GATHER TRANSIENT DATA (Memory Only - No DB Save)
-	s.updateStatus(ctx, enrichment, "Scanning digital footprint (Transient)...", 10)
-	technicalData := s.gatherTransientData(ctx, sub)
+	// 2. PERPLEXITY PRE-SEARCH PHASE (Company ID + Data Gathering + Macro Data)
+	// This single call replaces: DNS lookup, web scraping, macrodata APIs
+	s.updateStatus(ctx, enrichment, "Perplexity is researching company and market data...", 15)
+	preSearchContext := s.runPreSearch(ctx, sub)
 
-	// Convert technical data to JSON string for the Prompt Context
-	techContextBytes, _ := json.Marshal(technicalData)
-	techContextString := string(techContextBytes)
-
-	// NEW: Fetch real-time Brazilian macro-economic data
-	s.updateStatus(ctx, enrichment, "Fetching real-time macro-economic data...", 25)
-	macro, err := s.macroProvider.FetchLatestMacroData(ctx)
-	if err != nil {
-		log.Warn().Err(err).Msg("failed to fetch macro data (continuing with partial data)")
-		// Graceful degradation - continue without macro data
-	}
-
-	// 3. DETECT GAPS
+	// 3. DETECT GAPS (for Gemini to focus on)
 	missingFields := s.detectMissingFields(sub)
 
-	// 4. AGENT EXECUTION
-	s.updateStatus(ctx, enrichment, "Agent is synthesizing Intelligence Profile...", 40)
+	// 4. GEMINI SYNTHESIS PHASE (Final Profile Generation)
+	s.updateStatus(ctx, enrichment, "Gemini is synthesizing Intelligence Profile...", 50)
 
 	prompt := llm.UnifiedEnrichmentPrompt
 	prompt = strings.ReplaceAll(prompt, "{{COMPANY_NAME}}", sub.CompanyName)
 	prompt = strings.ReplaceAll(prompt, "{{USER_CONTEXT}}", s.compileUserDossier(sub))
-	prompt = strings.ReplaceAll(prompt, "{{TECHNICAL_CONTEXT}}", techContextString)
 	prompt = strings.ReplaceAll(prompt, "{{MISSING_FIELDS}}", missingFields)
 
-	// NEW: Inject real-time macro data if available
-	if macro != nil {
-		macroJSON, _ := json.Marshal(macro)
-		macroContextStr := string(macroJSON)
-		prompt = strings.ReplaceAll(prompt, "{{REAL_TIME_MACRO_DATA}}", macroContextStr)
-	} else {
-		// Graceful fallback if macro data unavailable
-		prompt = strings.ReplaceAll(prompt, "{{REAL_TIME_MACRO_DATA}}", "(Macro data unavailable - use LLM search for current economic context)")
-	}
+	// Inject Perplexity pre-search results (replaces technical context + macro data)
+	prompt = strings.ReplaceAll(prompt, "{{PRE_SEARCH_CONTEXT}}", preSearchContext)
+
+	// Remove old placeholders (no longer used)
+	prompt = strings.ReplaceAll(prompt, "{{TECHNICAL_CONTEXT}}", "(Technical data gathered by Perplexity - see PRE_SEARCH_CONTEXT above)")
+	prompt = strings.ReplaceAll(prompt, "{{REAL_TIME_MACRO_DATA}}", "(Macro data gathered by Perplexity - see PRE_SEARCH_CONTEXT above)")
 
 	agentReq := llm.Request{
 		Model:        s.enrichmentCfg.Model,
 		SystemPrompt: "You are a JSON-only Corporate Intelligence Agent.",
 		Messages:     []llm.Message{{Role: "user", Content: prompt}},
-		// IMPORTANT: Ensure your client.go maps "search" to the provider's specific tool (e.g., google_search)
-		Tools:       []string{"search"},
-		Temperature: s.enrichmentCfg.Temperature, // Use config temp
-		MaxTokens:   s.enrichmentCfg.MaxTokens,   // Use config tokens
+		Tools:        []string{"search"}, // Gemini can still search if needed
+		Temperature:  s.enrichmentCfg.Temperature,
+		MaxTokens:    s.enrichmentCfg.MaxTokens,
 	}
 
-	// Call LLM with automatic fallback on failure (rate limit, timeout, 5xx errors)
+	// Call LLM with automatic fallback on failure
 	log.Info().
 		Str("primary_model", s.enrichmentCfg.Model).
 		Str("fallback_model", s.enrichmentCfg.FallbackModel).
 		Int("max_tokens", s.enrichmentCfg.MaxTokens).
-		Msg("Starting LLM call for enrichment")
+		Msg("Starting Gemini synthesis for enrichment")
 	resp, err := s.llmClient.CallWithFallback(ctx, &agentReq, s.enrichmentCfg.FallbackModel)
 	if err != nil {
 		return nil, s.handleCrash(ctx, sub, enrichment, err)
@@ -95,8 +80,7 @@ func (s *Service) EnrichSubmission(ctx context.Context, submissionID uuid.UUID) 
 	var finalProfile map[string]interface{}
 	cleanJson := s.cleanJsonBlock(resp.Content)
 
-	// CRITICAL FIX: Fail explicitly on JSON parse errors instead of creating error placeholders
-	// Silent failures lead to corrupt data being passed to analysis, resulting in garbage PDFs
+	// CRITICAL: Fail explicitly on JSON parse errors
 	if err := json.Unmarshal([]byte(cleanJson), &finalProfile); err != nil {
 		log.Error().
 			Err(err).
@@ -104,21 +88,19 @@ func (s *Service) EnrichSubmission(ctx context.Context, submissionID uuid.UUID) 
 			Str("submission_id", submissionID.String()).
 			Msg("CRITICAL: LLM returned invalid JSON - failing enrichment job")
 
-		// Return error to job handler for retry logic
 		return nil, fmt.Errorf("failed to parse LLM response as JSON: %w (content: %s)", err, cleanJson)
 	}
 
 	// INJECT submitted_data section from the original submission form
-	// This ensures all user-provided fields are preserved and visible in the dashboard
 	finalProfile["submitted_data"] = s.buildSubmittedData(sub)
 
 	enrichment.EnrichedData = JSONMap(finalProfile)
-	enrichment.SourcesStatus = s.combineSources(technicalData.Sources, resp.Sources)
+	enrichment.SourcesStatus = s.combineAISources(resp.Sources)
 
 	// Save final state
 	s.saveProfile(ctx, enrichment, nil)
 
-	log.Info().Dur("duration", time.Since(startTime)).Msg("Enrichment Pipeline Success")
+	log.Info().Dur("duration", time.Since(startTime)).Msg("Enrichment Pipeline Success (AI-Only)")
 	return s.markAsComplete(ctx, sub, enrichment)
 }
 
@@ -338,70 +320,17 @@ func (s *Service) buildSubmittedData(sub *submission.Submission) map[string]inte
 	return data
 }
 
-// --- TRANSIENT DATA COLLECTOR ---
-
-type DomainMetadata struct {
-	Domain      string   `json:"domain"`
-	NameServers []string `json:"name_servers"`
-}
-
-type IPLocation struct {
-	Country string `json:"country"`
-	City    string `json:"city"`
-}
-
-// TransientData holds the temporary technical data before AI synthesis
-type TransientData struct {
-	DomainInfo DomainMetadata   `json:"domain_info"`
-	MetaTags   scraper.MetaData `json:"meta_tags"` // Use the scraper type directly
-	IPLocation IPLocation       `json:"ip_location"`
-	Sources    []string         `json:"sources_used"`
-}
-
-func (s *Service) gatherTransientData(ctx context.Context, sub *submission.Submission) TransientData {
-	data := TransientData{
-		Sources: []string{},
-	}
-
-	// 1. Domain Analysis
-	if sub.CompanyWebsite != nil && *sub.CompanyWebsite != "" {
-		domain := *sub.CompanyWebsite
-		dnsInfo := dns.Analyze(ctx, domain)
-
-		data.DomainInfo = DomainMetadata{
-			Domain:      domain,
-			NameServers: dnsInfo.NameServers,
-		}
-		if dnsInfo.HasMX {
-			data.Sources = append(data.Sources, "dns_validation_active")
-		} else {
-			data.Sources = append(data.Sources, "dns_validation_no_email")
-		}
-
-		// 2. Metadata Scraping
-		scrapeCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
-		defer cancel()
-
-		meta, err := s.scraper.Scrape(scrapeCtx, domain)
-		if err == nil {
-			data.MetaTags = meta
-			data.Sources = append(data.Sources, "website_scraper")
-		} else {
-			log.Warn().Err(err).Str("domain", domain).Msg("Scraping failed, proceeding with AI only")
-			data.Sources = append(data.Sources, "scraper_failed")
+// combineAISources converts LLM sources to JSONMap for storage
+func (s *Service) combineAISources(aiSources []llm.Source) JSONMap {
+	combined := make(JSONMap)
+	combined["perplexity_presearch"] = "success"
+	combined["gemini_synthesis"] = "success"
+	for _, src := range aiSources {
+		if src.URL != "" {
+			combined[src.URL] = "ai_search_result"
 		}
 	}
-
-	// 3. Location
-	if sub.CompanyLocation != nil && *sub.CompanyLocation != "" {
-		data.IPLocation = IPLocation{
-			Country: *sub.CompanyLocation,
-			City:    "User Provided",
-		}
-		data.Sources = append(data.Sources, "user_input")
-	}
-
-	return data
+	return combined
 }
 
 func (s *Service) detectMissingFields(sub *submission.Submission) string {
@@ -429,16 +358,6 @@ func (s *Service) detectMissingFields(sub *submission.Submission) string {
 	return strings.Join(missing, "\n")
 }
 
-func (s *Service) combineSources(technical []string, ai []llm.Source) JSONMap {
-	combined := make(JSONMap)
-	for _, src := range technical {
-		combined[src] = "success"
-	}
-	for _, src := range ai {
-		combined[src.URL] = "ai_search_result"
-	}
-	return combined
-}
 
 func (s *Service) cleanJsonBlock(content string) string {
 	content = strings.TrimSpace(content)
@@ -446,4 +365,71 @@ func (s *Service) cleanJsonBlock(content string) string {
 	content = strings.TrimPrefix(content, "```")
 	content = strings.TrimSuffix(content, "```")
 	return content
+}
+
+// runPreSearch executes the Perplexity pre-search phase to identify the exact company
+// This step runs BEFORE the main enrichment to solve company disambiguation
+// Returns JSON string of pre-search results or graceful fallback message
+func (s *Service) runPreSearch(ctx context.Context, sub *submission.Submission) string {
+	// Skip if pre-search model is not configured
+	if s.preSearchCfg.Model == "" {
+		log.Warn().Msg("Pre-search model not configured, skipping pre-search phase")
+		return "(Pre-search not configured - using user-provided company name directly)"
+	}
+
+	// Build pre-search prompt
+	prompt := llm.PreSearchPrompt
+	prompt = strings.ReplaceAll(prompt, "{{COMPANY_NAME}}", sub.CompanyName)
+	prompt = strings.ReplaceAll(prompt, "{{USER_CONTEXT}}", s.compileUserDossier(sub))
+
+	preSearchReq := llm.Request{
+		Model:        s.preSearchCfg.Model,
+		SystemPrompt: "You are a JSON-only Company Identification Expert. Always return valid JSON.",
+		Messages:     []llm.Message{{Role: "user", Content: prompt}},
+		Temperature:  0.3, // Lower temperature for more consistent identification
+		MaxTokens:    2000, // Smaller response for pre-search
+	}
+
+	log.Info().
+		Str("company_name", sub.CompanyName).
+		Str("model", s.preSearchCfg.Model).
+		Msg("Running pre-search phase for company identification")
+
+	// Execute with timeout (pre-search should be fast)
+	preSearchCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	resp, err := s.llmClient.CallWithFallback(preSearchCtx, &preSearchReq, s.preSearchCfg.FallbackModel)
+	if err != nil {
+		log.Warn().
+			Err(err).
+			Str("company_name", sub.CompanyName).
+			Msg("Pre-search failed, continuing without pre-identification (graceful degradation)")
+		return fmt.Sprintf("(Pre-search failed: %s - proceeding with user-provided company name)", err.Error())
+	}
+
+	// Validate the response is valid JSON
+	cleanedJSON := s.cleanJsonBlock(resp.Content)
+	var preSearchResult map[string]interface{}
+	if err := json.Unmarshal([]byte(cleanedJSON), &preSearchResult); err != nil {
+		log.Warn().
+			Err(err).
+			Str("raw_response", resp.Content).
+			Msg("Pre-search returned invalid JSON, continuing with partial data")
+		return fmt.Sprintf("(Pre-search raw data - may need manual validation: %s)", cleanedJSON)
+	}
+
+	// Check confidence score - if too low, note it
+	confidenceScore := 0.0
+	if score, ok := preSearchResult["confidence_score"].(float64); ok {
+		confidenceScore = score
+	}
+
+	log.Info().
+		Str("company_name", sub.CompanyName).
+		Float64("confidence_score", confidenceScore).
+		Msg("Pre-search completed successfully")
+
+	// Return the full JSON for injection into main enrichment prompt
+	return cleanedJSON
 }

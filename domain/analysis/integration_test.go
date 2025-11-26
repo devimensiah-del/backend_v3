@@ -455,6 +455,78 @@ func TestIntegration_JSONB_OKRsSavesAndLoads(t *testing.T) {
 	})
 }
 
+func TestIntegration_JSONB_Plan90DaysSavesAndLoads(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+
+	withTxRollback(t, db, func(tx *sqlx.Tx) {
+		ctx := context.Background()
+		repo := &txRepository{tx: tx}
+
+		subID := createTestSubmission(t, tx)
+		enrichID := createTestEnrichment(t, tx, subID)
+
+		now := time.Now()
+		a := &analysis.Analysis{
+			ID:           uuid.New().String(),
+			SubmissionID: subID,
+			EnrichmentID: enrichID,
+			Status:       string(analysis.StatusPending),
+			OKRs: analysis.OKRAnalysis{
+				Plan90Days: []analysis.MonthlyOKR{
+					{
+						Month:                 "Mês 1",
+						Focus:                 "Fundação",
+						Objective:             "Validar produto com early adopters",
+						KeyResults:            []string{"KR1: 50 usuarios ativos", "KR2: NPS > 40", "KR3: Retenção > 60%"},
+						Investment:            "R$ 15 mil",
+						AlignedRecommendation: "Foco em validação de mercado",
+					},
+					{
+						Month:                 "Mês 2",
+						Focus:                 "Crescimento",
+						Objective:             "Escalar base de usuarios",
+						KeyResults:            []string{"KR1: 200 usuarios", "KR2: CAC < R$50", "KR3: Receita R$10k"},
+						Investment:            "R$ 25 mil",
+						AlignedRecommendation: "Implementar growth loops",
+					},
+					{
+						Month:                 "Mês 3",
+						Focus:                 "Consolidação",
+						Objective:             "Otimizar unit economics",
+						KeyResults:            []string{"KR1: LTV/CAC > 3", "KR2: Churn < 5%", "KR3: MRR R$30k"},
+						Investment:            "R$ 35 mil",
+						AlignedRecommendation: "Foco em retenção e monetização",
+					},
+				},
+				TotalInvestment: "R$ 75 mil",
+				SuccessMetrics:  []string{"MRR > R$30k", "500+ usuarios ativos", "NPS > 50"},
+				Summary:         "Plano 90 dias alinhado com matriz de decisão",
+			},
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		require.NoError(t, repo.Create(ctx, a))
+
+		// Retrieve and verify V2 Plan90Days format
+		saved, err := repo.GetByID(ctx, a.ID)
+		require.NoError(t, err)
+
+		assert.Len(t, saved.OKRs.Plan90Days, 3)
+		assert.Equal(t, "Mês 1", saved.OKRs.Plan90Days[0].Month)
+		assert.Equal(t, "Fundação", saved.OKRs.Plan90Days[0].Focus)
+		assert.Equal(t, "Validar produto com early adopters", saved.OKRs.Plan90Days[0].Objective)
+		assert.Len(t, saved.OKRs.Plan90Days[0].KeyResults, 3)
+		assert.Equal(t, "R$ 15 mil", saved.OKRs.Plan90Days[0].Investment)
+		assert.Equal(t, "Foco em validação de mercado", saved.OKRs.Plan90Days[0].AlignedRecommendation)
+		assert.Equal(t, "R$ 75 mil", saved.OKRs.TotalInvestment)
+		assert.Len(t, saved.OKRs.SuccessMetrics, 3)
+
+		// Verify legacy Quarters is empty (new format doesn't populate it)
+		assert.Len(t, saved.OKRs.Quarters, 0)
+	})
+}
+
 func TestIntegration_ErrorMessage_SavesOnFailure(t *testing.T) {
 	db := getTestDB(t)
 	defer db.Close()

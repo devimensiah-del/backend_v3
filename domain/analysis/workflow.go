@@ -96,11 +96,28 @@ func (s *Service) RunAnalysis(ctx context.Context, submissionID, enrichmentID st
 		s.exec(wg, func() { knowledge.GrowthHacking, _ = s.runGrowthHacking(ctx, knowledge) })
 		s.exec(wg, func() { knowledge.Scenarios, _ = s.runScenarios(ctx, knowledge) })
 	})
+	s.logger.Debug().Str("analysis_id", analysis.ID).Msg("Layer 3.5: Starting Decision Making analysis")
+	s.saveCheckpoint(ctx, analysis, knowledge, string(StatusPending))
+
+	// ========================================================================
+	// LAYER 3.5: DECISION MAKING (Priority Recommendations)
+	// CRITICAL: Decision Matrix MUST run before OKRs so OKRs can align with recommendations
+	// ========================================================================
+	s.runLayer("Layer 3.5: Decision Making", func(wg *sync.WaitGroup) {
+		s.exec(wg, func() {
+			var err error
+			knowledge.DecisionMatrix, err = s.runDecisionMatrix(ctx, knowledge)
+			if err != nil {
+				s.logger.Error().Err(err).Msg("❌ DecisionMatrix failed")
+			}
+		})
+	})
 	s.logger.Debug().Str("analysis_id", analysis.ID).Msg("Layer 4: Starting Execution analysis")
 	s.saveCheckpoint(ctx, analysis, knowledge, string(StatusPending))
 
 	// ========================================================================
 	// LAYER 4: EXECUTION (Roadmap)
+	// OKRs now have access to Decision Matrix recommendations for alignment
 	// ========================================================================
 	s.runLayer("Layer 4: Execution", func(wg *sync.WaitGroup) {
 		s.exec(wg, func() {
@@ -115,13 +132,6 @@ func (s *Service) RunAnalysis(ctx context.Context, submissionID, enrichmentID st
 			knowledge.BSC, err = s.runBSC(ctx, knowledge)
 			if err != nil {
 				s.logger.Error().Err(err).Msg("❌ BSC failed")
-			}
-		})
-		s.exec(wg, func() {
-			var err error
-			knowledge.DecisionMatrix, err = s.runDecisionMatrix(ctx, knowledge)
-			if err != nil {
-				s.logger.Error().Err(err).Msg("❌ DecisionMatrix failed")
 			}
 		})
 	})
@@ -471,24 +481,35 @@ func (s *Service) runOKRs(ctx context.Context, k *ContextContainer) (*OKRAnalysi
 		swotWeaknesses = k.SWOT.Weaknesses
 	}
 
+	// NEW: Extract Decision Matrix recommendations for OKR alignment
+	// OKRs should directly implement the priority recommendations from Decision Matrix
+	var decisionMatrixRecommendations []PriorityRecommendation
+	if k.DecisionMatrix != nil && len(k.DecisionMatrix.PriorityRecommendations) > 0 {
+		decisionMatrixRecommendations = k.DecisionMatrix.PriorityRecommendations
+	}
+
 	// DEBUG: Log what we're passing to OKRs
 	s.logger.Debug().
 		Str("blue_ocean_summary", blueOceanSummary).
 		Int("swot_weaknesses_count", len(swotWeaknesses)).
+		Int("decision_matrix_recommendations_count", len(decisionMatrixRecommendations)).
 		Msg("🔍 DEBUG OKRs Input Data")
 
 	data := map[string]interface{}{
-		"company_data":        k.SubmissionData,
-		"enrichment_data":     k.EnrichmentData,
-		"blue_ocean_insights": blueOceanSummary,
-		"swot_weaknesses":     swotWeaknesses,
+		"company_data":                    k.SubmissionData,
+		"enrichment_data":                 k.EnrichmentData,
+		"blue_ocean_insights":             blueOceanSummary,
+		"swot_weaknesses":                 swotWeaknesses,
+		"decision_matrix_recommendations": decisionMatrixRecommendations,
 	}
 	opts := llm.NewGenerationOptions(s.frameworks["okrs"])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, llm.FrameworkOKRsPrompt, data, &res)
 
 	// DEBUG: Log what we got back
 	s.logger.Debug().
-		Int("quarters_count", len(res.Quarters)).
+		Int("plan_90_days_count", len(res.Plan90Days)).
+		Int("quarters_count_legacy", len(res.Quarters)).
+		Str("total_investment", res.TotalInvestment).
 		Str("summary", res.Summary).
 		Msg("🔍 DEBUG OKRs Output Data")
 

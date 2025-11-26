@@ -5,6 +5,124 @@ package llm
 // OPTIMIZED FOR: PDF Layout Constraints (16 Pages, No Scroll) & Strategic Density.
 
 const (
+	// PreSearchPrompt runs BEFORE enrichment using Perplexity to gather ALL external data
+	// This is the PRIMARY data gathering step - replaces DNS, scraper, and macrodata adapters
+	// Perplexity excels at real-time web search for: company identification, macro data, technical context
+	// CRITICAL: Output is fed into UnifiedEnrichmentPrompt as {{PRE_SEARCH_CONTEXT}}
+	PreSearchPrompt = `Você é um Agente de Inteligência de Mercado especializado em pesquisa corporativa e macroeconômica.
+Sua missão: Coletar TODOS os dados públicos disponíveis sobre a empresa e seu contexto de mercado.
+
+DADOS DO USUÁRIO:
+Nome da Empresa: {{COMPANY_NAME}}
+{{USER_CONTEXT}}
+
+--- TAREFA COMPLETA (3 PARTES) ---
+
+## PARTE 1: IDENTIFICAÇÃO CORPORATIVA
+O nome "{{COMPANY_NAME}}" pode corresponder a múltiplas empresas. BUSQUE ATIVAMENTE:
+- "[{{COMPANY_NAME}}] empresa Brasil site oficial"
+- "[{{COMPANY_NAME}}] CNPJ razão social Receita Federal"
+- "[{{COMPANY_NAME}}] LinkedIn company page Brasil"
+- "[{{COMPANY_NAME}}] fundação história"
+
+Dados a coletar:
+- Razão social oficial, nome fantasia
+- CNPJ (se público)
+- Website oficial
+- LinkedIn, Twitter/X
+- Ano de fundação
+- Sede (cidade, estado, país)
+- Setor de atuação (CNAE)
+- Porte estimado (funcionários, faturamento)
+
+## PARTE 2: CONTEXTO MACROECONÔMICO BRASILEIRO (CRÍTICO)
+BUSQUE DADOS ATUALIZADOS sobre o ambiente econômico:
+- "Brasil taxa SELIC atual 2025" → interest_rate
+- "Brasil IPCA inflação acumulada 2025" → inflation_rate
+- "Brasil PIB crescimento 2024 2025" → gdp_growth
+- "dólar real cotação hoje" → exchange_rate
+- "Brasil desemprego taxa atual" → unemployment_rate
+- "Brasil reformas econômicas 2025" → recent_policy_changes
+
+Dados a coletar:
+- Taxa SELIC atual
+- Inflação IPCA
+- Crescimento PIB
+- Câmbio USD/BRL
+- Taxa de desemprego
+- Reformas e políticas recentes
+
+## PARTE 3: TENDÊNCIAS DO SETOR
+Baseado no setor identificado, BUSQUE:
+- "[Setor] mercado Brasil 2025 tendências"
+- "[Setor] principais players concorrentes Brasil"
+- "[Setor] regulamentação leis 2025"
+- "[Setor] tecnologia inovação disrupção"
+
+Dados a coletar:
+- Crescimento do setor (CAGR)
+- Principais concorrentes
+- Novas regulamentações
+- Tendências tecnológicas
+- Barreiras de entrada
+
+---
+
+Retorne JSON estrito (PT-BR):
+{
+  "identified_company": {
+    "nome_oficial": "Razão Social Completa",
+    "nome_fantasia": "Nome Fantasia (se diferente)",
+    "website_oficial": "https://...",
+    "cnpj": "XX.XXX.XXX/XXXX-XX ou null",
+    "linkedin_url": "https://linkedin.com/company/...",
+    "twitter_handle": "@handle ou null",
+    "fundacao_ano": "YYYY",
+    "sede": {
+      "cidade": "São Paulo",
+      "estado": "SP",
+      "pais": "Brasil"
+    },
+    "setor_confirmado": "Tecnologia / Agronegócio / etc",
+    "cnae": "Código CNAE se encontrado",
+    "porte": "Micro/Pequena/Média/Grande",
+    "funcionarios_estimativa": "10-50 / 50-200 / etc",
+    "faturamento_estimativa": "R$ X - Y (se encontrado)"
+  },
+  "macro_context": {
+    "economic_indicators": {
+      "country": "Brasil",
+      "gdp_growth": "+2.5% (2024) ou valor atual",
+      "inflation_rate": "IPCA X.XX% a.a.",
+      "interest_rate": "SELIC XX.XX% a.a.",
+      "exchange_rate": "USD/BRL X.XX",
+      "unemployment_rate": "X.X%",
+      "economic_outlook": "Síntese do cenário atual",
+      "recent_policy_changes": ["Reforma 1", "Política 2"]
+    },
+    "industry_context": {
+      "sector": "Setor da empresa",
+      "growth_rate": "+X% CAGR",
+      "market_size_estimate": "R$ XXB ou TAM estimado",
+      "key_players": ["Concorrente 1", "Concorrente 2", "Concorrente 3"],
+      "technology_trends": ["Trend 1", "Trend 2"],
+      "regulatory_changes": ["Regulação 1", "Lei 2"],
+      "barriers_to_entry": "Alta/Média/Baixa - descrição"
+    }
+  },
+  "technical_validation": {
+    "website_active": true,
+    "social_presence": ["LinkedIn", "Twitter", "Instagram"],
+    "digital_maturity": "Alta/Média/Baixa",
+    "online_reputation": "Resumo da presença online"
+  },
+  "confidence_score": 85,
+  "disambiguation_notes": "Se houver empresas similares, liste aqui",
+  "sources_used": ["URL1", "URL2", "URL3"],
+  "search_quality": "high/medium/low",
+  "data_freshness": "2025-11-26"
+}`
+
 	UnifiedEnrichmentPrompt = `Você é um Agente de Inteligência Corporativa (CIA).
 Sua missão: Criar um JSON de Perfil Corporativo Perfeito, fundindo dados do usuário, dados técnicos coletados, contexto macroeconômico REAL em tempo real, e suas próprias pesquisas na web.
 
@@ -13,10 +131,19 @@ Sua missão: Criar um JSON de Perfil Corporativo Perfeito, fundindo dados do usu
 1. O QUE O USUÁRIO DISSE:
 {{USER_CONTEXT}}
 
-2. O QUE NOSSOS ROBÔS ENCONTRARAM (Dados Técnicos):
+2. PRÉ-IDENTIFICAÇÃO DA EMPRESA (PERPLEXITY - Alta Precisão):
+{{PRE_SEARCH_CONTEXT}}
+
+INSTRUÇÕES CRÍTICAS PARA PRÉ-IDENTIFICAÇÃO:
+- Se os dados acima contiverem uma empresa identificada com alta confiança (confidence_score > 70), USE ESSES DADOS como fonte primária
+- O nome oficial, CNPJ, website e dados da sede devem ser priorizados se presentes
+- Se houver "disambiguation_notes" sobre empresas similares, use para evitar confusão
+- Se a pré-identificação falhou, continue com busca ativa normal
+
+3. O QUE NOSSOS ROBÔS ENCONTRARAM (Dados Técnicos):
 {{TECHNICAL_CONTEXT}}
 
-3. CONTEXTO MACROECONÔMICO BRASILEIRO (OFICIAL - Banco Central + IBGE):
+4. CONTEXTO MACROECONÔMICO BRASILEIRO (OFICIAL - Banco Central + IBGE):
 {{REAL_TIME_MACRO_DATA}}
 
 INSTRUÇÕES CRÍTICAS PARA DADOS MACRO:
@@ -27,7 +154,7 @@ INSTRUÇÕES CRÍTICAS PARA DADOS MACRO:
   3. Se a busca também falhar, retorne null para o campo (NÃO use placeholders como "⚠️ DATO_MACRO_DESATUALIZADO")
 - Priorize dados oficiais: BCB, IBGE, Valor Econômico, InfoMoney
 
-4. O QUE FALTA (Sua prioridade de busca):
+5. O QUE FALTA (Sua prioridade de busca):
 {{MISSING_FIELDS}}
 
 --- INSTRUÇÕES DE EXECUÇÃO ---
@@ -249,39 +376,62 @@ Retorne JSON (valores em PT-BR):
   "summary": "Resumo executivo conciso"
 }`
 
-	// 3. TAM-SAM-SOM com Data Quality - Modelo RACE/AIM [cite: 658, 690] - CONSTRAINED
-	FrameworkTamSamSomPrompt = `Dimensione o mercado usando o modelo RACE/AIM (Assess, Infer, Model).
+	// 3. TAM-SAM-SOM com Estimativa Obrigatória - Modelo RACE/AIM [cite: 658, 690] - CONSTRAINED
+	FrameworkTamSamSomPrompt = `Dimensione o mercado usando ESTIMATIVA OBRIGATÓRIA com o modelo RACE/AIM.
 Contexto: {{COMPANY_DATA}}
 Inteligência: {{ENRICHMENT_DATA}}
 Macro-Contexto: {{MACRO_CONTEXT}}
 
-INSTRUÇÕES CRÍTICAS - Use Macro-Contexto para fundamentar o dimensionamento:
-1. **TAM**: Use industry_trends.growth_rate e GDP growth para estimar mercado total.
-2. **SAM**: Aplique market_concentration e geographic/regulatory constraints.
-3. **SOM**: Considere competitor_activity, barriers_to_entry, e recursos da empresa.
-4. **CAGR**: Use o growth_rate do setor do macro_context como base, ajuste conforme necessário.
-5. **Assumptions**: Baseie premissas em dados concretos (ex: "Crescimento setor +12% CAGR").
-6. **Data Quality**: Avalie se os dados são "complete", "partial" ou "insufficient".
-   - Se "insufficient" ou "partial", preencha next_steps, proxy_indicators, expected_outputs e methodological_note.
+REGRA CRÍTICA: SEMPRE forneça estimativas em FAIXA DE VALORES. NUNCA retorne "Dados insuficientes".
+Seja TRANSPARENTE sobre a base da estimativa usando confidence_level e data_sources_used.
+
+METODOLOGIA DE ESTIMATIVA (use na ordem de preferência):
+1. **Dados Diretos**: Se encontrar tamanho de mercado do setor, use diretamente
+2. **Proxy por Concorrentes**: Se souber receita de concorrentes, extrapole pelo market share
+3. **Proxy por Funcionários**: Funcionários × receita média por funcionário do setor
+4. **Benchmarks Setoriais Brasil** (use se não houver dados específicos):
+   - Agronegócio/AgTech: TAM ~R$ 1.2T, crescimento +8-12% a.a.
+   - Tecnologia/SaaS B2B: TAM ~R$ 50-80B, crescimento +18-25% a.a.
+   - Serviços Financeiros: TAM ~R$ 400-600B, crescimento +10-15% a.a.
+   - Varejo/E-commerce: TAM ~R$ 1.5-2T, crescimento +12-18% a.a.
+   - Saúde/HealthTech: TAM ~R$ 300-500B, crescimento +15-20% a.a.
+   - Educação/EdTech: TAM ~R$ 150-250B, crescimento +20-25% a.a.
+   - Logística: TAM ~R$ 200-350B, crescimento +10-15% a.a.
+
+CÁLCULOS:
+- TAM: Mercado total do setor no Brasil (ajuste para região se especificado)
+- SAM: TAM × % do segmento-alvo (considere constraints geográficos/regulatórios)
+- SOM: SAM × market share realista (1-5% startups, 5-15% empresas estabelecidas)
+- CAGR: Use growth_rate do setor do macro_context, ajuste ±3% baseado em trends
+
+NÍVEIS DE CONFIANÇA (confidence_level 0-100):
+- 80-100: Dados diretos do setor/empresa encontrados
+- 50-79: Proxy calculations com dados parciais
+- 30-49: Principalmente extrapolação de benchmarks setoriais
+- <30: Estimativa especulativa (adicione caveat_message)
 
 REGRAS:
-1. Liste EXATAMENTE 3 premissas críticas baseadas em dados do macro_context.
+1. Liste EXATAMENTE 3 premissas críticas com fonte/cálculo.
 2. Máximo 100 caracteres por premissa.
-3. Cite números específicos sempre que possível.
-4. Se dados insuficientes, seja transparente e forneça roadmap para coleta de dados.
+3. SEMPRE forneça faixa de valores (ex: "R$ 800M - 1.2B"), NUNCA valor único.
+4. Se confidence_level < 50, adicione caveat_message com aviso.
 
 Retorne JSON (valores em PT-BR):
 {
-  "tam": "Valor Total (Ex: R$ 50B) ou 'Dados insuficientes'",
-  "sam": "Valor Endereçável (Ex: R$ 10B) ou 'A definir'",
-  "som": "Valor Alcançável (Ex: R$ 100M) ou 'A definir'",
-  "assumptions": ["Premissa crítica 1 (max 100 chars)", "Premissa 2", "Premissa 3"],
-  "cagr": "Estimativa de crescimento (Ex: +15% a.a.) ou 'A pesquisar'",
-  "data_quality": "complete|partial|insufficient",
-  "next_steps": ["Próximo passo 1 (se data_quality != complete)", "Passo 2", "Passo 3"],
-  "proxy_indicators": ["Indicador proxy 1 (se data_quality != complete)", "Indicador 2", "Indicador 3"],
-  "expected_outputs": ["Output esperado 1 após coleta completa", "Output 2", "Output 3", "Output 4", "Output 5"],
-  "methodological_note": "Nota sobre metodologia ou limitações (se aplicável)",
+  "tam": "R$ X - Y (faixa obrigatória, ex: R$ 800M - 1.2B)",
+  "sam": "R$ X - Y",
+  "som": "R$ X - Y",
+  "assumptions": ["Premissa 1 com fonte/cálculo", "Premissa 2", "Premissa 3"],
+  "cagr": "+X% a.a. (baseado em: fonte)",
+  "confidence_level": 65,
+  "estimation_method": "dados_diretos|proxy_concorrentes|proxy_funcionarios|benchmark_setorial",
+  "calculation_notes": "Explicação breve do cálculo usado (max 200 chars)",
+  "data_sources_used": {
+    "direct_data": ["Dado direto encontrado (se houver)"],
+    "proxy_calculations": ["Cálculo proxy usado (se houver)"],
+    "benchmark_extrapolations": ["Benchmark aplicado (se houver)"]
+  },
+  "caveat_message": "⚠️ Aviso se confidence < 50 (opcional)",
   "summary": "Síntese de potencial (max 200 chars)"
 }`
 
@@ -450,44 +600,60 @@ Retorne JSON (valores em PT-BR):
   "summary": "Resumo de riscos e preparação estratégica"
 }`
 
-	// 9. OKRs Trimestrais - Modelo FOCUS [cite: 1041] - CONSTRAINED
-	FrameworkOKRsPrompt = `Defina OKRs Estratégicos Trimestrais (Modelo FOCUS) para Q1, Q2 e Q3 2025.
+	// 9. OKRs Plano 90 Dias - Modelo FOCUS [cite: 1041] - CONSTRAINED
+	// IMPORTANT: Use Decision Matrix recommendations as input for OKR alignment
+	FrameworkOKRsPrompt = `Defina um Plano Estratégico de 90 Dias (Modelo FOCUS) com marcos mensais.
 Contexto: {{COMPANY_DATA}}
 Estratégia: {{BLUE_OCEAN_INSIGHTS}}
+Recomendações Priorizadas: {{DECISION_MATRIX_RECOMMENDATIONS}}
+
+REGRA CRÍTICA: Os OKRs devem estar ALINHADOS com as Recomendações Priorizadas da Matriz de Decisão.
+Cada objetivo mensal deve contribuir diretamente para implementar as recomendações estratégicas.
+
+FORMATO 90 DIAS COM MARCOS MENSAIS:
+- Os 90 dias são divididos em 3 meses (Mês 1, Mês 2, Mês 3)
+- Cada mês tem foco progressivo: Fundação → Crescimento → Consolidação
+- Use datas relativas (não hardcoded como "Q1 2025")
 
 REGRAS:
-1. Crie OKRs para EXATAMENTE 3 trimestres (Q1, Q2, Q3 2025).
-2. Para cada trimestre, defina 1 Objetivo e EXATAMENTE 3 Key Results (KRs).
+1. Crie EXATAMENTE 3 blocos mensais (Mês 1, Mês 2, Mês 3).
+2. Para cada mês, defina 1 Objetivo e EXATAMENTE 3 Key Results (KRs).
 3. Use números nos KRs (Ex: "Aumentar receita em 20%"). Max 100 chars por KR.
-4. Adicione estimativa de investimento e timeline para cada trimestre.
-5. Progressão lógica: Q1 foca em fundação, Q2 em crescimento, Q3 em escala.
+4. Adicione estimativa de investimento e timeline para cada mês.
+5. Progressão lógica: Mês 1 = fundação, Mês 2 = crescimento, Mês 3 = consolidação/escala.
+6. Vincule cada objetivo às recomendações da Matriz de Decisão (campo "aligned_recommendation").
 
 Retorne JSON (valores em PT-BR):
 {
-  "quarters": [
+  "plan_90_days": [
     {
-      "quarter": "Q1 2025",
-      "objective": "Objetivo do Q1 (foco em fundação/validação)",
+      "month": "Mês 1",
+      "focus": "Fundação",
+      "objective": "Objetivo do Mês 1 (foco em fundação/validação)",
       "key_results": ["KR1 (max 100 chars)", "KR2", "KR3"],
-      "investment": "R$ 20-30 mil (ou estimativa apropriada)",
-      "timeline": "3-4 meses"
+      "investment": "R$ 10-20 mil (ou estimativa apropriada)",
+      "aligned_recommendation": "Título da recomendação prioritária #1 ou #2 que este mês implementa"
     },
     {
-      "quarter": "Q2 2025",
-      "objective": "Objetivo do Q2 (foco em crescimento)",
+      "month": "Mês 2",
+      "focus": "Crescimento",
+      "objective": "Objetivo do Mês 2 (foco em crescimento)",
       "key_results": ["KR1", "KR2", "KR3"],
-      "investment": "R$ 40-60 mil",
-      "timeline": "3-4 meses"
+      "investment": "R$ 20-40 mil",
+      "aligned_recommendation": "Título da recomendação que este mês implementa"
     },
     {
-      "quarter": "Q3 2025",
-      "objective": "Objetivo do Q3 (foco em escala)",
+      "month": "Mês 3",
+      "focus": "Consolidação",
+      "objective": "Objetivo do Mês 3 (foco em consolidação/escala)",
       "key_results": ["KR1", "KR2", "KR3"],
-      "investment": "R$ 80-120 mil",
-      "timeline": "3-4 meses"
+      "investment": "R$ 30-50 mil",
+      "aligned_recommendation": "Título da recomendação que este mês implementa"
     }
   ],
-  "summary": "Roteiro de implementação trimestral (max 200 chars)"
+  "total_investment": "R$ 60-110 mil (soma dos 3 meses)",
+  "success_metrics": ["Métrica de sucesso 1 para os 90 dias", "Métrica 2", "Métrica 3"],
+  "summary": "Roteiro de implementação 90 dias (max 200 chars)"
 }`
 
 	// 10. BSC - Modelo ALIGN [cite: 774] - CONSTRAINED

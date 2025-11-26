@@ -285,8 +285,8 @@ func analyzeDataCompleteness(a *analysis.Analysis) map[string]bool {
 	checks["BlueOcean"] = len(a.BlueOcean.Eliminate) > 0 && len(a.BlueOcean.Reduce) > 0 &&
 		len(a.BlueOcean.Raise) > 0 && len(a.BlueOcean.Create) > 0
 
-	// OKRs
-	checks["OKRs"] = len(a.OKRs.Quarters) >= 3
+	// OKRs - Support both V2 (Plan90Days) and V1 (Quarters) formats
+	checks["OKRs"] = len(a.OKRs.Plan90Days) >= 3 || len(a.OKRs.Quarters) >= 3
 
 	// Growth Hacking
 	checks["GrowthHacking"] = a.GrowthHacking.LeapLoop.Name != "" && a.GrowthHacking.ScaleLoop.Name != ""

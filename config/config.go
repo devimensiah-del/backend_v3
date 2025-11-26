@@ -43,6 +43,11 @@ type Config struct {
 	EnrichmentModel    string
 	EnrichmentFallback string
 
+	// Pre-search model: Perplexity for company identification before enrichment
+	// This model runs first to identify exact company, then feeds data to enrichment
+	PreSearchModel    string
+	PreSearchFallback string
+
 	// Primary model: Used for all 11 analysis frameworks
 	PrimaryModel    string
 	PrimaryFallback string
@@ -110,10 +115,12 @@ func Load() (*Config, error) {
 		DBMaxIdleConns:    getEnvInt("DB_MAX_IDLE_CONNS", 5),  // Idle connections to keep alive
 		DBConnMaxLifetime: time.Duration(getEnvInt("DB_CONN_MAX_LIFETIME_MINUTES", 5)) * time.Minute,
 
-		// AI Configuration (5-Model Approach: Enrichment + Primary + Synthesis)
+		// AI Configuration (6-Model Approach: PreSearch + Enrichment + Primary + Synthesis)
 		OpenRouterAPIKey:   getEnv("OPENAI_API_KEY", ""),
 		EnrichmentModel:    getEnv("AI_ENRICHMENT_MODEL", "google/gemini-2.5-flash"),        // Must support Google Search
 		EnrichmentFallback: getEnv("AI_ENRICHMENT_FALLBACK", "google/gemini-2.5-pro-preview"), // Fallback must also support search
+		PreSearchModel:     getEnv("AI_PRESEARCH_MODEL", "perplexity/sonar-pro"),            // Perplexity for company identification
+		PreSearchFallback:  getEnv("AI_PRESEARCH_FALLBACK", "perplexity/sonar"),             // Fallback Perplexity model
 		PrimaryModel:       getEnv("AI_PRIMARY_MODEL", "google/gemini-2.5-flash"),
 		PrimaryFallback:    getEnv("AI_PRIMARY_FALLBACK", "openai/gpt-4.1-mini"),
 		SynthesisModel:     getEnv("AI_SYNTHESIS_MODEL", "google/gemini-2.5-pro-preview"),
@@ -311,7 +318,9 @@ func getEnvFloat(key string, fallback float64) float64 {
 func loadFrameworkConfigs() map[string]FrameworkConfig {
 	configs := make(map[string]FrameworkConfig)
 
-	// Load 5-model configuration (Enrichment + Primary + Synthesis)
+	// Load 6-model configuration (PreSearch + Enrichment + Primary + Synthesis)
+	preSearchModel := getEnv("AI_PRESEARCH_MODEL", "perplexity/sonar-pro")      // Perplexity for company identification
+	preSearchFallback := getEnv("AI_PRESEARCH_FALLBACK", "perplexity/sonar")    // Fallback Perplexity model
 	enrichmentModel := getEnv("AI_ENRICHMENT_MODEL", "google/gemini-2.5-flash")
 	enrichmentFallback := getEnv("AI_ENRICHMENT_FALLBACK", "google/gemini-2.5-pro-preview")
 	primaryModel := getEnv("AI_PRIMARY_MODEL", "google/gemini-2.5-flash")
@@ -324,6 +333,8 @@ func loadFrameworkConfigs() map[string]FrameworkConfig {
 	tokensSynthesis := getEnvInt("AI_MAX_TOKENS_SYNTHESIS", 6000)
 
 	log.Info().
+		Str("presearch_model", preSearchModel).
+		Str("presearch_fallback", preSearchFallback).
 		Str("enrichment_model", enrichmentModel).
 		Str("enrichment_fallback", enrichmentFallback).
 		Str("primary_model", primaryModel).
@@ -331,7 +342,16 @@ func loadFrameworkConfigs() map[string]FrameworkConfig {
 		Str("synthesis_model", synthesisModel).
 		Str("synthesis_fallback", synthesisFallback).
 		Float64("temperature", temperature).
-		Msg("Loading 5-model AI configuration")
+		Msg("Loading 6-model AI configuration (PreSearch + Enrichment + Primary + Synthesis)")
+
+	// Pre-Search Layer (Layer -1) - Company Identification via Perplexity
+	// Runs BEFORE enrichment to solve company disambiguation (Virtus.br problem)
+	configs["presearch"] = FrameworkConfig{
+		Model:         preSearchModel,
+		Temperature:   0.3, // Lower temperature for consistent identification
+		MaxTokens:     2000, // Smaller response for pre-search
+		FallbackModel: preSearchFallback,
+	}
 
 	// Enrichment Layer (Layer 0) - Discovery & Data Gathering (MUST support Google Search)
 	configs["enrichment"] = FrameworkConfig{
