@@ -39,7 +39,11 @@ type Config struct {
 	// AI/LLM Configuration (Simplified 4-Model Approach)
 	OpenRouterAPIKey string
 
-	// Primary model: Used for enrichment and all 11 analysis frameworks
+	// Enrichment model: Must support Google Search (Gemini models)
+	EnrichmentModel    string
+	EnrichmentFallback string
+
+	// Primary model: Used for all 11 analysis frameworks
 	PrimaryModel    string
 	PrimaryFallback string
 
@@ -106,12 +110,14 @@ func Load() (*Config, error) {
 		DBMaxIdleConns:    getEnvInt("DB_MAX_IDLE_CONNS", 5),  // Idle connections to keep alive
 		DBConnMaxLifetime: time.Duration(getEnvInt("DB_CONN_MAX_LIFETIME_MINUTES", 5)) * time.Minute,
 
-		// AI Configuration (Simplified 4-Model Approach)
-		OpenRouterAPIKey:  getEnv("OPENAI_API_KEY", ""),
-		PrimaryModel:      getEnv("AI_PRIMARY_MODEL", "google/gemini-2.5-flash"),
-		PrimaryFallback:   getEnv("AI_PRIMARY_FALLBACK", "openai/gpt-4.1-mini"),
-		SynthesisModel:    getEnv("AI_SYNTHESIS_MODEL", "google/gemini-2.5-pro-preview"),
-		SynthesisFallback: getEnv("AI_SYNTHESIS_FALLBACK", "openai/gpt-4.1"),
+		// AI Configuration (5-Model Approach: Enrichment + Primary + Synthesis)
+		OpenRouterAPIKey:   getEnv("OPENAI_API_KEY", ""),
+		EnrichmentModel:    getEnv("AI_ENRICHMENT_MODEL", "google/gemini-2.5-flash"),        // Must support Google Search
+		EnrichmentFallback: getEnv("AI_ENRICHMENT_FALLBACK", "google/gemini-2.5-pro-preview"), // Fallback must also support search
+		PrimaryModel:       getEnv("AI_PRIMARY_MODEL", "google/gemini-2.5-flash"),
+		PrimaryFallback:    getEnv("AI_PRIMARY_FALLBACK", "openai/gpt-4.1-mini"),
+		SynthesisModel:     getEnv("AI_SYNTHESIS_MODEL", "google/gemini-2.5-pro-preview"),
+		SynthesisFallback:  getEnv("AI_SYNTHESIS_FALLBACK", "openai/gpt-4.1"),
 		AITemperature:     getEnvFloat("AI_TEMPERATURE", 0.5),
 		MaxTokensEnrichment: getEnvInt("AI_MAX_TOKENS_ENRICHMENT", 10000),
 		MaxTokensAnalysis:   getEnvInt("AI_MAX_TOKENS_ANALYSIS", 4000),
@@ -300,12 +306,14 @@ func getEnvFloat(key string, fallback float64) float64 {
 	return fallback
 }
 
-// loadFrameworkConfigs generates framework configurations from simplified 4-model approach
-// All analysis frameworks use PrimaryModel, Synthesis uses SynthesisModel
+// loadFrameworkConfigs generates framework configurations from 5-model approach
+// Enrichment uses dedicated search-capable model, Analysis uses PrimaryModel, Synthesis uses SynthesisModel
 func loadFrameworkConfigs() map[string]FrameworkConfig {
 	configs := make(map[string]FrameworkConfig)
 
-	// Load simplified 4-model configuration
+	// Load 5-model configuration (Enrichment + Primary + Synthesis)
+	enrichmentModel := getEnv("AI_ENRICHMENT_MODEL", "google/gemini-2.5-flash")
+	enrichmentFallback := getEnv("AI_ENRICHMENT_FALLBACK", "google/gemini-2.5-pro-preview")
 	primaryModel := getEnv("AI_PRIMARY_MODEL", "google/gemini-2.5-flash")
 	primaryFallback := getEnv("AI_PRIMARY_FALLBACK", "openai/gpt-4.1-mini")
 	synthesisModel := getEnv("AI_SYNTHESIS_MODEL", "google/gemini-2.5-pro-preview")
@@ -316,19 +324,21 @@ func loadFrameworkConfigs() map[string]FrameworkConfig {
 	tokensSynthesis := getEnvInt("AI_MAX_TOKENS_SYNTHESIS", 6000)
 
 	log.Info().
+		Str("enrichment_model", enrichmentModel).
+		Str("enrichment_fallback", enrichmentFallback).
 		Str("primary_model", primaryModel).
 		Str("primary_fallback", primaryFallback).
 		Str("synthesis_model", synthesisModel).
 		Str("synthesis_fallback", synthesisFallback).
 		Float64("temperature", temperature).
-		Msg("Loading simplified 4-model AI configuration")
+		Msg("Loading 5-model AI configuration")
 
-	// Enrichment Layer (Layer 0) - Discovery & Data Gathering
+	// Enrichment Layer (Layer 0) - Discovery & Data Gathering (MUST support Google Search)
 	configs["enrichment"] = FrameworkConfig{
-		Model:         primaryModel,
+		Model:         enrichmentModel,
 		Temperature:   temperature,
 		MaxTokens:     tokensEnrichment,
-		FallbackModel: primaryFallback,
+		FallbackModel: enrichmentFallback,
 	}
 
 	// All 11 Analysis Frameworks use Primary Model
