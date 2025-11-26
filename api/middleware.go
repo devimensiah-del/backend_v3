@@ -193,6 +193,74 @@ func AuthMiddleware(jwtSecret string, db *sqlx.DB) gin.HandlerFunc {
 	}
 }
 
+// OptionalAuthMiddleware parses JWT token if present but doesn't require it
+// Used for public endpoints that need to behave differently for authenticated users (e.g., admin preview)
+func OptionalAuthMiddleware(jwtSecret string, db *sqlx.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			// No auth header, continue as anonymous user
+			c.Next()
+			return
+		}
+
+		parts := strings.Split(authHeader, " ")
+		if len(parts) != 2 || parts[0] != "Bearer" {
+			// Invalid format, continue as anonymous
+			c.Next()
+			return
+		}
+
+		tokenString := parts[1]
+
+		// Parse and Validate Token
+		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			}
+			return []byte(jwtSecret), nil
+		})
+
+		if err != nil || !token.Valid {
+			// Invalid token, continue as anonymous
+			c.Next()
+			return
+		}
+
+		// Extract Claims (same as AuthMiddleware)
+		if claims, ok := token.Claims.(jwt.MapClaims); ok {
+			userID := ""
+			if sub, ok := claims["sub"].(string); ok {
+				userID = sub
+				c.Set("userID", sub)
+			}
+
+			if email, ok := claims["email"].(string); ok {
+				c.Set("userEmail", email)
+			}
+
+			// Fetch role from database
+			role := "user"
+			if userID != "" && db != nil {
+				var userInfo struct {
+					Role  string `db:"role"`
+					Email string `db:"email"`
+				}
+				err := db.Get(&userInfo, "SELECT role, email FROM user_profiles WHERE id = $1", userID)
+				if err == nil {
+					role = userInfo.Role
+					if _, exists := c.Get("userEmail"); !exists && userInfo.Email != "" {
+						c.Set("userEmail", userInfo.Email)
+					}
+				}
+			}
+			c.Set("userRole", role)
+		}
+
+		c.Next()
+	}
+}
+
 // AdminAuthMiddleware ensures user has admin privileges
 func AdminAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {

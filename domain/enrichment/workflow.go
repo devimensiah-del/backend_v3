@@ -38,6 +38,14 @@ func (s *Service) EnrichSubmission(ctx context.Context, submissionID uuid.UUID) 
 	techContextBytes, _ := json.Marshal(technicalData)
 	techContextString := string(techContextBytes)
 
+	// NEW: Fetch real-time Brazilian macro-economic data
+	s.updateStatus(ctx, enrichment, "Fetching real-time macro-economic data...", 25)
+	macro, err := s.macroProvider.FetchLatestMacroData(ctx)
+	if err != nil {
+		log.Warn().Err(err).Msg("failed to fetch macro data (continuing with partial data)")
+		// Graceful degradation - continue without macro data
+	}
+
 	// 3. DETECT GAPS
 	missingFields := s.detectMissingFields(sub)
 
@@ -50,6 +58,16 @@ func (s *Service) EnrichSubmission(ctx context.Context, submissionID uuid.UUID) 
 	prompt = strings.ReplaceAll(prompt, "{{TECHNICAL_CONTEXT}}", techContextString)
 	prompt = strings.ReplaceAll(prompt, "{{MISSING_FIELDS}}", missingFields)
 
+	// NEW: Inject real-time macro data if available
+	if macro != nil {
+		macroJSON, _ := json.Marshal(macro)
+		macroContextStr := string(macroJSON)
+		prompt = strings.ReplaceAll(prompt, "{{REAL_TIME_MACRO_DATA}}", macroContextStr)
+	} else {
+		// Graceful fallback if macro data unavailable
+		prompt = strings.ReplaceAll(prompt, "{{REAL_TIME_MACRO_DATA}}", "(Macro data unavailable - use LLM search for current economic context)")
+	}
+
 	agentReq := llm.Request{
 		Model:        s.enrichmentCfg.Model,
 		SystemPrompt: "You are a JSON-only Corporate Intelligence Agent.",
@@ -60,8 +78,13 @@ func (s *Service) EnrichSubmission(ctx context.Context, submissionID uuid.UUID) 
 		MaxTokens:   s.enrichmentCfg.MaxTokens,   // Use config tokens
 	}
 
-	// Call LLM
-	resp, err := s.llmClient.Call(ctx, &agentReq)
+	// Call LLM with automatic fallback on failure (rate limit, timeout, 5xx errors)
+	log.Info().
+		Str("primary_model", s.enrichmentCfg.Model).
+		Str("fallback_model", s.enrichmentCfg.FallbackModel).
+		Int("max_tokens", s.enrichmentCfg.MaxTokens).
+		Msg("Starting LLM call for enrichment")
+	resp, err := s.llmClient.CallWithFallback(ctx, &agentReq, s.enrichmentCfg.FallbackModel)
 	if err != nil {
 		return nil, s.handleCrash(ctx, sub, enrichment, err)
 	}

@@ -43,6 +43,14 @@ type Analysis struct {
 	// Even after approval and PDF generation, analysis is NOT visible until toggled
 	IsVisibleToUser bool `db:"is_visible_to_user" json:"is_visible_to_user"`
 
+	// Blur control - When true, premium frameworks are blurred for users
+	// Independent of visibility (can be visible but blurred)
+	IsBlurred bool `db:"is_blurred" json:"is_blurred"`
+
+	// Public sharing via access code
+	AccessCode          *string    `db:"access_code" json:"access_code,omitempty"`
+	AccessCodeCreatedAt *time.Time `db:"access_code_created_at" json:"access_code_created_at,omitempty"`
+
 	// Soft delete support
 	DeletedAt *time.Time `db:"deleted_at" json:"deleted_at,omitempty"`
 

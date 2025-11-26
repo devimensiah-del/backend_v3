@@ -176,6 +176,50 @@ func (c *Client) Call(ctx context.Context, req *Request) (*Response, error) {
 	return result.(*Response), nil
 }
 
+// CallWithFallback makes an LLM API request with automatic fallback to another model on failure.
+// This is the recommended method for production use as it handles rate limits, timeouts, and model unavailability.
+func (c *Client) CallWithFallback(ctx context.Context, req *Request, fallbackModel string) (*Response, error) {
+	primaryModel := req.Model
+
+	// Try primary model first
+	resp, err := c.Call(ctx, req)
+	if err == nil {
+		return resp, nil
+	}
+
+	// Check if we have a fallback and error is retryable
+	if fallbackModel == "" || fallbackModel == primaryModel {
+		return nil, err
+	}
+
+	if !isRetryable(err) {
+		// Non-retryable error - don't try fallback
+		return nil, err
+	}
+
+	// Log and try fallback model
+	fmt.Printf("[LLM] Primary model %s failed (%v), trying fallback %s\n", primaryModel, err, fallbackModel)
+
+	// Create new request with fallback model
+	fallbackReq := &Request{
+		Model:        fallbackModel,
+		SystemPrompt: req.SystemPrompt,
+		Messages:     req.Messages,
+		Tools:        req.Tools,
+		MaxURLs:      req.MaxURLs,
+		Temperature:  req.Temperature,
+		MaxTokens:    req.MaxTokens,
+	}
+
+	resp, err = c.Call(ctx, fallbackReq)
+	if err != nil {
+		return nil, fmt.Errorf("both primary (%s) and fallback (%s) models failed: %w", primaryModel, fallbackModel, err)
+	}
+
+	fmt.Printf("[LLM] Fallback model %s succeeded\n", fallbackModel)
+	return resp, nil
+}
+
 func (c *Client) callWithRetry(ctx context.Context, req *Request, maxRetries int) (*Response, error) {
 	var lastErr error
 
@@ -209,6 +253,9 @@ func (c *Client) makeRequest(ctx context.Context, req *Request) (*Response, erro
 		return nil, err
 	}
 
+	fmt.Printf("[LLM] Preparing request to %s (model: %s, tokens: %d)\n", c.baseURL, req.Model, req.MaxTokens)
+	startTime := time.Now()
+
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/chat/completions", bytes.NewReader(jsonBody))
 	if err != nil {
 		return nil, err
@@ -216,14 +263,17 @@ func (c *Client) makeRequest(ctx context.Context, req *Request) (*Response, erro
 
 	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("HTTP-Referer", "[https://imensiah.com](https://imensiah.com)")
+	httpReq.Header.Set("HTTP-Referer", "https://imensiah.com")
 	httpReq.Header.Set("X-Title", "Imensiah Business Intelligence")
 
+	fmt.Printf("[LLM] Sending HTTP request...\n")
 	httpResp, err := c.httpClient.Do(httpReq)
 	if err != nil {
+		fmt.Printf("[LLM] HTTP request failed after %v: %v\n", time.Since(startTime), err)
 		return nil, err
 	}
 	defer httpResp.Body.Close()
+	fmt.Printf("[LLM] Response received in %v (status: %d)\n", time.Since(startTime), httpResp.StatusCode)
 
 	respBody, err := io.ReadAll(httpResp.Body)
 	if err != nil {

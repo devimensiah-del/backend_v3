@@ -2,8 +2,10 @@ package analysis
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"math/big"
 
 	"backend_v3/config"
 	"backend_v3/llm"
@@ -409,6 +411,35 @@ func (s *Service) Send(ctx context.Context, analysisID string, userEmail string)
 	return nil
 }
 
+// ReopenForEditing reverts an approved analysis back to completed status
+// This allows admin to make further edits before re-approving
+func (s *Service) ReopenForEditing(ctx context.Context, analysisID string) (*Analysis, error) {
+	// Get analysis
+	analysis, err := s.repo.GetByID(ctx, analysisID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Only approved analyses can be reopened
+	if analysis.Status != string(StatusApproved) {
+		return nil, fmt.Errorf("only approved analyses can be reopened for editing, current status: %s", analysis.Status)
+	}
+
+	// Revert to completed status
+	analysis.Status = string(StatusCompleted)
+
+	// Update via repository
+	if err := s.repo.Update(ctx, analysis); err != nil {
+		return nil, fmt.Errorf("failed to reopen analysis: %w", err)
+	}
+
+	s.logger.Info().
+		Str("analysis_id", analysisID).
+		Msg("Analysis reopened for editing (approved → completed)")
+
+	return analysis, nil
+}
+
 // SetVisibility toggles user visibility for an analysis
 // Admin must explicitly make analysis visible after approval
 func (s *Service) SetVisibility(ctx context.Context, analysisID string, visible bool) error {
@@ -436,6 +467,31 @@ func (s *Service) SetVisibility(ctx context.Context, analysisID string, visible 
 	return nil
 }
 
+// SetBlurStatus toggles the blur overlay for premium frameworks
+// This is independent of visibility - an analysis can be visible but blurred (paywall)
+// Admin can unblur to give full access to premium content
+func (s *Service) SetBlurStatus(ctx context.Context, analysisID string, blurred bool) error {
+	// Get analysis first to validate it exists
+	_, err := s.repo.GetByID(ctx, analysisID)
+	if err != nil {
+		return err
+	}
+
+	// No status restriction - blur can be toggled at any time
+	// (it's a display control, not a workflow state)
+
+	if err := s.repo.SetBlurStatus(ctx, analysisID, blurred); err != nil {
+		return err
+	}
+
+	s.logger.Info().
+		Str("analysis_id", analysisID).
+		Bool("blurred", blurred).
+		Msg("Analysis blur status updated")
+
+	return nil
+}
+
 // MarkAsFailed updates analysis with error message
 // Called by worker ErrorHandler after Asynq exhausts max retries
 // Status remains "pending" with error_message populated
@@ -459,4 +515,63 @@ func (s *Service) MarkAsFailed(ctx context.Context, submissionID string, errorMs
 		Msg("Analysis marked with error message")
 
 	return nil
+}
+
+// GetByAccessCode retrieves an analysis by its public access code
+// Returns nil, nil if not found (for 404 handling)
+func (s *Service) GetByAccessCode(ctx context.Context, code string) (*Analysis, error) {
+	return s.repo.GetByAccessCode(ctx, code)
+}
+
+// GenerateAccessCode creates a unique 8-character access code for public sharing
+// Handles collisions by regenerating up to 5 times
+func (s *Service) GenerateAccessCode(ctx context.Context, analysisID string) (string, error) {
+	// Verify analysis exists and is in approved or sent status
+	analysis, err := s.repo.GetByID(ctx, analysisID)
+	if err != nil {
+		return "", err
+	}
+
+	// Only allow access code generation for approved or sent analyses
+	if analysis.Status != string(StatusApproved) && analysis.Status != string(StatusSent) {
+		return "", fmt.Errorf("analysis must be approved before generating access code, current status: %s", analysis.Status)
+	}
+
+	const maxRetries = 5
+	for i := 0; i < maxRetries; i++ {
+		code := generateSecureCode(8)
+		exists, err := s.repo.AccessCodeExists(ctx, code)
+		if err != nil {
+			return "", fmt.Errorf("failed to check code existence: %w", err)
+		}
+		if !exists {
+			err = s.repo.SetAccessCode(ctx, analysisID, code)
+			if err != nil {
+				return "", fmt.Errorf("failed to set access code: %w", err)
+			}
+
+			s.logger.Info().
+				Str("analysis_id", analysisID).
+				Str("access_code", code).
+				Msg("Generated access code for analysis")
+
+			return code, nil
+		}
+	}
+
+	return "", fmt.Errorf("failed to generate unique code after %d attempts", maxRetries)
+}
+
+// generateSecureCode generates a cryptographically secure alphanumeric code
+// Uses only uppercase letters and digits (36 characters) for URL-safety
+func generateSecureCode(length int) string {
+	const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	result := make([]byte, length)
+
+	for i := 0; i < length; i++ {
+		n, _ := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
+		result[i] = charset[n.Int64()]
+	}
+
+	return string(result)
 }

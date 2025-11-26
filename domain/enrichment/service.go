@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"time"
 
+	"backend_v3/adapter/macrodata"
+	"backend_v3/adapter/scraper"
 	"backend_v3/config"
 	"backend_v3/domain/submission"
 	"backend_v3/llm"
-
-	"backend_v3/adapter/scraper"
 
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
@@ -25,6 +25,7 @@ type Service struct {
 	scraper        *scraper.Client
 	queueClient    *asynq.Client          // For job orchestration
 	enrichmentCfg  config.FrameworkConfig // Specific config for this domain
+	macroProvider  *macrodata.MacroDataProvider // NEW: Real-time Brazilian economic data
 }
 
 // NewService creates a new enrichment service
@@ -36,7 +37,8 @@ func NewService(repo Repository, submissionRepo submission.Repository, llmClient
 		llmClient:      llmClient,
 		scraper:        scraper.NewClient(),
 		queueClient:    queueClient,
-		enrichmentCfg:  cfg, // Wired immediately. No setters needed.
+		enrichmentCfg:  cfg,                             // Wired immediately. No setters needed.
+		macroProvider:  macrodata.NewMacroDataProvider(), // NEW: Initialize macro data provider
 	}
 }
 
@@ -196,6 +198,37 @@ func (s *Service) Approve(ctx context.Context, id uuid.UUID) error {
 		Msg("Analysis job enqueued successfully")
 
 	return nil
+}
+
+// ReopenForEditing reverts an approved enrichment back to completed status
+// This allows admin to make further edits before re-approving
+// Note: This does NOT delete or reset any analysis data - it simply unlocks enrichment for editing
+func (s *Service) ReopenForEditing(ctx context.Context, id uuid.UUID) (*Enrichment, error) {
+	// Get enrichment
+	enrichment, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	// Only approved enrichments can be reopened
+	if enrichment.Status != StatusApproved {
+		return nil, fmt.Errorf("only approved enrichments can be reopened for editing, current status: %s", enrichment.Status)
+	}
+
+	// Revert to completed status
+	enrichment.Status = StatusCompleted
+
+	// Update via repository (force update to bypass any locks)
+	if err := s.repo.ForceUpdateAndUnlock(ctx, enrichment); err != nil {
+		return nil, fmt.Errorf("failed to reopen enrichment: %w", err)
+	}
+
+	log.Info().
+		Str("enrichment_id", id.String()).
+		Str("submission_id", enrichment.SubmissionID.String()).
+		Msg("Enrichment reopened for editing (approved → completed)")
+
+	return enrichment, nil
 }
 
 // MarkAsFailed updates enrichment with error message

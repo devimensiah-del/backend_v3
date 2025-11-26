@@ -198,12 +198,15 @@ type EnrichmentResponse struct {
 
 // AnalysisResponse maps domain Analysis to frontend-expected structure
 type AnalysisResponse struct {
-	ID           string                 `json:"id"`
-	SubmissionID string                 `json:"submissionId"`
-	Status       string                 `json:"status"`
-	Analysis     map[string]interface{} `json:"analysis"` // Contains all framework data
-	CreatedAt    time.Time              `json:"createdAt"`
-	UpdatedAt    time.Time              `json:"updatedAt"`
+	ID              string                 `json:"id"`
+	SubmissionID    string                 `json:"submissionId"`
+	Status          string                 `json:"status"`
+	Analysis        map[string]interface{} `json:"analysis"` // Contains all framework data
+	IsVisibleToUser bool                   `json:"is_visible_to_user"`
+	IsBlurred       bool                   `json:"is_blurred"` // Controls premium framework blur overlay
+	AccessCode      *string                `json:"access_code,omitempty"`
+	CreatedAt       time.Time              `json:"createdAt"`
+	UpdatedAt       time.Time              `json:"updatedAt"`
 }
 
 // ==================== REPORT RESPONSE TYPES ====================

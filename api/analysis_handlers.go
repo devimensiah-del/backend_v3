@@ -127,12 +127,15 @@ func (h *AnalysisHandlers) GetAnalysis(c *gin.Context) {
 
 	// Build response DTO
 	response := AnalysisResponse{
-		ID:           analysis.ID,
-		SubmissionID: analysis.SubmissionID,
-		Status:       analysis.Status,
-		Analysis:     analysisData,
-		CreatedAt:    analysis.CreatedAt,
-		UpdatedAt:    analysis.UpdatedAt,
+		ID:              analysis.ID,
+		SubmissionID:    analysis.SubmissionID,
+		Status:          analysis.Status,
+		Analysis:        analysisData,
+		IsVisibleToUser: analysis.IsVisibleToUser,
+		IsBlurred:       analysis.IsBlurred,
+		AccessCode:      analysis.AccessCode,
+		CreatedAt:       analysis.CreatedAt,
+		UpdatedAt:       analysis.UpdatedAt,
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -172,12 +175,15 @@ func (h *AnalysisHandlers) UpdateAnalysis(c *gin.Context) {
 	json.Unmarshal(analysisBytes, &analysisData)
 
 	response := AnalysisResponse{
-		ID:           updatedAnalysis.ID,
-		SubmissionID: updatedAnalysis.SubmissionID,
-		Status:       updatedAnalysis.Status,
-		Analysis:     analysisData,
-		CreatedAt:    updatedAnalysis.CreatedAt,
-		UpdatedAt:    updatedAnalysis.UpdatedAt,
+		ID:              updatedAnalysis.ID,
+		SubmissionID:    updatedAnalysis.SubmissionID,
+		Status:          updatedAnalysis.Status,
+		Analysis:        analysisData,
+		IsVisibleToUser: updatedAnalysis.IsVisibleToUser,
+		IsBlurred:       updatedAnalysis.IsBlurred,
+		AccessCode:      updatedAnalysis.AccessCode,
+		CreatedAt:       updatedAnalysis.CreatedAt,
+		UpdatedAt:       updatedAnalysis.UpdatedAt,
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -253,12 +259,15 @@ func (h *AnalysisHandlers) SendAnalysis(c *gin.Context) {
 	json.Unmarshal(analysisBytes, &analysisData)
 
 	response := AnalysisResponse{
-		ID:           updatedAnalysis.ID,
-		SubmissionID: updatedAnalysis.SubmissionID,
-		Status:       updatedAnalysis.Status,
-		Analysis:     analysisData,
-		CreatedAt:    updatedAnalysis.CreatedAt,
-		UpdatedAt:    updatedAnalysis.UpdatedAt,
+		ID:              updatedAnalysis.ID,
+		SubmissionID:    updatedAnalysis.SubmissionID,
+		Status:          updatedAnalysis.Status,
+		Analysis:        analysisData,
+		IsVisibleToUser: updatedAnalysis.IsVisibleToUser,
+		IsBlurred:       updatedAnalysis.IsBlurred,
+		AccessCode:      updatedAnalysis.AccessCode,
+		CreatedAt:       updatedAnalysis.CreatedAt,
+		UpdatedAt:       updatedAnalysis.UpdatedAt,
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -299,12 +308,15 @@ func (h *AnalysisHandlers) ApproveAnalysis(c *gin.Context) {
 	json.Unmarshal(analysisBytes, &analysisData)
 
 	response := AnalysisResponse{
-		ID:           updatedAnalysis.ID,
-		SubmissionID: updatedAnalysis.SubmissionID,
-		Status:       updatedAnalysis.Status,
-		Analysis:     analysisData,
-		CreatedAt:    updatedAnalysis.CreatedAt,
-		UpdatedAt:    updatedAnalysis.UpdatedAt,
+		ID:              updatedAnalysis.ID,
+		SubmissionID:    updatedAnalysis.SubmissionID,
+		Status:          updatedAnalysis.Status,
+		Analysis:        analysisData,
+		IsVisibleToUser: updatedAnalysis.IsVisibleToUser,
+		IsBlurred:       updatedAnalysis.IsBlurred,
+		AccessCode:      updatedAnalysis.AccessCode,
+		CreatedAt:       updatedAnalysis.CreatedAt,
+		UpdatedAt:       updatedAnalysis.UpdatedAt,
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -334,16 +346,95 @@ func (h *AnalysisHandlers) GetAnalysisAdmin(c *gin.Context) {
 	json.Unmarshal(analysisBytes, &analysisData)
 
 	response := AnalysisResponse{
-		ID:           analysis.ID,
-		SubmissionID: analysis.SubmissionID,
-		Status:       analysis.Status,
-		Analysis:     analysisData,
-		CreatedAt:    analysis.CreatedAt,
-		UpdatedAt:    analysis.UpdatedAt,
+		ID:              analysis.ID,
+		SubmissionID:    analysis.SubmissionID,
+		Status:          analysis.Status,
+		Analysis:        analysisData,
+		IsVisibleToUser: analysis.IsVisibleToUser,
+		IsBlurred:       analysis.IsBlurred,
+		AccessCode:      analysis.AccessCode,
+		CreatedAt:       analysis.CreatedAt,
+		UpdatedAt:       analysis.UpdatedAt,
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"analysis": response,
+	})
+}
+
+// GetAnalysisBySubmissionAdmin handles GET /api/v1/admin/submissions/:id/analysis
+// Admin can fetch analysis by submission ID (no ownership check needed)
+func (h *AnalysisHandlers) GetAnalysisBySubmissionAdmin(c *gin.Context) {
+	submissionID := c.Param("id")
+
+	// Get analysis by submission ID (admin access, no ownership check needed)
+	analysis, err := h.AnalysisService.GetBySubmissionID(c.Request.Context(), submissionID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{
+			Error:   "Not found",
+			Message: "Analysis not found for this submission",
+		})
+		return
+	}
+
+	// Transform to response
+	analysisData := make(map[string]interface{})
+	analysisBytes, _ := json.Marshal(analysis)
+	json.Unmarshal(analysisBytes, &analysisData)
+
+	response := AnalysisResponse{
+		ID:              analysis.ID,
+		SubmissionID:    analysis.SubmissionID,
+		Status:          analysis.Status,
+		Analysis:        analysisData,
+		IsVisibleToUser: analysis.IsVisibleToUser,
+		IsBlurred:       analysis.IsBlurred,
+		AccessCode:      analysis.AccessCode,
+		CreatedAt:       analysis.CreatedAt,
+		UpdatedAt:       analysis.UpdatedAt,
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"analysis": response,
+	})
+}
+
+// ReopenAnalysis handles POST /api/v1/admin/analysis/:id/reopen
+// Admin reverts an approved analysis back to completed status for editing
+func (h *AnalysisHandlers) ReopenAnalysis(c *gin.Context) {
+	analysisID := c.Param("id")
+
+	// Reopen analysis via service
+	updatedAnalysis, err := h.AnalysisService.ReopenForEditing(c.Request.Context(), analysisID)
+	if err != nil {
+		h.Logger.Error().Err(err).Str("analysis_id", analysisID).Msg("Failed to reopen analysis")
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Reopen failed",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	// Transform to response
+	analysisData := make(map[string]interface{})
+	analysisBytes, _ := json.Marshal(updatedAnalysis)
+	json.Unmarshal(analysisBytes, &analysisData)
+
+	response := AnalysisResponse{
+		ID:              updatedAnalysis.ID,
+		SubmissionID:    updatedAnalysis.SubmissionID,
+		Status:          updatedAnalysis.Status,
+		Analysis:        analysisData,
+		IsVisibleToUser: updatedAnalysis.IsVisibleToUser,
+		IsBlurred:       updatedAnalysis.IsBlurred,
+		AccessCode:      updatedAnalysis.AccessCode,
+		CreatedAt:       updatedAnalysis.CreatedAt,
+		UpdatedAt:       updatedAnalysis.UpdatedAt,
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"analysis": response,
+		"message":  "Análise reaberta para edição",
 	})
 }
 
@@ -391,12 +482,15 @@ func (h *AnalysisHandlers) ToggleVisibility(c *gin.Context) {
 	json.Unmarshal(analysisBytes, &analysisData)
 
 	response := AnalysisResponse{
-		ID:           updatedAnalysis.ID,
-		SubmissionID: updatedAnalysis.SubmissionID,
-		Status:       updatedAnalysis.Status,
-		Analysis:     analysisData,
-		CreatedAt:    updatedAnalysis.CreatedAt,
-		UpdatedAt:    updatedAnalysis.UpdatedAt,
+		ID:              updatedAnalysis.ID,
+		SubmissionID:    updatedAnalysis.SubmissionID,
+		Status:          updatedAnalysis.Status,
+		Analysis:        analysisData,
+		IsVisibleToUser: updatedAnalysis.IsVisibleToUser,
+		IsBlurred:       updatedAnalysis.IsBlurred,
+		AccessCode:      updatedAnalysis.AccessCode,
+		CreatedAt:       updatedAnalysis.CreatedAt,
+		UpdatedAt:       updatedAnalysis.UpdatedAt,
 	}
 
 	action := "hidden from"
@@ -408,4 +502,172 @@ func (h *AnalysisHandlers) ToggleVisibility(c *gin.Context) {
 		"analysis": response,
 		"message":  "Analysis " + action + " user successfully",
 	})
+}
+
+// ToggleBlur handles POST /api/v1/admin/analysis/:id/blur
+// Admin toggles the blur overlay for premium frameworks
+func (h *AnalysisHandlers) ToggleBlur(c *gin.Context) {
+	analysisID := c.Param("id")
+
+	// Parse request body
+	var req struct {
+		Blurred bool `json:"blurred"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid request",
+			Message: "blurred field is required (boolean)",
+		})
+		return
+	}
+
+	// Toggle blur status via service
+	err := h.AnalysisService.SetBlurStatus(c.Request.Context(), analysisID, req.Blurred)
+	if err != nil {
+		h.Logger.Error().Err(err).Str("analysis_id", analysisID).Msg("Failed to toggle blur status")
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Toggle failed",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	// Fetch updated analysis
+	updatedAnalysis, err := h.AnalysisService.GetByID(c.Request.Context(), analysisID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Fetch failed",
+			Message: "Blur status toggled but failed to fetch updated analysis",
+		})
+		return
+	}
+
+	// Transform to response
+	analysisData := make(map[string]interface{})
+	analysisBytes, _ := json.Marshal(updatedAnalysis)
+	json.Unmarshal(analysisBytes, &analysisData)
+
+	response := AnalysisResponse{
+		ID:              updatedAnalysis.ID,
+		SubmissionID:    updatedAnalysis.SubmissionID,
+		Status:          updatedAnalysis.Status,
+		Analysis:        analysisData,
+		IsVisibleToUser: updatedAnalysis.IsVisibleToUser,
+		IsBlurred:       updatedAnalysis.IsBlurred,
+		AccessCode:      updatedAnalysis.AccessCode,
+		CreatedAt:       updatedAnalysis.CreatedAt,
+		UpdatedAt:       updatedAnalysis.UpdatedAt,
+	}
+
+	action := "blurred"
+	if !req.Blurred {
+		action = "unblurred"
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"analysis": response,
+		"message":  "Analysis premium frameworks " + action + " successfully",
+	})
+}
+
+// GenerateAccessCode handles POST /api/v1/admin/analysis/:id/access-code
+// Admin generates a unique access code for public sharing
+func (h *AnalysisHandlers) GenerateAccessCode(c *gin.Context) {
+	analysisID := c.Param("id")
+
+	// Generate access code via service (handles collision retry)
+	accessCode, err := h.AnalysisService.GenerateAccessCode(c.Request.Context(), analysisID)
+	if err != nil {
+		h.Logger.Error().Err(err).Str("analysis_id", analysisID).Msg("Failed to generate access code")
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Generation failed",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	// Build shareable URL
+	baseURL := c.GetHeader("Origin")
+	if baseURL == "" {
+		baseURL = "https://imenseia.com.br"
+	}
+	shareableURL := baseURL + "/report/" + accessCode
+
+	c.JSON(http.StatusOK, gin.H{
+		"access_code":   accessCode,
+		"shareable_url": shareableURL,
+		"message":       "Access code generated successfully",
+	})
+}
+
+// GetPublicReport handles GET /api/v1/public/report/:code
+// Public endpoint - no auth required for public users
+// Admin users can preview even if visibility is OFF (they need to pass ?preview=admin with valid JWT)
+// Returns analysis data for public viewing if access code is valid and analysis is visible
+func (h *AnalysisHandlers) GetPublicReport(c *gin.Context) {
+	accessCode := c.Param("code")
+
+	// Get analysis by access code
+	analysis, err := h.AnalysisService.GetByAccessCode(c.Request.Context(), accessCode)
+	if err != nil {
+		h.Logger.Error().Err(err).Str("access_code", accessCode).Msg("Error fetching analysis by access code")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Internal error",
+			Message: "Failed to retrieve report",
+		})
+		return
+	}
+
+	// Check if analysis exists (nil, nil means not found)
+	if analysis == nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{
+			Error:   "Not found",
+			Message: "Relatório não encontrado. O código de acesso é inválido ou o relatório não está mais disponível.",
+		})
+		return
+	}
+
+	// Check if this is an admin preview request
+	isAdminPreview := false
+	if c.Query("preview") == "admin" {
+		// Check if we have a valid Authorization header with admin role
+		role, exists := c.Get("userRole")
+		if exists {
+			userRole, ok := role.(string)
+			if ok && (userRole == "admin" || userRole == "super_admin") {
+				isAdminPreview = true
+			}
+		}
+	}
+
+	// Check if analysis is visible to users (skip if admin preview)
+	if !analysis.IsVisibleToUser && !isAdminPreview {
+		c.JSON(http.StatusNotFound, ErrorResponse{
+			Error:   "Not found",
+			Message: "Relatório não encontrado. O código de acesso é inválido ou o relatório não está mais disponível.",
+		})
+		return
+	}
+
+	// Transform to response (includes full analysis data)
+	analysisData := make(map[string]interface{})
+	analysisBytes, _ := json.Marshal(analysis)
+	json.Unmarshal(analysisBytes, &analysisData)
+
+	// Build response with essential fields for public report
+	response := gin.H{
+		"id":            analysis.ID,
+		"submission_id": analysis.SubmissionID,
+		"status":        analysis.Status,
+		"analysis":      analysisData,
+		"created_at":    analysis.CreatedAt,
+		"is_blurred":    analysis.IsBlurred,
+	}
+
+	// Add preview flag for admin preview
+	if isAdminPreview {
+		response["is_admin_preview"] = true
+	}
+
+	c.JSON(http.StatusOK, response)
 }

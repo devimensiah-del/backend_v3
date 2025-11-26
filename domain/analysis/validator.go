@@ -12,59 +12,58 @@ func NewContentValidator(logger zerolog.Logger) *ContentValidator {
 	return &ContentValidator{logger: logger}
 }
 
-// ValidateAndNormalize enforces content limits to ensure PDF layout safety
+// ValidateAndNormalize enforces content limits
+// NOTE: PDF generation is currently disabled, so limits are relaxed.
+// These limits are now more generous (10 items) to allow richer content.
 func (v *ContentValidator) ValidateAndNormalize(analysis *Analysis) {
-	// PESTEL: Max 3 items per category
-	v.trimStringArray(&analysis.PESTEL.Political, 3, "PESTEL.Political")
-	v.trimStringArray(&analysis.PESTEL.Economic, 3, "PESTEL.Economic")
-	v.trimStringArray(&analysis.PESTEL.Social, 3, "PESTEL.Social")
-	v.trimStringArray(&analysis.PESTEL.Technological, 3, "PESTEL.Technological")
-	v.trimStringArray(&analysis.PESTEL.Environmental, 3, "PESTEL.Environmental")
-	v.trimStringArray(&analysis.PESTEL.Legal, 3, "PESTEL.Legal")
+	// PESTEL: Max 10 items per category (relaxed from 3)
+	v.trimStringArray(&analysis.PESTEL.Political, 10, "PESTEL.Political")
+	v.trimStringArray(&analysis.PESTEL.Economic, 10, "PESTEL.Economic")
+	v.trimStringArray(&analysis.PESTEL.Social, 10, "PESTEL.Social")
+	v.trimStringArray(&analysis.PESTEL.Technological, 10, "PESTEL.Technological")
+	v.trimStringArray(&analysis.PESTEL.Environmental, 10, "PESTEL.Environmental")
+	v.trimStringArray(&analysis.PESTEL.Legal, 10, "PESTEL.Legal")
 
-	// SWOT: Max 4 items per quadrant (now using SWOTItem structure)
-	v.trimSWOTItemArray(&analysis.SWOT.Strengths, 4, "SWOT.Strengths")
-	v.trimSWOTItemArray(&analysis.SWOT.Weaknesses, 4, "SWOT.Weaknesses")
-	v.trimSWOTItemArray(&analysis.SWOT.Opportunities, 4, "SWOT.Opportunities")
-	v.trimSWOTItemArray(&analysis.SWOT.Threats, 4, "SWOT.Threats")
+	// SWOT: Max 10 items per quadrant (relaxed from 4)
+	v.trimSWOTItemArray(&analysis.SWOT.Strengths, 10, "SWOT.Strengths")
+	v.trimSWOTItemArray(&analysis.SWOT.Weaknesses, 10, "SWOT.Weaknesses")
+	v.trimSWOTItemArray(&analysis.SWOT.Opportunities, 10, "SWOT.Opportunities")
+	v.trimSWOTItemArray(&analysis.SWOT.Threats, 10, "SWOT.Threats")
 
-	// Blue Ocean: Max 3 per ERRC category
-	v.trimStringArray(&analysis.BlueOcean.Eliminate, 3, "BlueOcean.Eliminate")
-	v.trimStringArray(&analysis.BlueOcean.Reduce, 3, "BlueOcean.Reduce")
-	v.trimStringArray(&analysis.BlueOcean.Raise, 3, "BlueOcean.Raise")
-	v.trimStringArray(&analysis.BlueOcean.Create, 3, "BlueOcean.Create")
+	// Blue Ocean: Max 10 per ERRC category (relaxed from 3)
+	v.trimStringArray(&analysis.BlueOcean.Eliminate, 10, "BlueOcean.Eliminate")
+	v.trimStringArray(&analysis.BlueOcean.Reduce, 10, "BlueOcean.Reduce")
+	v.trimStringArray(&analysis.BlueOcean.Raise, 10, "BlueOcean.Raise")
+	v.trimStringArray(&analysis.BlueOcean.Create, 10, "BlueOcean.Create")
 
-	// BSC: Max 2 per perspective
-	v.trimStringArray(&analysis.BSC.Financial, 2, "BSC.Financial")
-	v.trimStringArray(&analysis.BSC.Customer, 2, "BSC.Customer")
-	v.trimStringArray(&analysis.BSC.Internal, 2, "BSC.Internal")
-	v.trimStringArray(&analysis.BSC.LearningGrowth, 2, "BSC.LearningGrowth")
+	// BSC: Max 10 per perspective (relaxed from 2)
+	v.trimStringArray(&analysis.BSC.Financial, 10, "BSC.Financial")
+	v.trimStringArray(&analysis.BSC.Customer, 10, "BSC.Customer")
+	v.trimStringArray(&analysis.BSC.Internal, 10, "BSC.Internal")
+	v.trimStringArray(&analysis.BSC.LearningGrowth, 10, "BSC.LearningGrowth")
 
-	// OKRs: Exactly 3 quarters (Q1, Q2, Q3)
-	if len(analysis.OKRs.Quarters) > 3 {
-		v.logger.Warn().Msg("OKRs exceeded 3 quarters, trimming to Q1-Q3")
-		analysis.OKRs.Quarters = analysis.OKRs.Quarters[:3]
+	// OKRs: Max 4 quarters (relaxed from 3)
+	if len(analysis.OKRs.Quarters) > 4 {
+		v.logger.Warn().Msg("OKRs exceeded 4 quarters, trimming")
+		analysis.OKRs.Quarters = analysis.OKRs.Quarters[:4]
 	}
 
-	// Benchmarking: Max 3 each
-	// These fields now exist in types.go
-	v.trimStringArray(&analysis.Benchmarking.PerformanceGaps, 3, "Benchmarking.Gaps")
-	v.trimStringArray(&analysis.Benchmarking.BestPractices, 3, "Benchmarking.Practices")
+	// Benchmarking: Max 10 each (relaxed from 3)
+	v.trimStringArray(&analysis.Benchmarking.PerformanceGaps, 10, "Benchmarking.Gaps")
+	v.trimStringArray(&analysis.Benchmarking.BestPractices, 10, "Benchmarking.Practices")
 
-	// Growth Hacking: Validate LEAP and SCALE loops (deprecated fields are optional)
-	// Validate LEAP Loop (Acquisition) - 4 steps expected
-	if len(analysis.GrowthHacking.LeapLoop.Steps) > 4 {
-		v.logger.Warn().Msg("LEAP Loop exceeded 4 steps, trimming")
-		analysis.GrowthHacking.LeapLoop.Steps = analysis.GrowthHacking.LeapLoop.Steps[:4]
+	// Growth Hacking: Validate LEAP and SCALE loops - max 8 steps (relaxed from 4)
+	if len(analysis.GrowthHacking.LeapLoop.Steps) > 8 {
+		v.logger.Warn().Msg("LEAP Loop exceeded 8 steps, trimming")
+		analysis.GrowthHacking.LeapLoop.Steps = analysis.GrowthHacking.LeapLoop.Steps[:8]
 	}
-	// Validate SCALE Loop (Monetization) - 4 steps expected
-	if len(analysis.GrowthHacking.ScaleLoop.Steps) > 4 {
-		v.logger.Warn().Msg("SCALE Loop exceeded 4 steps, trimming")
-		analysis.GrowthHacking.ScaleLoop.Steps = analysis.GrowthHacking.ScaleLoop.Steps[:4]
+	if len(analysis.GrowthHacking.ScaleLoop.Steps) > 8 {
+		v.logger.Warn().Msg("SCALE Loop exceeded 8 steps, trimming")
+		analysis.GrowthHacking.ScaleLoop.Steps = analysis.GrowthHacking.ScaleLoop.Steps[:8]
 	}
 
-	// Scenarios: Early Warnings
-	v.trimStringArray(&analysis.Scenarios.EarlyWarningSignals, 3, "Scenarios.EarlyWarningSignals")
+	// Scenarios: Early Warnings - max 10 (relaxed from 3)
+	v.trimStringArray(&analysis.Scenarios.EarlyWarningSignals, 10, "Scenarios.EarlyWarningSignals")
 }
 
 func (v *ContentValidator) trimStringArray(arr *[]string, maxItems int, fieldName string) {

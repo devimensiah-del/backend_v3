@@ -6,7 +6,7 @@ package llm
 
 const (
 	UnifiedEnrichmentPrompt = `Você é um Agente de Inteligência Corporativa (CIA).
-Sua missão: Criar um JSON de Perfil Corporativo Perfeito, fundindo dados do usuário, dados técnicos coletados e suas próprias pesquisas na web.
+Sua missão: Criar um JSON de Perfil Corporativo Perfeito, fundindo dados do usuário, dados técnicos coletados, contexto macroeconômico REAL em tempo real, e suas próprias pesquisas na web.
 
 --- FONTES DE DADOS ---
 
@@ -16,7 +16,16 @@ Sua missão: Criar um JSON de Perfil Corporativo Perfeito, fundindo dados do usu
 2. O QUE NOSSOS ROBÔS ENCONTRARAM (Dados Técnicos):
 {{TECHNICAL_CONTEXT}}
 
-3. O QUE FALTA (Sua prioridade de busca):
+3. CONTEXTO MACROECONÔMICO BRASILEIRO EM TEMPO REAL (OFICIAL - Banco Central + IBGE):
+{{REAL_TIME_MACRO_DATA}}
+
+INSTRUÇÕES CRÍTICAS PARA DADOS MACRO:
+- Use os dados reais fornecidos acima (SELIC, IPCA, USD/BRL) como fatos estabelecidos
+- NÃO busque ou estime estes dados macroeconômicos - use apenas os fornecidos
+- Se dados macro faltarem ou estiverem desatualizados (>90 dias), indique: "⚠️ DATO_MACRO_DESATUALIZADO: [qual]"
+- Para contexto macroeconômico adicional NÃO fornecido, use busca web
+
+4. O QUE FALTA (Sua prioridade de busca):
 {{MISSING_FIELDS}}
 
 --- INSTRUÇÕES DE EXECUÇÃO ---
@@ -127,14 +136,15 @@ Preencha TODOS os campos. Se não achar exato, estime e marque como "estimated".
   "macro_context": {
     "economic_indicators": {
       "country": "Brasil",
-      "gdp_growth": "+2.5% (2025 previsão)",
-      "inflation_rate": "IPCA: 4.8% a.a.",
-      "interest_rate": "SELIC: 11.75%",
-      "exchange_rate": "USD/BRL: 5.20",
-      "unemployment_rate": "7.2%",
-      "political_stability": "Risco moderado devido a reformas em andamento",
-      "economic_outlook": "Crescimento moderado com juros elevados",
-      "recent_policy_changes": ["Reforma tributária 2025", "Nova lei de carbono"]
+      "note": "Use dados REAIS fornecidos acima em {{REAL_TIME_MACRO_DATA}}, não estes placeholders",
+      "gdp_growth": "[Extrair de {{REAL_TIME_MACRO_DATA}}]",
+      "inflation_rate": "[Use IPCA real de {{REAL_TIME_MACRO_DATA}}]",
+      "interest_rate": "[Use SELIC real de {{REAL_TIME_MACRO_DATA}}]",
+      "exchange_rate": "[Use USD/BRL real de {{REAL_TIME_MACRO_DATA}}]",
+      "unemployment_rate": "[Pesquisar se não fornecido]",
+      "political_stability": "[Pesquisar mudanças recentes]",
+      "economic_outlook": "[Sintetizar de dados reais]",
+      "recent_policy_changes": ["[Pesquisar 2025]"]
     },
     "industry_trends": {
       "industry_sector": "Agronegócio Tecnológico",

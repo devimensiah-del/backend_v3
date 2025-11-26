@@ -235,6 +235,41 @@ func (h *EnrichmentHandlers) ApproveEnrichment(c *gin.Context) {
 	})
 }
 
+// ReopenEnrichment handles POST /api/v1/admin/enrichment/:id/reopen
+// Admin reverts an approved enrichment back to completed status for editing
+func (h *EnrichmentHandlers) ReopenEnrichment(c *gin.Context) {
+	enrichmentID := c.Param("id")
+
+	// Parse and validate UUID
+	enrichUUID, err := parseUUID(enrichmentID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid ID",
+			Message: "Invalid enrichment ID format",
+		})
+		return
+	}
+
+	// Reopen enrichment via service
+	updatedEnrichment, err := h.EnrichmentService.ReopenForEditing(c.Request.Context(), enrichUUID)
+	if err != nil {
+		h.Logger.Error().Err(err).Str("enrichment_id", enrichmentID).Msg("Failed to reopen enrichment")
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Reopen failed",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	// Transform to DTO
+	enrichmentResponse := h.buildEnrichmentResponse(updatedEnrichment)
+
+	c.JSON(http.StatusOK, gin.H{
+		"enrichment": enrichmentResponse,
+		"message":    "Enriquecimento reaberto para edição",
+	})
+}
+
 // UnlockEnrichment handles POST /api/v1/admin/enrichment/:id/unlock
 // Manually unlocks a stuck enrichment (recovery endpoint)
 func (h *EnrichmentHandlers) UnlockEnrichment(c *gin.Context) {

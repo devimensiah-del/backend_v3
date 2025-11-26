@@ -128,6 +128,9 @@ func SetupRouter(
 		publicAPI.POST("/submit", mainHandler.SubmissionHandlers.CreateSubmission)
 		// Frontend expects /submissions endpoint
 		publicAPI.POST("/submissions", mainHandler.SubmissionHandlers.CreateSubmission)
+		// Public report access via access code
+		// Uses OptionalAuthMiddleware to allow admin preview (bypasses visibility check)
+		publicAPI.GET("/public/report/:code", OptionalAuthMiddleware(jwtSecret, db), mainHandler.AnalysisHandlers.GetPublicReport)
 	}
 
 	// Public Auth routes (no auth required)
@@ -183,6 +186,7 @@ func SetupRouter(
 		adminAPI.GET("/submissions", mainHandler.AdminHandlers.ListSubmissions)
 		adminAPI.GET("/submissions/:id", mainHandler.AdminHandlers.GetSubmissionAdmin)
 		adminAPI.GET("/submissions/:id/enrichment", mainHandler.EnrichmentHandlers.GetEnrichmentBySubmissionAdmin)
+		adminAPI.GET("/submissions/:id/analysis", mainHandler.AnalysisHandlers.GetAnalysisBySubmissionAdmin)
 		// REMOVED: PUT /submissions/:id/status - Violates "Single Status Rule"
 		// Submissions always have status "received". Status is derived from Enrichment/Analysis.
 		adminAPI.POST("/submissions/:id/retry-enrichment", mainHandler.AdminHandlers.RetryEnrichment)
@@ -193,14 +197,18 @@ func SetupRouter(
 		adminAPI.GET("/enrichment/:id", mainHandler.EnrichmentHandlers.GetEnrichmentAdmin)
 		adminAPI.PUT("/enrichment/:id", mainHandler.EnrichmentHandlers.UpdateEnrichment)
 		adminAPI.POST("/enrichment/:id/approve", mainHandler.EnrichmentHandlers.ApproveEnrichment)
+		adminAPI.POST("/enrichment/:id/reopen", mainHandler.EnrichmentHandlers.ReopenEnrichment)
 		adminAPI.POST("/enrichment/:id/unlock", mainHandler.EnrichmentHandlers.UnlockEnrichment)
 
 		// Analysis management
 		adminAPI.GET("/analysis/:id", mainHandler.AnalysisHandlers.GetAnalysisAdmin)
 		adminAPI.PUT("/analysis/:id", mainHandler.AnalysisHandlers.UpdateAnalysis)
 		adminAPI.POST("/analysis/:id/approve", mainHandler.AnalysisHandlers.ApproveAnalysis)
+		adminAPI.POST("/analysis/:id/reopen", mainHandler.AnalysisHandlers.ReopenAnalysis)
 		adminAPI.POST("/analysis/:id/send", mainHandler.AnalysisHandlers.SendAnalysis)
 		adminAPI.POST("/analysis/:id/visibility", mainHandler.AnalysisHandlers.ToggleVisibility)
+		adminAPI.POST("/analysis/:id/blur", mainHandler.AnalysisHandlers.ToggleBlur)
+		adminAPI.POST("/analysis/:id/access-code", mainHandler.AnalysisHandlers.GenerateAccessCode)
 	}
 
 	return router
