@@ -16,14 +16,16 @@ Sua missão: Criar um JSON de Perfil Corporativo Perfeito, fundindo dados do usu
 2. O QUE NOSSOS ROBÔS ENCONTRARAM (Dados Técnicos):
 {{TECHNICAL_CONTEXT}}
 
-3. CONTEXTO MACROECONÔMICO BRASILEIRO EM TEMPO REAL (OFICIAL - Banco Central + IBGE):
+3. CONTEXTO MACROECONÔMICO BRASILEIRO (OFICIAL - Banco Central + IBGE):
 {{REAL_TIME_MACRO_DATA}}
 
 INSTRUÇÕES CRÍTICAS PARA DADOS MACRO:
-- Use os dados reais fornecidos acima (SELIC, IPCA, USD/BRL) como fatos estabelecidos
-- NÃO busque ou estime estes dados macroeconômicos - use apenas os fornecidos
-- Se dados macro faltarem ou estiverem desatualizados (>90 dias), indique: "⚠️ DATO_MACRO_DESATUALIZADO: [qual]"
-- Para contexto macroeconômico adicional NÃO fornecido, use busca web
+- Se os dados acima estiverem disponíveis e atualizados, use-os como fatos estabelecidos
+- Se dados macro faltarem, falharem, ou mostrarem "fetch failed" / "null" / "error":
+  1. BUSQUE ATIVAMENTE NA WEB: "Brasil SELIC taxa atual 2025", "Brasil IPCA inflação atual", "dólar real cotação hoje", "PIB Brasil crescimento 2024 2025"
+  2. Se a busca web retornar dados, use-os e cite a fonte em data_sources
+  3. Se a busca também falhar, retorne null para o campo (NÃO use placeholders como "⚠️ DATO_MACRO_DESATUALIZADO")
+- Priorize dados oficiais: BCB, IBGE, Valor Econômico, InfoMoney
 
 4. O QUE FALTA (Sua prioridade de busca):
 {{MISSING_FIELDS}}
@@ -136,15 +138,14 @@ Preencha TODOS os campos. Se não achar exato, estime e marque como "estimated".
   "macro_context": {
     "economic_indicators": {
       "country": "Brasil",
-      "note": "Use dados REAIS fornecidos acima em {{REAL_TIME_MACRO_DATA}}, não estes placeholders",
-      "gdp_growth": "[Extrair de {{REAL_TIME_MACRO_DATA}}]",
-      "inflation_rate": "[Use IPCA real de {{REAL_TIME_MACRO_DATA}}]",
-      "interest_rate": "[Use SELIC real de {{REAL_TIME_MACRO_DATA}}]",
-      "exchange_rate": "[Use USD/BRL real de {{REAL_TIME_MACRO_DATA}}]",
-      "unemployment_rate": "[Pesquisar se não fornecido]",
-      "political_stability": "[Pesquisar mudanças recentes]",
-      "economic_outlook": "[Sintetizar de dados reais]",
-      "recent_policy_changes": ["[Pesquisar 2025]"]
+      "gdp_growth": "Ex: +2.5% (2024) ou null se indisponível",
+      "inflation_rate": "Ex: IPCA 4.83% a.a. ou null se indisponível",
+      "interest_rate": "Ex: SELIC 12.25% a.a. ou null se indisponível",
+      "exchange_rate": "Ex: USD/BRL 5.85 ou null se indisponível",
+      "unemployment_rate": "Ex: 6.5% ou null se indisponível",
+      "political_stability": "Ex: Moderada - reformas em andamento",
+      "economic_outlook": "Síntese do cenário econômico atual",
+      "recent_policy_changes": ["Reforma Tributária 2025", "Plano Safra 2025/26"]
     },
     "industry_trends": {
       "industry_sector": "Agronegócio Tecnológico",
