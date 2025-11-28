@@ -58,20 +58,20 @@ type txRepository struct {
 func (r *txRepository) Create(ctx context.Context, e *enrichment.Enrichment) error {
 	query := `
 		INSERT INTO enrichments (
-			id, submission_id, status, progress, current_step, is_locked,
+			id, submission_id, company_id, status, progress, current_step, is_locked,
 			sources_status, sources_used, data, started_at, completed_at,
-			error_message, retry_count, max_retries, created_at, updated_at
+			error_message, retry_count, max_retries, auto_trigger_analysis, created_at, updated_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
 		)
 	`
 	sourcesStatus, _ := e.SourcesStatus.Value()
 	enrichedData, _ := e.EnrichedData.Value()
 
 	_, err := r.tx.ExecContext(ctx, query,
-		e.ID, e.SubmissionID, e.Status, e.Progress, e.CurrentStep, e.IsLocked,
+		e.ID, e.SubmissionID, e.CompanyID, e.Status, e.Progress, e.CurrentStep, e.IsLocked,
 		sourcesStatus, e.SourcesUsed, enrichedData, e.StartedAt, e.CompletedAt,
-		e.ErrorMessage, e.RetryCount, e.MaxRetries, e.CreatedAt, e.UpdatedAt,
+		e.ErrorMessage, e.RetryCount, e.MaxRetries, e.AutoTriggerAnalysis, e.CreatedAt, e.UpdatedAt,
 	)
 	return err
 }
@@ -307,7 +307,7 @@ func TestIntegration_JSONMap_SavesAndLoads(t *testing.T) {
 				"website":    "https://test.com",
 			},
 			"market_position": map[string]interface{}{
-				"sector":     "Technology",
+				"sector":      "Technology",
 				"competitors": []string{"Comp A", "Comp B"},
 			},
 		}

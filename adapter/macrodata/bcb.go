@@ -12,21 +12,20 @@ import (
 )
 
 // BCBSELICResponse represents the response from BCB SELIC API
-// API: https://api.bcb.gov.br/dados/serie/4390/dados?formato=json
-type BCBSELICResponse struct {
-	Data []struct {
-		Data  string `json:"data"`
-		Valor string `json:"valor"`
-	} `json:"dados"`
+// API: https://api.bcb.gov.br/dados/serie/bcdata.sgs.4189/dados/ultimos/1?formato=json
+// Series 4189 = SELIC daily rate (taxa diária)
+type BCBSELICResponse []struct {
+	Data  string `json:"data"`
+	Valor string `json:"valor"`
 }
 
 // SELICData holds the latest SELIC rate information
 type SELICData struct {
-	Rate      float64   `json:"rate"`
-	Date      time.Time `json:"date"`
-	Source    string    `json:"source"`
-	Accuracy  string    `json:"accuracy"` // "Authoritative" - official government API
-	RawDate   string    `json:"raw_date"`  // For debugging
+	Rate     float64   `json:"rate"`
+	Date     time.Time `json:"date"`
+	Source   string    `json:"source"`
+	Accuracy string    `json:"accuracy"` // "Authoritative" - official government API
+	RawDate  string    `json:"raw_date"` // For debugging
 }
 
 // BCBClient handles Banco Central do Brasil API calls
@@ -47,9 +46,10 @@ func NewBCBClient() *BCBClient {
 
 // FetchLatestSELIC retrieves the latest SELIC rate from Banco Central
 // SELIC (Sistema Especial de Liquidação e de Custódia) is Brazil's primary interest rate
-// Updated daily at ~6 PM Brasília time
+// Series 4189 = taxa diária (daily rate), updated daily
 func (b *BCBClient) FetchLatestSELIC(ctx context.Context) (*SELICData, error) {
-	url := fmt.Sprintf("%s/dados/serie/4390/dados?formato=json", b.baseURL)
+	// Use series 4189 (SELIC daily rate) with /ultimos/1 for latest value
+	url := fmt.Sprintf("%s/dados/serie/bcdata.sgs.4189/dados/ultimos/1?formato=json", b.baseURL)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -79,14 +79,14 @@ func (b *BCBClient) FetchLatestSELIC(ctx context.Context) (*SELICData, error) {
 		return nil, fmt.Errorf("failed to parse BCB response: %w", err)
 	}
 
-	if len(bcbResp.Data) == 0 {
+	if len(bcbResp) == 0 {
 		return nil, fmt.Errorf("no SELIC data returned from BCB API")
 	}
 
-	// Get the latest data point (last item in array)
-	latest := bcbResp.Data[len(bcbResp.Data)-1]
+	// Get the latest data point (first/only item when using /ultimos/1)
+	latest := bcbResp[0]
 
-	// Parse rate (valor is in percentage, e.g., "10.50")
+	// Parse rate (valor is in percentage, e.g., "14.90")
 	rate, err := strconv.ParseFloat(strings.TrimSpace(latest.Valor), 64)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse SELIC rate: %w", err)
@@ -102,7 +102,7 @@ func (b *BCBClient) FetchLatestSELIC(ctx context.Context) (*SELICData, error) {
 		Rate:     rate,
 		Date:     parsedDate,
 		RawDate:  latest.Data,
-		Source:   "https://api.bcb.gov.br/dados/serie/4390/dados?formato=json",
+		Source:   "Banco Central do Brasil (BCB) - Série 4189",
 		Accuracy: "Authoritative",
 	}, nil
 }
@@ -141,7 +141,7 @@ func (b *BCBClient) FetchSELICHistory(ctx context.Context, days int) ([]SELICDat
 	var result []SELICData
 	cutoff := time.Now().AddDate(0, 0, -days)
 
-	for _, item := range bcbResp.Data {
+	for _, item := range bcbResp {
 		parsedDate, err := time.Parse("02/01/2006", strings.TrimSpace(item.Data))
 		if err != nil {
 			continue

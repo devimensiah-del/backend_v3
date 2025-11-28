@@ -6,14 +6,30 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 )
 
 // ExchangeRateAPIResponse represents the response from exchangerate-api.com
 type ExchangeRateAPIResponse struct {
-	Result   string                  `json:"result"`
-	BaseCode string                  `json:"base_code"`
-	Rates    map[string]float64      `json:"conversion_rates"`
+	Result   string             `json:"result"`
+	BaseCode string             `json:"base_code"`
+	Rates    map[string]float64 `json:"rates"` // Note: v4 uses "rates", not "conversion_rates"
+}
+
+// AwesomeAPIResponse represents the response from economia.awesomeapi.com.br
+type AwesomeAPIResponse map[string]struct {
+	Code       string `json:"code"`
+	Codein     string `json:"codein"`
+	Name       string `json:"name"`
+	High       string `json:"high"`
+	Low        string `json:"low"`
+	VarBid     string `json:"varBid"`
+	PctChange  string `json:"pctChange"`
+	Bid        string `json:"bid"`
+	Ask        string `json:"ask"`
+	Timestamp  string `json:"timestamp"`
+	CreateDate string `json:"create_date"`
 }
 
 // ExchangeRateData holds exchange rate information
@@ -98,6 +114,80 @@ func (e *ExchangeRateClient) FetchExchangeRate(ctx context.Context, fromCurrency
 	}, nil
 }
 
+// AwesomeAPIClient handles exchange rates from economia.awesomeapi.com.br
+// This is a reliable Brazilian API for real-time exchange rates
+type AwesomeAPIClient struct {
+	httpClient *http.Client
+	baseURL    string
+}
+
+// NewAwesomeAPIClient creates a new AwesomeAPI client
+func NewAwesomeAPIClient() *AwesomeAPIClient {
+	return &AwesomeAPIClient{
+		httpClient: &http.Client{
+			Timeout: 10 * time.Second,
+		},
+		baseURL: "https://economia.awesomeapi.com.br",
+	}
+}
+
+// FetchUSDToBRL retrieves USD/BRL rate from AwesomeAPI (reliable Brazilian API)
+func (a *AwesomeAPIClient) FetchUSDToBRL(ctx context.Context) (*ExchangeRateData, error) {
+	endpoint := fmt.Sprintf("%s/json/last/USD-BRL", a.baseURL)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("User-Agent", "ImensiahBot/1.0 (+https://imensiah.com)")
+
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("AwesomeAPI request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("AwesomeAPI returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	var apiResp AwesomeAPIResponse
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		return nil, fmt.Errorf("failed to parse AwesomeAPI response: %w", err)
+	}
+
+	usdBrl, ok := apiResp["USDBRL"]
+	if !ok {
+		return nil, fmt.Errorf("USDBRL not found in AwesomeAPI response")
+	}
+
+	// Parse bid rate (compra)
+	rate, err := strconv.ParseFloat(usdBrl.Bid, 64)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse exchange rate: %w", err)
+	}
+
+	// Parse timestamp
+	timestamp, _ := strconv.ParseInt(usdBrl.Timestamp, 10, 64)
+	rateTime := time.Unix(timestamp, 0)
+
+	return &ExchangeRateData{
+		FromCurrency: "USD",
+		ToCurrency:   "BRL",
+		Rate:         rate,
+		Date:         rateTime,
+		Source:       "AwesomeAPI (economia.awesomeapi.com.br)",
+		Accuracy:     "High", // Real-time market data
+	}, nil
+}
+
 // BCBExchangeRateClient handles BCB official exchange rates (alternative, more accurate for BRL)
 type BCBExchangeRateClient struct {
 	httpClient *http.Client
@@ -115,7 +205,7 @@ func NewBCBExchangeRateClient() *BCBExchangeRateClient {
 	}
 }
 
-// FetchUSDoBRLfromBCB retrieves USD/BRL rate from Banco Central (more authoritative)
+// FetchUSDoBRL retrieves USD/BRL rate from Banco Central (more authoritative)
 // Endpoint: https://api.bcb.gov.br/v1/moedas
 func (b *BCBExchangeRateClient) FetchUSDoBRL(ctx context.Context) (*ExchangeRateData, error) {
 	// BCB endpoint for USD (code: 220)
@@ -146,7 +236,7 @@ func (b *BCBExchangeRateClient) FetchUSDoBRL(ctx context.Context) (*ExchangeRate
 
 	// BCB returns an array of exchange rate data points
 	var data []struct {
-		Data       string `json:"data"`
+		Data       string  `json:"data"`
 		TaxaCompra float64 `json:"taxaCompra"` // Buy rate
 		TaxaVenda  float64 `json:"taxaVenda"`  // Sell rate
 	}
@@ -168,7 +258,7 @@ func (b *BCBExchangeRateClient) FetchUSDoBRL(ctx context.Context) (*ExchangeRate
 		ToCurrency:   "BRL",
 		Rate:         avgRate,
 		Date:         time.Now(),
-		Source:       "https://api.bcb.gov.br/v1/moedas/220/dados",
+		Source:       "Banco Central do Brasil (BCB)",
 		Accuracy:     "Authoritative", // BCB official data
 	}, nil
 }
@@ -196,4 +286,3 @@ func CurrencyPairValidator(from, to string) error {
 
 	return nil
 }
-

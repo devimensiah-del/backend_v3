@@ -94,6 +94,14 @@ func (h *SubmissionHandlers) CreateSubmission(c *gin.Context) {
 		}
 	}
 
+	// Check if user is admin (can bypass verified CNPJ restrictions)
+	isAdmin := false
+	if role, exists := c.Get("userRole"); exists {
+		if roleStr, ok := role.(string); ok {
+			isAdmin = roleStr == "admin" || roleStr == "super_admin" || roleStr == "service_role"
+		}
+	}
+
 	// Transform frontend format to domain model and trigger enrichment workflow
 	submitReq := &submission.SubmitRequest{
 		// Company Information
@@ -127,39 +135,27 @@ func (h *SubmissionHandlers) CreateSubmission(c *gin.Context) {
 	}
 
 	// Use SubmitForm which saves to DB
-	sub, err := h.SubmissionService.SubmitForm(c.Request.Context(), submitReq)
+	// Pass admin flag to bypass verified CNPJ restrictions if needed
+	opts := &submission.CreateOptions{IsAdmin: isAdmin}
+	sub, err := h.SubmissionService.SubmitForm(c.Request.Context(), submitReq, opts)
 
 	if err != nil {
+		// Check for verified CNPJ error - return specific error message
+		if err == submission.ErrVerifiedCNPJExists {
+			c.JSON(http.StatusConflict, ErrorResponse{
+				Error:   "CNPJ já verificado",
+				Message: "Este CNPJ pertence a uma empresa verificada e não pode ser usado para novas submissões. Entre em contato com o administrador.",
+			})
+			return
+		}
 		respondError(c, h.Logger, http.StatusInternalServerError, err, "Falha ao criar submissão.")
 		return
 	}
 
-	ctx := c.Request.Context()
-
-	// -------------------------------------------------------------------------
-	// AUTO-TRIGGER ENRICHMENT WORKFLOW WITH IDEMPOTENCY GUARDS
-	// -------------------------------------------------------------------------
-	existing, err := h.EnrichmentService.GetBySubmissionID(ctx, sub.ID)
-	if err == nil {
-		// Enrichment already exists - skip duplicate enqueue
-		// Valid statuses: pending, completed, approved
-		h.Logger.Info().Str("sub_id", sub.ID.String()).Str("status", string(existing.Status)).Msg("Enrichment already exists - skipping duplicate enqueue")
-	} else {
-		if err != nil && err.Error() != "enrichment not found" {
-			h.Logger.Error().Err(err).Str("sub_id", sub.ID.String()).Msg("Failed to lookup enrichment; creating new record anyway")
-		}
-		// If not found, create a fresh record for the UI and enqueue the worker.
-		enrichmentRecord := enrichment.NewEnrichment(sub.ID)
-		if createErr := h.EnrichmentService.Create(ctx, enrichmentRecord); createErr != nil {
-			h.Logger.Error().Err(createErr).Str("sub_id", sub.ID.String()).Msg("Failed to create enrichment record")
-		}
-
-		if err := h.SubmissionService.TriggerEnrichmentProcess(ctx, sub); err != nil {
-			h.Logger.Error().Err(err).Str("sub_id", sub.ID.String()).Msg("Failed to enqueue enrichment job")
-		} else {
-			h.Logger.Info().Str("sub_id", sub.ID.String()).Msg("Enrichment workflow auto-triggered")
-		}
-	}
+	// NOTE: SubmitForm() already handles:
+	// 1. Creating the enrichment record via ReserveEnrichment()
+	// 2. Enqueueing the enrichment job via TriggerEnrichmentProcess()
+	// No need for duplicate enrichment trigger here - it would cause double-enqueue.
 
 	// Frontend expects wrapped response: { submission: {...} }
 	c.JSON(http.StatusCreated, gin.H{

@@ -2,10 +2,10 @@ package enrichment
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
+	"backend_v3/adapter/macrodata"
 	"backend_v3/config"
 	"backend_v3/domain/submission"
 	"backend_v3/llm"
@@ -17,29 +17,48 @@ import (
 
 // Service handles business logic for enrichment
 // AI-Only Pipeline: Perplexity (pre-search) + Gemini (synthesis)
-// External adapters (DNS, scraper, macrodata APIs) have been REMOVED
-// Perplexity handles all data gathering including company identification, macro data, and technical context
+// MacroDataProvider re-integrated to fetch authoritative SELIC/IPCA/USD data from BCB/IBGE APIs
+// MacroService provides DB-backed cached data from scheduled cron jobs
 type Service struct {
 	repo           Repository
 	submissionRepo submission.Repository
 	llmClient      *llm.Client
-	queueClient    *asynq.Client          // For job orchestration
-	enrichmentCfg  config.FrameworkConfig // Gemini config for synthesis
-	preSearchCfg   config.FrameworkConfig // Perplexity config for pre-search
+	queueClient    *asynq.Client                // For job orchestration
+	enrichmentCfg  config.FrameworkConfig       // Gemini config for synthesis
+	preSearchCfg   config.FrameworkConfig       // Perplexity config for pre-search
+	macroProvider  *macrodata.MacroDataProvider // BCB/IBGE APIs for real-time economic data (fallback)
+	macroService   MacroServiceInterface        // DB-backed macro data (primary, optional)
+	companyService CompanyServiceInterface      // Company data persistence (optional)
 }
 
 // NewService creates a new enrichment service
-// AI-Only pipeline: Perplexity pre-search + Gemini synthesis
-// No external adapters (DNS, scraper, macro APIs removed - Perplexity handles everything)
-func NewService(repo Repository, submissionRepo submission.Repository, llmClient *llm.Client, queueClient *asynq.Client, enrichmentCfg config.FrameworkConfig, preSearchCfg config.FrameworkConfig) *Service {
+// Two-phase pipeline: Perplexity pre-search + Gemini synthesis
+// MacroDataProvider provides authoritative SELIC/IPCA/USD data from BCB/IBGE APIs
+func NewService(repo Repository, submissionRepo submission.Repository, llmClient *llm.Client, queueClient *asynq.Client, enrichmentCfg config.FrameworkConfig, preSearchCfg config.FrameworkConfig, macroProvider *macrodata.MacroDataProvider) *Service {
 	return &Service{
 		repo:           repo,
 		submissionRepo: submissionRepo,
 		llmClient:      llmClient,
 		queueClient:    queueClient,
 		enrichmentCfg:  enrichmentCfg, // Gemini with Google Search for synthesis
-		preSearchCfg:   preSearchCfg,  // Perplexity for company ID + macro data + technical context
+		preSearchCfg:   preSearchCfg,  // Perplexity for company ID + technical context
+		macroProvider:  macroProvider, // BCB/IBGE APIs for economic indicators (fallback)
+		macroService:   nil,           // Optional: set via SetMacroService for DB-first
 	}
+}
+
+// SetMacroService sets the macroeconomics service for DB-first macro data fetching
+// This is optional - if not set, the service falls back to direct API calls via macroProvider
+func (s *Service) SetMacroService(svc MacroServiceInterface) {
+	s.macroService = svc
+	log.Info().Msg("MacroService injected into enrichment service (DB-first enabled)")
+}
+
+// SetCompanyService sets the company service for data persistence
+// This is optional - if not set, enrichment continues without updating company records
+func (s *Service) SetCompanyService(svc CompanyServiceInterface) {
+	s.companyService = svc
+	log.Info().Msg("CompanyService injected into enrichment service (company updates enabled)")
 }
 
 // GetByID retrieves enrichment by its own ID
@@ -72,32 +91,31 @@ func (s *Service) UpdateEnrichmentData(ctx context.Context, id uuid.UUID, data m
 }
 
 // UpdateProgress updates the progress and current step of an enrichment
-func (s *Service) UpdateProgress(ctx context.Context, id uuid.UUID, progress int, step string) error {
-	enrichment, err := s.repo.GetByID(ctx, id)
+// Note: If the enrichment is locked by a user, this update will silently fail
+// (the user's edits take precedence over progress updates)
+// NOTE: This method accepts SUBMISSION ID (not enrichment ID) because that's what the worker has
+func (s *Service) UpdateProgress(ctx context.Context, submissionID uuid.UUID, progress int, step string) error {
+	enrichment, err := s.repo.GetBySubmissionID(ctx, submissionID)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get enrichment: %w", err)
 	}
 
 	enrichment.UpdateProgress(step, progress)
 
-	// Update system (bypassing user locks if any, though progress is system-owned)
+	// UpdateSystem respects user locks - if locked, this update won't persist
+	// This is intentional: user edits take precedence over worker progress
 	return s.repo.UpdateSystem(ctx, enrichment)
 }
 
 // UpdateFields updates enrichment fields (admin edit)
 // Status remains unchanged (stays "completed")
 // Performs deep merge for nested objects to preserve existing fields
-// IMPORTANT: Cannot edit after status is "approved"
+// Can edit completed enrichments (no approval workflow anymore)
 func (s *Service) UpdateFields(ctx context.Context, id uuid.UUID, updateData map[string]interface{}) (*Enrichment, error) {
 	// Get current enrichment
 	enrichment, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
-	}
-
-	// Validate: Cannot edit after approval
-	if enrichment.Status == StatusApproved {
-		return nil, fmt.Errorf("cannot edit enrichment after it has been approved")
 	}
 
 	// Deep merge update data into existing enriched_data
@@ -150,90 +168,8 @@ func deepMerge(dest map[string]interface{}, src map[string]interface{}) map[stri
 	return dest
 }
 
-// Approve changes status from "completed" → "approved" and triggers analysis job creation
-func (s *Service) Approve(ctx context.Context, id uuid.UUID) error {
-	// Get enrichment
-	enrichment, err := s.repo.GetByID(ctx, id)
-	if err != nil {
-		return err
-	}
-
-	// Validate status is "completed"
-	if enrichment.Status != StatusCompleted {
-		return fmt.Errorf("enrichment must be in 'completed' status to approve, current status: %s", enrichment.Status)
-	}
-
-	// Update status to approved and force unlock (admin action overrides user lock)
-	enrichment.Status = StatusApproved
-	if err := s.repo.ForceUpdateAndUnlock(ctx, enrichment); err != nil {
-		return fmt.Errorf("failed to update enrichment status: %w", err)
-	}
-
-	log.Info().
-		Str("enrichment_id", id.String()).
-		Str("submission_id", enrichment.SubmissionID.String()).
-		Msg("Enrichment approved, triggering analysis job")
-
-	// Enqueue analysis job
-	payload := map[string]string{
-		"submission_id": enrichment.SubmissionID.String(),
-		"enrichment_id": id.String(),
-	}
-
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to marshal analysis job payload")
-		return fmt.Errorf("failed to create analysis job: %w", err)
-	}
-
-	task := asynq.NewTask("analysis_job", payloadBytes)
-	if _, err := s.queueClient.Enqueue(task); err != nil {
-		log.Error().Err(err).Msg("Failed to enqueue analysis job")
-		return fmt.Errorf("failed to enqueue analysis job: %w", err)
-	}
-
-	log.Info().
-		Str("enrichment_id", id.String()).
-		Str("submission_id", enrichment.SubmissionID.String()).
-		Msg("Analysis job enqueued successfully")
-
-	return nil
-}
-
-// ReopenForEditing reverts an approved enrichment back to completed status
-// This allows admin to make further edits before re-approving
-// Note: This does NOT delete or reset any analysis data - it simply unlocks enrichment for editing
-func (s *Service) ReopenForEditing(ctx context.Context, id uuid.UUID) (*Enrichment, error) {
-	// Get enrichment
-	enrichment, err := s.repo.GetByID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-
-	// Only approved enrichments can be reopened
-	if enrichment.Status != StatusApproved {
-		return nil, fmt.Errorf("only approved enrichments can be reopened for editing, current status: %s", enrichment.Status)
-	}
-
-	// Revert to completed status
-	enrichment.Status = StatusCompleted
-
-	// Update via repository (force update to bypass any locks)
-	if err := s.repo.ForceUpdateAndUnlock(ctx, enrichment); err != nil {
-		return nil, fmt.Errorf("failed to reopen enrichment: %w", err)
-	}
-
-	log.Info().
-		Str("enrichment_id", id.String()).
-		Str("submission_id", enrichment.SubmissionID.String()).
-		Msg("Enrichment reopened for editing (approved → completed)")
-
-	return enrichment, nil
-}
-
-// MarkAsFailed updates enrichment with error message
+// MarkAsFailed updates enrichment with error message and sets status to "failed"
 // Called by worker ErrorHandler after Asynq exhausts max retries
-// Status remains "pending" with error_message populated
 func (s *Service) MarkAsFailed(ctx context.Context, submissionID uuid.UUID, errorMsg string) error {
 	enrichment, err := s.repo.GetBySubmissionID(ctx, submissionID)
 	if err != nil {
@@ -248,4 +184,73 @@ func (s *Service) MarkAsFailed(ctx context.Context, submissionID uuid.UUID, erro
 	}
 
 	return nil
+}
+
+// CopyEnrichment creates a new enrichment by copying data from an existing one
+// Sets status to "completed" since data is already validated (used for re-analyze workflow)
+// Returns the new enrichment ID
+func (s *Service) CopyEnrichment(ctx context.Context, sourceEnrichmentID, newSubmissionID uuid.UUID) (*Enrichment, error) {
+	// Get source enrichment
+	source, err := s.repo.GetByID(ctx, sourceEnrichmentID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get source enrichment: %w", err)
+	}
+
+	// Validate source is completed
+	if source.Status != StatusCompleted {
+		return nil, fmt.Errorf("source enrichment must be completed, current status: %s", source.Status)
+	}
+
+	// Create new enrichment with copied data
+	now := time.Now()
+	newEnrichment := &Enrichment{
+		ID:                  uuid.New(),
+		SubmissionID:        newSubmissionID,
+		CompanyID:           source.CompanyID, // Preserve company link
+		Status:              StatusCompleted,  // Completed status (no more approved)
+		Progress:            100,
+		CurrentStep:         NullableString("Copied from previous enrichment"),
+		IsLocked:            false,
+		SourcesStatus:       source.SourcesStatus,
+		SourcesUsed:         source.SourcesUsed,
+		EnrichedData:        source.EnrichedData, // Copy the enriched data
+		StartedAt:           &now,
+		CompletedAt:         &now,
+		RetryCount:          0,
+		MaxRetries:          3,
+		AutoTriggerAnalysis: false,
+		CreatedAt:           now,
+		UpdatedAt:           now,
+	}
+
+	if err := s.repo.Create(ctx, newEnrichment); err != nil {
+		return nil, fmt.Errorf("failed to create copied enrichment: %w", err)
+	}
+
+	log.Info().
+		Str("source_enrichment_id", sourceEnrichmentID.String()).
+		Str("new_enrichment_id", newEnrichment.ID.String()).
+		Str("new_submission_id", newSubmissionID.String()).
+		Msg("Enrichment data copied successfully")
+
+	return newEnrichment, nil
+}
+
+// CreateWithAutoAnalyze creates a new enrichment with auto_trigger_analysis flag set
+// Used for "enrich and analyze" workflow
+func (s *Service) CreateWithAutoAnalyze(ctx context.Context, submissionID uuid.UUID) (*Enrichment, error) {
+	e := NewEnrichment(submissionID)
+	e.AutoTriggerAnalysis = true
+
+	if err := s.repo.Create(ctx, e); err != nil {
+		return nil, fmt.Errorf("failed to create enrichment with auto-analyze: %w", err)
+	}
+
+	log.Info().
+		Str("enrichment_id", e.ID.String()).
+		Str("submission_id", submissionID.String()).
+		Bool("auto_trigger_analysis", true).
+		Msg("Enrichment created with auto-analyze flag")
+
+	return e, nil
 }

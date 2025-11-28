@@ -403,30 +403,30 @@ func (s *Service) gatherReportData(ctx context.Context, subID, analysisID string
 
 // Whitelist of allowed template names to prevent path traversal attacks
 var allowedTemplates = map[string]bool{
-	"01_cover.html":                     true,
-	"02_exec_summary.html":              true,
-	"03_toc.html":                       true,
-	"03a_divider_part1.html":            true,
-	"04a_pestel_pes.html":               true,
-	"04b_pestel_tel.html":               true,
-	"05a_porter_7forces.html":           true,
-	"06_swot.html":                      true,
-	"08a_divider_part2.html":            true,
-	"07_tam_sam_som.html":               true,
-	"08_ocean.html":                     true,
-	"11a_divider_part3.html":            true,
-	"12a_okrs_quarterly.html":           true,
-	"13a_growth_loops.html":             true,
-	"14a_divider_part4.html":            true,
-	"15a_scenarios.html":                true,
-	"16a_recommendations_review.html":   true,
-	"10_business_model.html":            true,
-	"11_competitive_analysis.html":      true,
-	"12_financial_projections.html":     true,
-	"13_gtm_strategy.html":              true,
-	"14_risk_assessment.html":           true,
-	"15_roadmap.html":                   true,
-	"16_appendix.html":                  true,
+	"01_cover.html":                   true,
+	"02_exec_summary.html":            true,
+	"03_toc.html":                     true,
+	"03a_divider_part1.html":          true,
+	"04a_pestel_pes.html":             true,
+	"04b_pestel_tel.html":             true,
+	"05a_porter_7forces.html":         true,
+	"06_swot.html":                    true,
+	"08a_divider_part2.html":          true,
+	"07_tam_sam_som.html":             true,
+	"08_ocean.html":                   true,
+	"11a_divider_part3.html":          true,
+	"12a_okrs_quarterly.html":         true,
+	"13a_growth_loops.html":           true,
+	"14a_divider_part4.html":          true,
+	"15a_scenarios.html":              true,
+	"16a_recommendations_review.html": true,
+	"10_business_model.html":          true,
+	"11_competitive_analysis.html":    true,
+	"12_financial_projections.html":   true,
+	"13_gtm_strategy.html":            true,
+	"14_risk_assessment.html":         true,
+	"15_roadmap.html":                 true,
+	"16_appendix.html":                true,
 }
 
 // renderPage merges the template with data and theme
@@ -490,7 +490,7 @@ func (s *Service) renderPage(templateName string, globalData *ReportData, specif
 	// Using report_v2 for TUC Glasses aligned templates
 	// SECURITY: Use filepath.Join to safely construct paths, preventing traversal
 	templatePaths := []string{
-		filepath.Join("templates", "report_v2", templateName),            // Production / From root
+		filepath.Join("templates", "report_v2", templateName),               // Production / From root
 		filepath.Join("backend_v3", "templates", "report_v2", templateName), // From parent dir
 		filepath.Join("..", "templates", "report_v2", templateName),         // From tests in subdirs
 		filepath.Join("..", "..", "templates", "report_v2", templateName),   // From deep test dirs

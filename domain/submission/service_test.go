@@ -200,7 +200,7 @@ func TestService_Create(t *testing.T) {
 			svc := submission.NewService(mockRepo, nil)
 
 			// Execute
-			result, err := svc.Create(context.Background(), tt.submission)
+			result, err := svc.Create(context.Background(), tt.submission, nil)
 
 			// Verify
 			if tt.wantErr {

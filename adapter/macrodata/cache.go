@@ -185,8 +185,8 @@ func (rc *RedisCache) GetLastFetchTime(ctx context.Context) (time.Time, error) {
 
 // CacheStats provides statistics about cache status
 type CacheStats struct {
-	TotalKeys     int       `json:"total_keys"`
-	LastFetchTime time.Time `json:"last_fetch_time"`
+	TotalKeys     int             `json:"total_keys"`
+	LastFetchTime time.Time       `json:"last_fetch_time"`
 	CachedItems   map[string]bool `json:"cached_items"`
 }
 
@@ -198,10 +198,10 @@ func (rc *RedisCache) GetCacheStats(ctx context.Context) (*CacheStats, error) {
 
 	// Check each key
 	keys := map[string]string{
-		"selic":          KeySELIC,
-		"ipca":           KeyIPCA,
-		"usd_brl":        KeyUSDtoBRL,
-		"macro_context":  KeyMacroContext,
+		"selic":         KeySELIC,
+		"ipca":          KeyIPCA,
+		"usd_brl":       KeyUSDtoBRL,
+		"macro_context": KeyMacroContext,
 	}
 
 	for name, key := range keys {
@@ -221,7 +221,7 @@ func (rc *RedisCache) GetCacheStats(ctx context.Context) (*CacheStats, error) {
 
 // MacroDataProviderWithRedis enhances MacroDataProvider with Redis caching
 type MacroDataProviderWithRedis struct {
-	provider  *MacroDataProvider
+	provider *MacroDataProvider
 	cache    *RedisCache
 }
 

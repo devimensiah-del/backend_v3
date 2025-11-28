@@ -215,10 +215,10 @@ func TestRepository_Create_WithAll11Frameworks(t *testing.T) {
 			testAnalysis.Status,
 			testAnalysis.ErrorMessage,
 			testAnalysis.ProcessingTimeMs,
-			testAnalysis.ApprovedAt,
-			testAnalysis.ApprovedBy,
-			testAnalysis.SentAt,
-			testAnalysis.SentTo,
+			testAnalysis.IsVisibleToUser,
+			testAnalysis.IsBlurred,
+			testAnalysis.AccessCode,
+			testAnalysis.AccessCodeCreatedAt,
 			testAnalysis.DeletedAt,
 			sqlmock.AnyArg(), // created_at
 			sqlmock.AnyArg(), // updated_at
@@ -296,10 +296,10 @@ func TestRepository_Update_Success(t *testing.T) {
 			testAnalysis.Status,
 			testAnalysis.ErrorMessage,
 			testAnalysis.ProcessingTimeMs,
-			testAnalysis.ApprovedAt,
-			testAnalysis.ApprovedBy,
-			testAnalysis.SentAt,
-			testAnalysis.SentTo,
+			testAnalysis.IsVisibleToUser,
+			testAnalysis.IsBlurred,
+			testAnalysis.AccessCode,
+			testAnalysis.AccessCodeCreatedAt,
 			testAnalysis.DeletedAt,
 			sqlmock.AnyArg(), // updated_at
 			testAnalysis.CompletedAt,
@@ -403,7 +403,7 @@ func TestRepository_GetByID_Success(t *testing.T) {
 		"swot", "pestel", "porter", "okrs", "tam_sam_som", "benchmarking",
 		"blue_ocean", "growth_hacking", "scenarios", "bsc", "decision_matrix",
 		"synthesis", "status", "error_message", "processing_time_ms",
-		"approved_at", "approved_by", "sent_at", "sent_to", "deleted_at",
+		"is_visible_to_user", "is_blurred", "access_code", "access_code_created_at", "deleted_at",
 		"created_at", "updated_at", "completed_at",
 	}).AddRow(
 		testAnalysis.ID, testAnalysis.SubmissionID, testAnalysis.EnrichmentID,
@@ -412,8 +412,8 @@ func TestRepository_GetByID_Success(t *testing.T) {
 		marshal(testAnalysis.BlueOcean), marshal(testAnalysis.GrowthHacking), marshal(testAnalysis.Scenarios),
 		marshal(testAnalysis.BSC), marshal(testAnalysis.DecisionMatrix),
 		marshal(testAnalysis.Synthesis), testAnalysis.Status, testAnalysis.ErrorMessage,
-		testAnalysis.ProcessingTimeMs, testAnalysis.ApprovedAt, testAnalysis.ApprovedBy,
-		testAnalysis.SentAt, testAnalysis.SentTo, testAnalysis.DeletedAt,
+		testAnalysis.ProcessingTimeMs, testAnalysis.IsVisibleToUser, testAnalysis.IsBlurred,
+		testAnalysis.AccessCode, testAnalysis.AccessCodeCreatedAt, testAnalysis.DeletedAt,
 		testAnalysis.CreatedAt, testAnalysis.UpdatedAt, testAnalysis.CompletedAt,
 	)
 
@@ -505,7 +505,7 @@ func TestRepository_List_WithPagination(t *testing.T) {
 		"swot", "pestel", "porter", "okrs", "tam_sam_som", "benchmarking",
 		"blue_ocean", "growth_hacking", "scenarios", "bsc", "decision_matrix",
 		"synthesis", "status", "error_message", "processing_time_ms",
-		"approved_at", "approved_by", "sent_at", "sent_to", "deleted_at",
+		"is_visible_to_user", "is_blurred", "access_code", "access_code_created_at", "deleted_at",
 		"created_at", "updated_at", "completed_at",
 	}).
 		AddRow(
@@ -515,8 +515,8 @@ func TestRepository_List_WithPagination(t *testing.T) {
 			marshal(a1.BlueOcean), marshal(a1.GrowthHacking), marshal(a1.Scenarios),
 			marshal(a1.BSC), marshal(a1.DecisionMatrix),
 			marshal(a1.Synthesis), a1.Status, a1.ErrorMessage,
-			a1.ProcessingTimeMs, a1.ApprovedAt, a1.ApprovedBy,
-			a1.SentAt, a1.SentTo, a1.DeletedAt,
+			a1.ProcessingTimeMs, a1.IsVisibleToUser, a1.IsBlurred,
+			a1.AccessCode, a1.AccessCodeCreatedAt, a1.DeletedAt,
 			a1.CreatedAt, a1.UpdatedAt, a1.CompletedAt,
 		).
 		AddRow(
@@ -526,8 +526,8 @@ func TestRepository_List_WithPagination(t *testing.T) {
 			marshal(a2.BlueOcean), marshal(a2.GrowthHacking), marshal(a2.Scenarios),
 			marshal(a2.BSC), marshal(a2.DecisionMatrix),
 			marshal(a2.Synthesis), a2.Status, a2.ErrorMessage,
-			a2.ProcessingTimeMs, a2.ApprovedAt, a2.ApprovedBy,
-			a2.SentAt, a2.SentTo, a2.DeletedAt,
+			a2.ProcessingTimeMs, a2.IsVisibleToUser, a2.IsBlurred,
+			a2.AccessCode, a2.AccessCodeCreatedAt, a2.DeletedAt,
 			a2.CreatedAt, a2.UpdatedAt, a2.CompletedAt,
 		)
 

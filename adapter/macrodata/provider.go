@@ -34,6 +34,7 @@ type MacroDataProvider struct {
 	ibgeClient         *IBGEClient
 	exchangeRateClient *ExchangeRateClient
 	bcbExchangeClient  *BCBExchangeRateClient
+	awesomeAPIClient   *AwesomeAPIClient // Primary source for USD/BRL
 	cache              MacroContextCache
 	mu                 sync.RWMutex
 }
@@ -53,6 +54,7 @@ func NewMacroDataProvider() *MacroDataProvider {
 		ibgeClient:         NewIBGEClient(),
 		exchangeRateClient: NewExchangeRateClient(),
 		bcbExchangeClient:  NewBCBExchangeRateClient(),
+		awesomeAPIClient:   NewAwesomeAPIClient(), // Primary source for USD/BRL
 		cache: MacroContextCache{
 			ttl: 6 * time.Hour, // Cache macro data for 6 hours
 		},
@@ -110,19 +112,30 @@ func (p *MacroDataProvider) FetchLatestMacroData(ctx context.Context) (*MacroCon
 		}
 	}()
 
-	// 3. Fetch USD/BRL Exchange Rate (prefer BCB as authoritative)
+	// 3. Fetch USD/BRL Exchange Rate (try AwesomeAPI first, then BCB, then fallback)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 
-		// Try BCB first (authoritative)
-		usdBrl, err := p.bcbExchangeClient.FetchUSDoBRL(ctx)
-		if err != nil {
-			// Fallback to exchangerate-api.com
+		var usdBrl *ExchangeRateData
+		var err error
+
+		// Try AwesomeAPI first (fast, reliable Brazilian API)
+		if p.awesomeAPIClient != nil {
+			usdBrl, err = p.awesomeAPIClient.FetchUSDToBRL(ctx)
+		}
+
+		// Fallback to BCB (authoritative)
+		if err != nil || usdBrl == nil {
+			usdBrl, err = p.bcbExchangeClient.FetchUSDoBRL(ctx)
+		}
+
+		// Final fallback to exchangerate-api.com
+		if err != nil || usdBrl == nil {
 			usdBrl, err = p.exchangeRateClient.FetchUSDToBRL(ctx)
 			if err != nil {
 				mu.Lock()
-				result.FetchErrors = append(result.FetchErrors, fmt.Sprintf("USD/BRL fetch failed: %v", err))
+				result.FetchErrors = append(result.FetchErrors, fmt.Sprintf("USD/BRL fetch failed (all sources): %v", err))
 				mu.Unlock()
 				return
 			}
@@ -192,6 +205,13 @@ func (p *MacroDataProvider) FetchSpecificIndicator(ctx context.Context, indicato
 	case "ipca":
 		return p.ibgeClient.FetchLatestIPCA(ctx)
 	case "usd_brl":
+		// Try AwesomeAPI first (fast, reliable)
+		if p.awesomeAPIClient != nil {
+			if rate, err := p.awesomeAPIClient.FetchUSDToBRL(ctx); err == nil {
+				return rate, nil
+			}
+		}
+		// Fallback to BCB
 		return p.bcbExchangeClient.FetchUSDoBRL(ctx)
 	default:
 		return nil, fmt.Errorf("unknown indicator: %s", indicator)
@@ -219,6 +239,16 @@ func (p *MacroDataProvider) HealthCheck(ctx context.Context) map[string]bool {
 			name: "ibge_ipca",
 			fn: func(ctx context.Context) error {
 				_, err := p.ibgeClient.FetchLatestIPCA(ctx)
+				return err
+			},
+		},
+		{
+			name: "awesomeapi_exchange",
+			fn: func(ctx context.Context) error {
+				if p.awesomeAPIClient == nil {
+					return fmt.Errorf("awesomeapi client not initialized")
+				}
+				_, err := p.awesomeAPIClient.FetchUSDToBRL(ctx)
 				return err
 			},
 		},

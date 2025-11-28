@@ -116,8 +116,8 @@ func (h *EnrichmentHandlers) GetEnrichment(c *gin.Context) {
 }
 
 // UpdateEnrichment handles PUT /api/v1/admin/enrichment/:id
-// Admin can edit enrichment fields BEFORE approval (status remains "completed")
-// Cannot edit after status is "approved"
+// Admin can edit enrichment fields (status remains "completed")
+// Note: Completed enrichments can be edited via this endpoint
 func (h *EnrichmentHandlers) UpdateEnrichment(c *gin.Context) {
 	enrichmentID := c.Param("id")
 
@@ -183,90 +183,6 @@ func (h *EnrichmentHandlers) GetEnrichmentProgress(c *gin.Context) {
 		"progress":    enrichment.Progress,
 		"currentStep": enrichment.CurrentStep,
 		"status":      enrichment.Status,
-	})
-}
-
-// ApproveEnrichment handles POST /api/v1/admin/enrichment/:id/approve
-// Changes status from "completed" → "approved" and triggers analysis creation
-func (h *EnrichmentHandlers) ApproveEnrichment(c *gin.Context) {
-	enrichmentID := c.Param("id")
-
-	// Parse and validate UUID
-	enrichUUID, err := parseUUID(enrichmentID)
-	if err != nil {
-		respondError(c, h.Logger, http.StatusBadRequest, err, "ID de enriquecimento inválido.")
-		return
-	}
-
-	// Approve enrichment (service handles status update AND job enqueueing)
-	err = h.EnrichmentService.Approve(c.Request.Context(), enrichUUID)
-	if err != nil {
-		respondError(c, h.Logger, http.StatusBadRequest, err, "Não foi possível aprovar o enriquecimento.")
-		return
-	}
-
-	// Fetch updated enrichment
-	updatedEnrichment, err := h.EnrichmentService.GetByID(c.Request.Context(), enrichUUID)
-	if err != nil {
-		respondError(c, h.Logger, http.StatusInternalServerError, err, "Aprovado, mas não foi possível carregar o enriquecimento atualizado.")
-		return
-	}
-
-	// Transform to DTO
-	enrichmentResponse := h.buildEnrichmentResponse(updatedEnrichment)
-
-	// Best-effort: fetch latest analysis for this submission (may still be queued)
-	var analysisID *string
-	var analysisStatus *string
-	if h.AnalysisService != nil {
-		if a, err := h.AnalysisService.GetBySubmissionID(c.Request.Context(), updatedEnrichment.SubmissionID.String()); err == nil && a != nil {
-			id := a.ID
-			analysisID = &id
-			status := a.Status
-			analysisStatus = &status
-		}
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"enrichment":     enrichmentResponse,
-		"analysisId":     analysisID,
-		"analysisStatus": analysisStatus,
-		"message":        "Enriquecimento aprovado, analise iniciada.",
-	})
-}
-
-// ReopenEnrichment handles POST /api/v1/admin/enrichment/:id/reopen
-// Admin reverts an approved enrichment back to completed status for editing
-func (h *EnrichmentHandlers) ReopenEnrichment(c *gin.Context) {
-	enrichmentID := c.Param("id")
-
-	// Parse and validate UUID
-	enrichUUID, err := parseUUID(enrichmentID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Error:   "Invalid ID",
-			Message: "Invalid enrichment ID format",
-		})
-		return
-	}
-
-	// Reopen enrichment via service
-	updatedEnrichment, err := h.EnrichmentService.ReopenForEditing(c.Request.Context(), enrichUUID)
-	if err != nil {
-		h.Logger.Error().Err(err).Str("enrichment_id", enrichmentID).Msg("Failed to reopen enrichment")
-		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Error:   "Reopen failed",
-			Message: err.Error(),
-		})
-		return
-	}
-
-	// Transform to DTO
-	enrichmentResponse := h.buildEnrichmentResponse(updatedEnrichment)
-
-	c.JSON(http.StatusOK, gin.H{
-		"enrichment": enrichmentResponse,
-		"message":    "Enriquecimento reaberto para edição",
 	})
 }
 
@@ -357,19 +273,21 @@ func (h *EnrichmentHandlers) GetEnrichmentAdmin(c *gin.Context) {
 // calculateInferredProgress dynamically calculates progress based on status and current_step
 // This implements the "inferred progress" pattern to avoid storing redundant state in DB
 func (h *EnrichmentHandlers) calculateInferredProgress(status string, currentStep string) int {
-	// Completed or approved = 100%
-	if status == "completed" || status == "approved" {
+	// Completed = 100%
+	if status == "completed" {
 		return 100
 	}
 
 	// Pending = infer from current step
 	if status == "pending" {
 		switch currentStep {
-		case "Scanning digital footprint (Transient)...":
-			return 10
-		case "Agent is synthesizing Intelligence Profile...":
+		case "Pesquisando dados da empresa e mercado...":
+			return 15
+		case "Obtendo indicadores econômicos do BCB/IBGE...":
+			return 35
+		case "Sintetizando Perfil de Inteligência...":
 			return 50
-		case "Finalizing profile...":
+		case "Finalizando perfil...":
 			return 90
 		default:
 			return 5 // Just started
@@ -408,16 +326,19 @@ func (h *EnrichmentHandlers) buildEnrichmentResponse(e *enrichment.Enrichment) E
 }
 
 // getDisplayStep returns a user-friendly step message based on status
-// This ensures completed/approved statuses show appropriate messages even if
+// This ensures completed status shows appropriate message even if
 // the database has stale step data
 func (h *EnrichmentHandlers) getDisplayStep(status string, dbStep string) string {
 	switch status {
 	case "completed":
-		return "Enrichment complete - awaiting review"
-	case "approved":
-		return "Approved - analysis in progress"
+		return "Enrichment complete"
+	case "failed":
+		if dbStep == "" {
+			return "Enrichment failed"
+		}
+		return dbStep
 	default:
-		// For pending status, use the database step
+		// For pending status, use the database step or default
 		if dbStep == "" {
 			return "Queued for enrichment"
 		}

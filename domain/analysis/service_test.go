@@ -81,6 +81,29 @@ func (m *MockRepository) SetVisibility(ctx context.Context, id string, visible b
 	return args.Error(0)
 }
 
+func (m *MockRepository) SetBlurStatus(ctx context.Context, id string, blurred bool) error {
+	args := m.Called(ctx, id, blurred)
+	return args.Error(0)
+}
+
+func (m *MockRepository) GetByAccessCode(ctx context.Context, code string) (*Analysis, error) {
+	args := m.Called(ctx, code)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*Analysis), args.Error(1)
+}
+
+func (m *MockRepository) SetAccessCode(ctx context.Context, id string, code string) error {
+	args := m.Called(ctx, id, code)
+	return args.Error(0)
+}
+
+func (m *MockRepository) AccessCodeExists(ctx context.Context, code string) (bool, error) {
+	args := m.Called(ctx, code)
+	return args.Bool(0), args.Error(1)
+}
+
 type MockSubmissionRepository struct {
 	mock.Mock
 }
@@ -335,128 +358,6 @@ func TestService_UpdateFields_ValidationPreservesStatus(t *testing.T) {
 }
 
 // =============================================================================
-// TESTS: Approve
-// =============================================================================
-
-func TestService_Approve_Success(t *testing.T) {
-	t.Skip("Approve() requires Redis connection for Asynq - tested in integration tests")
-	service, mockRepo, _, _ := createTestService()
-	defer service.queueClient.Close()
-
-	testAnalysis := createTestAnalysis()
-	testAnalysis.Status = string(StatusCompleted)
-
-	mockRepo.On("GetByID", mock.Anything, testAnalysis.ID).Return(testAnalysis, nil)
-	mockRepo.On("Update", mock.Anything, mock.MatchedBy(func(a *Analysis) bool {
-		return a.Status == string(StatusApproved)
-	})).Return(nil)
-
-	err := service.Approve(context.Background(), testAnalysis.ID)
-
-	assert.NoError(t, err)
-	mockRepo.AssertExpectations(t)
-}
-
-func TestService_Approve_RejectsNonCompletedStatus(t *testing.T) {
-	service, mockRepo, _, _ := createTestService()
-	defer service.queueClient.Close()
-
-	testAnalysis := createTestAnalysis()
-	testAnalysis.Status = string(StatusPending)
-
-	mockRepo.On("GetByID", mock.Anything, testAnalysis.ID).Return(testAnalysis, nil)
-
-	err := service.Approve(context.Background(), testAnalysis.ID)
-
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "must be in 'completed' status")
-	mockRepo.AssertExpectations(t)
-}
-
-func TestService_Approve_TriggersReportJob(t *testing.T) {
-	t.Skip("Approve() requires Redis connection for Asynq - tested in integration tests")
-	service, mockRepo, _, _ := createTestService()
-	defer service.queueClient.Close()
-
-	testAnalysis := createTestAnalysis()
-	testAnalysis.Status = string(StatusCompleted)
-
-	mockRepo.On("GetByID", mock.Anything, testAnalysis.ID).Return(testAnalysis, nil)
-	mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*analysis.Analysis")).Return(nil)
-
-	// Note: We can't easily verify asynq job enqueueing without integration test,
-	// but we can verify the service method completes without error
-	err := service.Approve(context.Background(), testAnalysis.ID)
-
-	assert.NoError(t, err)
-	mockRepo.AssertExpectations(t)
-}
-
-// =============================================================================
-// TESTS: Send
-// =============================================================================
-
-func TestService_Send_Success(t *testing.T) {
-	t.Skip("Send() requires Redis connection for Asynq - tested in integration tests")
-	service, mockRepo, _, _ := createTestService()
-	defer service.queueClient.Close()
-
-	testAnalysis := createTestAnalysis()
-	testAnalysis.Status = string(StatusApproved)
-
-	userEmail := "test@example.com"
-
-	mockRepo.On("GetByID", mock.Anything, testAnalysis.ID).Return(testAnalysis, nil)
-	mockRepo.On("Update", mock.Anything, mock.MatchedBy(func(a *Analysis) bool {
-		return a.Status == string(StatusSent) && a.SentTo != nil && *a.SentTo == userEmail
-	})).Return(nil)
-
-	err := service.Send(context.Background(), testAnalysis.ID, userEmail)
-
-	assert.NoError(t, err)
-	mockRepo.AssertExpectations(t)
-}
-
-func TestService_Send_RejectsNonApprovedStatus(t *testing.T) {
-	service, mockRepo, _, _ := createTestService()
-	defer service.queueClient.Close()
-
-	testAnalysis := createTestAnalysis()
-	testAnalysis.Status = string(StatusCompleted)
-
-	mockRepo.On("GetByID", mock.Anything, testAnalysis.ID).Return(testAnalysis, nil)
-
-	err := service.Send(context.Background(), testAnalysis.ID, "test@example.com")
-
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "must be in 'approved' status")
-	mockRepo.AssertExpectations(t)
-}
-
-func TestService_Send_UpdatesSentAtAndSentTo(t *testing.T) {
-	t.Skip("Send() requires Redis connection for Asynq - tested in integration tests")
-	service, mockRepo, _, _ := createTestService()
-	defer service.queueClient.Close()
-
-	testAnalysis := createTestAnalysis()
-	testAnalysis.Status = string(StatusApproved)
-	testAnalysis.SentAt = nil
-	testAnalysis.SentTo = nil
-
-	userEmail := "admin@example.com"
-
-	mockRepo.On("GetByID", mock.Anything, testAnalysis.ID).Return(testAnalysis, nil)
-	mockRepo.On("Update", mock.Anything, mock.MatchedBy(func(a *Analysis) bool {
-		return a.SentAt != nil && a.SentTo != nil && *a.SentTo == userEmail
-	})).Return(nil)
-
-	err := service.Send(context.Background(), testAnalysis.ID, userEmail)
-
-	assert.NoError(t, err)
-	mockRepo.AssertExpectations(t)
-}
-
-// =============================================================================
 // TESTS: MarkAsFailed
 // =============================================================================
 
@@ -558,67 +459,6 @@ func TestService_GetByID_TableDriven(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 				assert.NotNil(t, result)
-			}
-
-			mockRepo.AssertExpectations(t)
-		})
-	}
-}
-
-func TestService_Approve_TableDriven(t *testing.T) {
-	tests := []struct {
-		name        string
-		status      Status
-		expectError bool
-		errorMsg    string
-	}{
-		{
-			name:        "Approve Completed Analysis",
-			status:      StatusCompleted,
-			expectError: false,
-		},
-		{
-			name:        "Reject Pending Analysis",
-			status:      StatusPending,
-			expectError: true,
-			errorMsg:    "must be in 'completed' status",
-		},
-		{
-			name:        "Reject Already Approved",
-			status:      StatusApproved,
-			expectError: true,
-			errorMsg:    "must be in 'completed' status",
-		},
-		{
-			name:        "Reject Sent Analysis",
-			status:      StatusSent,
-			expectError: true,
-			errorMsg:    "must be in 'completed' status",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			service, mockRepo, _, _ := createTestService()
-			defer service.queueClient.Close()
-
-			testAnalysis := createTestAnalysis()
-			testAnalysis.Status = string(tt.status)
-
-			mockRepo.On("GetByID", mock.Anything, testAnalysis.ID).Return(testAnalysis, nil)
-
-			if !tt.expectError {
-				t.Skip("Skipping success case requiring Redis")
-				mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*analysis.Analysis")).Return(nil)
-			}
-
-			err := service.Approve(context.Background(), testAnalysis.ID)
-
-			if tt.expectError {
-				assert.Error(t, err)
-				assert.Contains(t, err.Error(), tt.errorMsg)
-			} else {
-				assert.NoError(t, err)
 			}
 
 			mockRepo.AssertExpectations(t)

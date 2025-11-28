@@ -39,12 +39,12 @@ type IBGEResult struct {
 
 // IPCAData holds the latest IPCA inflation data
 type IPCAData struct {
-	Rate        float64   `json:"rate"`
-	Period      string    `json:"period"`     // e.g., "202411" (November 2024)
-	Date        time.Time `json:"date"`
-	Source      string    `json:"source"`
-	Accuracy    string    `json:"accuracy"` // "Authoritative"
-	MonthYear   string    `json:"month_year"`
+	Rate      float64   `json:"rate"`
+	Period    string    `json:"period"` // e.g., "202411" (November 2024)
+	Date      time.Time `json:"date"`
+	Source    string    `json:"source"`
+	Accuracy  string    `json:"accuracy"` // "Authoritative"
+	MonthYear string    `json:"month_year"`
 }
 
 // IBGEClient handles IBGE API calls

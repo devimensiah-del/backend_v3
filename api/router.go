@@ -2,7 +2,9 @@ package api
 
 import (
 	domainanalysis "backend_v3/domain/analysis"
+	domaincompany "backend_v3/domain/company"
 	domainenrichment "backend_v3/domain/enrichment"
+	domainmacro "backend_v3/domain/macroeconomics"
 	domainreport "backend_v3/domain/report"
 	domainsubmission "backend_v3/domain/submission"
 
@@ -31,6 +33,8 @@ func SetupRouter(
 	enrichmentSvc *domainenrichment.Service,
 	analysisSvc *domainanalysis.Service,
 	reportSvc *domainreport.Service,
+	macroSvc *domainmacro.Service, // Macroeconomics service for DB-backed indicators
+	companySvc *domaincompany.Service, // Company service for re-enrich/re-analyze workflows
 ) *gin.Engine {
 	if isProd {
 		gin.SetMode(gin.ReleaseMode)
@@ -99,6 +103,17 @@ func SetupRouter(
 		db,
 		logger,
 	)
+	macroHandlers := NewMacroHandlers(
+		macroSvc,
+		logger,
+	)
+	companyHandlers := NewCompanyHandlers(
+		companySvc,
+		submissionSvc,
+		enrichmentSvc,
+		asynqClient,
+		logger,
+	)
 
 	// Create the main API Handler instance
 	// This Handler now composes all specialized handlers
@@ -106,6 +121,7 @@ func SetupRouter(
 		adminHandlers,
 		analysisHandlers,
 		authHandlers,
+		companyHandlers,
 		enrichmentHandlers,
 		reportHandlers,
 		submissionHandlers,
@@ -167,7 +183,7 @@ func SetupRouter(
 	protectedAPI := router.Group("/api/v1")
 	protectedAPI.Use(AuthMiddleware(jwtSecret, db)) // AuthMiddleware might need to be adjusted
 	{
-		// List user's own submissions
+		// List user's own submissions (legacy - kept for backwards compatibility)
 		protectedAPI.GET("/submissions", mainHandler.SubmissionHandlers.ListUserSubmissions)
 		protectedAPI.GET("/submissions/:id", mainHandler.SubmissionHandlers.GetSubmission)
 		protectedAPI.GET("/submissions/:id/enrichment", mainHandler.EnrichmentHandlers.GetEnrichment)
@@ -175,6 +191,12 @@ func SetupRouter(
 		protectedAPI.GET("/submissions/:id/report/preview", mainHandler.ReportHandlers.PreviewReport)
 		protectedAPI.POST("/submissions/:id/report/publish", mainHandler.ReportHandlers.PublishReport)
 		protectedAPI.GET("/submissions/:id/report/download", mainHandler.ReportHandlers.DownloadReport)
+
+		// Company routes - user's companies (owner or in allowed_users)
+		protectedAPI.GET("/companies", mainHandler.CompanyHandlers.GetMyCompanies)
+		protectedAPI.GET("/companies/:id", mainHandler.CompanyHandlers.GetCompany)
+		protectedAPI.POST("/companies/:id/users", mainHandler.CompanyHandlers.AddUserToCompany)
+		protectedAPI.DELETE("/companies/:id/users/:userId", mainHandler.CompanyHandlers.RemoveUserFromCompany)
 	}
 
 	// Admin API routes (v1)
@@ -197,19 +219,45 @@ func SetupRouter(
 		// Enrichment management
 		adminAPI.GET("/enrichment/:id", mainHandler.EnrichmentHandlers.GetEnrichmentAdmin)
 		adminAPI.PUT("/enrichment/:id", mainHandler.EnrichmentHandlers.UpdateEnrichment)
-		adminAPI.POST("/enrichment/:id/approve", mainHandler.EnrichmentHandlers.ApproveEnrichment)
-		adminAPI.POST("/enrichment/:id/reopen", mainHandler.EnrichmentHandlers.ReopenEnrichment)
 		adminAPI.POST("/enrichment/:id/unlock", mainHandler.EnrichmentHandlers.UnlockEnrichment)
 
 		// Analysis management
 		adminAPI.GET("/analysis/:id", mainHandler.AnalysisHandlers.GetAnalysisAdmin)
 		adminAPI.PUT("/analysis/:id", mainHandler.AnalysisHandlers.UpdateAnalysis)
-		adminAPI.POST("/analysis/:id/approve", mainHandler.AnalysisHandlers.ApproveAnalysis)
-		adminAPI.POST("/analysis/:id/reopen", mainHandler.AnalysisHandlers.ReopenAnalysis)
-		adminAPI.POST("/analysis/:id/send", mainHandler.AnalysisHandlers.SendAnalysis)
 		adminAPI.POST("/analysis/:id/visibility", mainHandler.AnalysisHandlers.ToggleVisibility)
 		adminAPI.POST("/analysis/:id/blur", mainHandler.AnalysisHandlers.ToggleBlur)
 		adminAPI.POST("/analysis/:id/access-code", mainHandler.AnalysisHandlers.GenerateAccessCode)
+
+		// Macroeconomics management (SELIC, IPCA, USD/BRL)
+		adminAPI.GET("/macro/latest", macroHandlers.GetLatestSnapshot)
+		adminAPI.POST("/macro/refresh", macroHandlers.RefreshAll)
+		adminAPI.POST("/macro/refresh/:code", macroHandlers.RefreshIndicator)
+		adminAPI.GET("/macro/history/:code", macroHandlers.GetHistory)
+
+		// Company management (admin)
+		adminAPI.GET("/companies", mainHandler.CompanyHandlers.ListAllCompanies)
+		adminAPI.GET("/companies/:id", mainHandler.CompanyHandlers.GetCompanyAdmin)
+		adminAPI.PUT("/companies/:id", mainHandler.CompanyHandlers.UpdateCompany)
+		adminAPI.POST("/companies/:id/verify", mainHandler.CompanyHandlers.VerifyCompany)
+		adminAPI.POST("/companies/:id/unverify", mainHandler.CompanyHandlers.UnverifyCompany)
+		adminAPI.POST("/companies/:id/users", mainHandler.CompanyHandlers.AddUserToCompany)
+		adminAPI.DELETE("/companies/:id/users/:userId", mainHandler.CompanyHandlers.RemoveUserFromCompany)
+		adminAPI.POST("/companies/:id/transfer-ownership", mainHandler.CompanyHandlers.TransferOwnership)
+
+		// Company-based workflows (re-enrich, re-analyze)
+		// Access: admins OR users in company.allowed_users
+		adminAPI.POST("/companies/:id/re-enrich", mainHandler.CompanyHandlers.ReEnrichCompany)
+		adminAPI.POST("/companies/:id/re-analyze", mainHandler.CompanyHandlers.ReAnalyzeCompany)
+		adminAPI.POST("/companies/:id/enrich-and-analyze", mainHandler.CompanyHandlers.EnrichAndAnalyzeCompany)
+
+		// Field verification (protect fields from re-enrichment)
+		// Admin only - manage which fields are verified/protected
+		adminAPI.GET("/companies/:id/verifications", mainHandler.CompanyHandlers.GetFieldVerifications)
+		adminAPI.POST("/companies/:id/verifications", mainHandler.CompanyHandlers.VerifyField)
+		adminAPI.DELETE("/companies/:id/verifications/:field_name", mainHandler.CompanyHandlers.UnverifyField)
+		adminAPI.POST("/companies/:id/verifications/bulk", mainHandler.CompanyHandlers.VerifyFields)
+		adminAPI.POST("/companies/:id/verifications/all", mainHandler.CompanyHandlers.VerifyAllFields)
+		adminAPI.DELETE("/companies/:id/verifications/all", mainHandler.CompanyHandlers.UnverifyAllFields)
 	}
 
 	return router
