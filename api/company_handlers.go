@@ -1009,10 +1009,10 @@ func (h *CompanyHandlers) GetFieldVerifications(c *gin.Context) {
 	c.JSON(http.StatusOK, MessageResponse{
 		Message: "Field verifications retrieved",
 		Data: map[string]interface{}{
-			"company_id":        companyID,
-			"fields":            fields,
-			"total_verifiable":  len(company.VerifiableFields),
-			"total_verified":    len(verifications),
+			"company_id":       companyID,
+			"fields":           fields,
+			"total_verifiable": len(company.VerifiableFields),
+			"total_verified":   len(verifications),
 		},
 	})
 }
@@ -1211,8 +1211,8 @@ func (h *CompanyHandlers) VerifyFields(c *gin.Context) {
 	c.JSON(http.StatusOK, MessageResponse{
 		Message: "Fields verified",
 		Data: map[string]interface{}{
-			"company_id":    companyID,
-			"field_names":   req.FieldNames,
+			"company_id":      companyID,
+			"field_names":     req.FieldNames,
 			"fields_verified": len(req.FieldNames),
 		},
 	})

@@ -331,11 +331,11 @@ type LastEnrichmentInfo struct {
 type EnrichmentStatus struct {
 	EnrichmentID uuid.UUID  `json:"enrichment_id" db:"enrichment_id"`
 	SubmissionID uuid.UUID  `json:"submission_id" db:"submission_id"`
-	Status       string     `json:"status" db:"status"`                      // pending, completed, failed
-	Progress     int        `json:"progress" db:"progress"`                  // 0-100
-	CurrentStep  string     `json:"current_step" db:"current_step"`          // Current processing step
-	StartedAt    *time.Time `json:"started_at,omitempty" db:"started_at"`    // When processing started
-	CompletedAt  *time.Time `json:"completed_at,omitempty" db:"completed_at"` // When completed (if done)
+	Status       string     `json:"status" db:"status"`                         // pending, completed, failed
+	Progress     int        `json:"progress" db:"progress"`                     // 0-100
+	CurrentStep  string     `json:"current_step" db:"current_step"`             // Current processing step
+	StartedAt    *time.Time `json:"started_at,omitempty" db:"started_at"`       // When processing started
+	CompletedAt  *time.Time `json:"completed_at,omitempty" db:"completed_at"`   // When completed (if done)
 	ErrorMessage string     `json:"error_message,omitempty" db:"error_message"` // Error if failed
 	CreatedAt    time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at" db:"updated_at"`
@@ -355,7 +355,7 @@ type FieldVerification struct {
 type AnalysisHistoryItem struct {
 	AnalysisID        uuid.UUID  `json:"analysis_id" db:"analysis_id"`
 	SubmissionID      uuid.UUID  `json:"submission_id" db:"submission_id"`
-	Status            string     `json:"status" db:"status"`                        // pending, processing, completed, failed
+	Status            string     `json:"status" db:"status"`                         // pending, processing, completed, failed
 	BusinessChallenge string     `json:"business_challenge" db:"business_challenge"` // The challenge this analysis addresses
 	IsBlurred         bool       `json:"is_blurred" db:"is_blurred"`                 // Whether report is blurred for non-admins
 	IsVisibleToUser   bool       `json:"is_visible_to_user" db:"is_visible_to_user"` // Whether user can see this report
@@ -368,7 +368,7 @@ type AnalysisHistoryItem struct {
 
 // CompanyWithVerifications includes the company and its field verification status
 type CompanyWithVerifications struct {
-	Company       *Company            `json:"company"`
+	Company       *Company             `json:"company"`
 	Verifications []*FieldVerification `json:"verifications"`
 }
 

@@ -92,7 +92,7 @@ const (
 // Used for enrichment consumption - passes ALL indicators to LLM
 type LatestSnapshot struct {
 	Indicators map[string]*IndicatorValueSummary `json:"indicators"`
-	AsOf       time.Time                          `json:"as_of"`
+	AsOf       time.Time                         `json:"as_of"`
 }
 
 // IndicatorValueSummary is a rich version of IndicatorValue for snapshots
