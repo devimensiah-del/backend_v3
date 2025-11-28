@@ -57,7 +57,7 @@ func (s *AsyncService) EnqueuePDFGeneration(ctx context.Context, submissionID, a
 	task := asynq.NewTask(TaskTypeGeneratePDF, payloadBytes,
 		asynq.Queue(QueueReports),
 		asynq.MaxRetry(3),
-		asynq.Timeout(5*time.Minute), // 5 minutes max for 24 pages
+		asynq.Timeout(5*time.Minute),  // 5 minutes max for 24 pages
 		asynq.Retention(24*time.Hour), // Keep task info for 24 hours
 	)
 

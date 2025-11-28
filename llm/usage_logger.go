@@ -97,13 +97,13 @@ func (l *UsageLogger) LogFromResponse(ctx context.Context, resp *Response, submi
 
 // UsageSummary represents aggregated usage statistics
 type UsageSummary struct {
-	TotalCostUSD       float64 `json:"total_cost_usd" db:"total_cost_usd"`
-	TotalInputTokens   int64   `json:"total_input_tokens" db:"total_input_tokens"`
-	TotalOutputTokens  int64   `json:"total_output_tokens" db:"total_output_tokens"`
-	TotalRequests      int64   `json:"total_requests" db:"total_requests"`
-	AvgLatencyMS       float64 `json:"avg_latency_ms" db:"avg_latency_ms"`
-	FallbackCount      int64   `json:"fallback_count" db:"fallback_count"`
-	ErrorCount         int64   `json:"error_count" db:"error_count"`
+	TotalCostUSD      float64 `json:"total_cost_usd" db:"total_cost_usd"`
+	TotalInputTokens  int64   `json:"total_input_tokens" db:"total_input_tokens"`
+	TotalOutputTokens int64   `json:"total_output_tokens" db:"total_output_tokens"`
+	TotalRequests     int64   `json:"total_requests" db:"total_requests"`
+	AvgLatencyMS      float64 `json:"avg_latency_ms" db:"avg_latency_ms"`
+	FallbackCount     int64   `json:"fallback_count" db:"fallback_count"`
+	ErrorCount        int64   `json:"error_count" db:"error_count"`
 }
 
 // GetUsageSummary returns aggregated usage statistics for a time period

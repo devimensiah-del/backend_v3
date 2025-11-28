@@ -10,7 +10,7 @@ import (
 // Contains ALL available indicators - LLM decides which are relevant
 type MacroSnapshot struct {
 	Indicators map[string]*MacroIndicator `json:"indicators"`
-	AsOf       time.Time                   `json:"as_of"`
+	AsOf       time.Time                  `json:"as_of"`
 }
 
 // MacroIndicator represents a single indicator with full metadata
@@ -80,23 +80,23 @@ type CompanyUpdateInput struct {
 // CompanyData represents the essential company fields needed for enrichment
 // This is a simplified view to avoid importing the company package
 type CompanyData struct {
-	ID               string  `json:"id"`
-	Name             string  `json:"name"`
-	CNPJ             *string `json:"cnpj,omitempty"`
-	Website          *string `json:"website,omitempty"`
-	Industry         *string `json:"industry,omitempty"`
-	CompanySize      *string `json:"company_size,omitempty"`
-	Location         *string `json:"location,omitempty"`
-	TargetMarket     *string `json:"target_market,omitempty"`
-	FundingStage     *string `json:"funding_stage,omitempty"`
+	ID               string   `json:"id"`
+	Name             string   `json:"name"`
+	CNPJ             *string  `json:"cnpj,omitempty"`
+	Website          *string  `json:"website,omitempty"`
+	Industry         *string  `json:"industry,omitempty"`
+	CompanySize      *string  `json:"company_size,omitempty"`
+	Location         *string  `json:"location,omitempty"`
+	TargetMarket     *string  `json:"target_market,omitempty"`
+	FundingStage     *string  `json:"funding_stage,omitempty"`
 	AnnualRevenueMin *float64 `json:"annual_revenue_min,omitempty"`
 	AnnualRevenueMax *float64 `json:"annual_revenue_max,omitempty"`
-	FoundationYear   *string `json:"foundation_year,omitempty"`
-	LegalName        *string `json:"legal_name,omitempty"`
-	Headquarters     *string `json:"headquarters,omitempty"`
-	Sector           *string `json:"sector,omitempty"`
-	LinkedInURL      *string `json:"linkedin_url,omitempty"`
-	TwitterHandle    *string `json:"twitter_handle,omitempty"`
+	FoundationYear   *string  `json:"foundation_year,omitempty"`
+	LegalName        *string  `json:"legal_name,omitempty"`
+	Headquarters     *string  `json:"headquarters,omitempty"`
+	Sector           *string  `json:"sector,omitempty"`
+	LinkedInURL      *string  `json:"linkedin_url,omitempty"`
+	TwitterHandle    *string  `json:"twitter_handle,omitempty"`
 }
 
 // CompanyServiceInterface defines the contract for company service

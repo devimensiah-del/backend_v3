@@ -987,7 +987,6 @@ func (s *Service) detectMissingFields(sub *submission.Submission) string {
 	return strings.Join(missing, "\n")
 }
 
-
 func (s *Service) cleanJsonBlock(content string) string {
 	content = strings.TrimSpace(content)
 	content = strings.TrimPrefix(content, "```json")
@@ -1315,7 +1314,7 @@ func (s *Service) runPreSearch(ctx context.Context, sub *submission.Submission) 
 		Model:        s.preSearchCfg.Model,
 		SystemPrompt: "You are a JSON-only Company Identification Expert. Always return valid JSON.",
 		Messages:     []llm.Message{{Role: "user", Content: prompt}},
-		Temperature:  0.3, // Lower temperature for more consistent identification
+		Temperature:  0.3,  // Lower temperature for more consistent identification
 		MaxTokens:    2000, // Smaller response for pre-search
 	}
 

@@ -275,7 +275,7 @@ func (e *ExampleEnrichmentIntegration) ExampleCaching(ctx context.Context) {
 	fetch2Time := time.Since(start)
 	log.Printf("Second fetch (cached): %.2fms\n", float64(fetch2Time.Milliseconds()))
 
-	log.Printf("Cache speedup: %.1fx\n", float64(fetch1Time) / float64(fetch2Time))
+	log.Printf("Cache speedup: %.1fx\n", float64(fetch1Time)/float64(fetch2Time))
 
 	// Force refresh
 	e.macroProvider.InvalidateCache()

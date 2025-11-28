@@ -307,7 +307,7 @@ func TestIntegration_JSONMap_SavesAndLoads(t *testing.T) {
 				"website":    "https://test.com",
 			},
 			"market_position": map[string]interface{}{
-				"sector":     "Technology",
+				"sector":      "Technology",
 				"competitors": []string{"Comp A", "Comp B"},
 			},
 		}

@@ -57,10 +57,10 @@ type Config struct {
 	SynthesisFallback string
 
 	// Shared settings
-	AITemperature         float64
-	MaxTokensEnrichment   int
-	MaxTokensAnalysis     int
-	MaxTokensSynthesis    int
+	AITemperature       float64
+	MaxTokensEnrichment int
+	MaxTokensAnalysis   int
+	MaxTokensSynthesis  int
 
 	// Framework-specific model configurations (auto-generated from simplified config)
 	Frameworks map[string]FrameworkConfig
@@ -116,16 +116,16 @@ func Load() (*Config, error) {
 		DBConnMaxLifetime: time.Duration(getEnvInt("DB_CONN_MAX_LIFETIME_MINUTES", 5)) * time.Minute,
 
 		// AI Configuration (6-Model Approach: PreSearch + Enrichment + Primary + Synthesis)
-		OpenRouterAPIKey:   getEnv("OPENAI_API_KEY", ""),
-		EnrichmentModel:    getEnv("AI_ENRICHMENT_MODEL", "google/gemini-2.5-flash"),        // Must support Google Search
-		EnrichmentFallback: getEnv("AI_ENRICHMENT_FALLBACK", "google/gemini-2.5-pro-preview"), // Fallback must also support search
-		PreSearchModel:     getEnv("AI_PRESEARCH_MODEL", "perplexity/sonar-pro"),            // Perplexity for company identification
-		PreSearchFallback:  getEnv("AI_PRESEARCH_FALLBACK", "perplexity/sonar"),             // Fallback Perplexity model
-		PrimaryModel:       getEnv("AI_PRIMARY_MODEL", "google/gemini-2.5-flash"),
-		PrimaryFallback:    getEnv("AI_PRIMARY_FALLBACK", "openai/gpt-4.1-mini"),
-		SynthesisModel:     getEnv("AI_SYNTHESIS_MODEL", "google/gemini-2.5-pro-preview"),
-		SynthesisFallback:  getEnv("AI_SYNTHESIS_FALLBACK", "openai/gpt-4.1"),
-		AITemperature:     getEnvFloat("AI_TEMPERATURE", 0.5),
+		OpenRouterAPIKey:    getEnv("OPENAI_API_KEY", ""),
+		EnrichmentModel:     getEnv("AI_ENRICHMENT_MODEL", "google/gemini-2.5-flash"),          // Must support Google Search
+		EnrichmentFallback:  getEnv("AI_ENRICHMENT_FALLBACK", "google/gemini-2.5-pro-preview"), // Fallback must also support search
+		PreSearchModel:      getEnv("AI_PRESEARCH_MODEL", "perplexity/sonar-pro"),              // Perplexity for company identification
+		PreSearchFallback:   getEnv("AI_PRESEARCH_FALLBACK", "perplexity/sonar"),               // Fallback Perplexity model
+		PrimaryModel:        getEnv("AI_PRIMARY_MODEL", "google/gemini-2.5-flash"),
+		PrimaryFallback:     getEnv("AI_PRIMARY_FALLBACK", "openai/gpt-4.1-mini"),
+		SynthesisModel:      getEnv("AI_SYNTHESIS_MODEL", "google/gemini-2.5-pro-preview"),
+		SynthesisFallback:   getEnv("AI_SYNTHESIS_FALLBACK", "openai/gpt-4.1"),
+		AITemperature:       getEnvFloat("AI_TEMPERATURE", 0.5),
 		MaxTokensEnrichment: getEnvInt("AI_MAX_TOKENS_ENRICHMENT", 10000),
 		MaxTokensAnalysis:   getEnvInt("AI_MAX_TOKENS_ANALYSIS", 4000),
 		MaxTokensSynthesis:  getEnvInt("AI_MAX_TOKENS_SYNTHESIS", 6000),
@@ -319,8 +319,8 @@ func loadFrameworkConfigs() map[string]FrameworkConfig {
 	configs := make(map[string]FrameworkConfig)
 
 	// Load 6-model configuration (PreSearch + Enrichment + Primary + Synthesis)
-	preSearchModel := getEnv("AI_PRESEARCH_MODEL", "perplexity/sonar-pro")      // Perplexity for company identification
-	preSearchFallback := getEnv("AI_PRESEARCH_FALLBACK", "perplexity/sonar")    // Fallback Perplexity model
+	preSearchModel := getEnv("AI_PRESEARCH_MODEL", "perplexity/sonar-pro")   // Perplexity for company identification
+	preSearchFallback := getEnv("AI_PRESEARCH_FALLBACK", "perplexity/sonar") // Fallback Perplexity model
 	enrichmentModel := getEnv("AI_ENRICHMENT_MODEL", "google/gemini-2.5-flash")
 	enrichmentFallback := getEnv("AI_ENRICHMENT_FALLBACK", "google/gemini-2.5-pro-preview")
 	primaryModel := getEnv("AI_PRIMARY_MODEL", "google/gemini-2.5-flash")
@@ -348,7 +348,7 @@ func loadFrameworkConfigs() map[string]FrameworkConfig {
 	// Runs BEFORE enrichment to solve company disambiguation (Virtus.br problem)
 	configs["presearch"] = FrameworkConfig{
 		Model:         preSearchModel,
-		Temperature:   0.3, // Lower temperature for consistent identification
+		Temperature:   0.3,  // Lower temperature for consistent identification
 		MaxTokens:     2000, // Smaller response for pre-search
 		FallbackModel: preSearchFallback,
 	}
@@ -363,10 +363,10 @@ func loadFrameworkConfigs() map[string]FrameworkConfig {
 
 	// All 11 Analysis Frameworks use Primary Model
 	analysisFrameworks := []string{
-		"pestel", "porter", "tam_sam_som",  // Layer 1: Environment
-		"swot", "benchmarking",              // Layer 2: Positioning
+		"pestel", "porter", "tam_sam_som", // Layer 1: Environment
+		"swot", "benchmarking", // Layer 2: Positioning
 		"blue_ocean", "growth_hacking", "scenarios", // Layer 3: Strategy
-		"okrs", "bsc", "decision_matrix",    // Layer 4: Execution
+		"okrs", "bsc", "decision_matrix", // Layer 4: Execution
 	}
 
 	for _, framework := range analysisFrameworks {

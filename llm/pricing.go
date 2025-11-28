@@ -18,26 +18,26 @@ var PricingTable = map[string]ModelPricing{
 	"google/gemini-flash-1.5":       {InputPerMillion: 0.075, OutputPerMillion: 0.30},
 
 	// Anthropic Claude models
-	"anthropic/claude-sonnet-4":       {InputPerMillion: 3.00, OutputPerMillion: 15.00},
-	"anthropic/claude-3.5-sonnet":     {InputPerMillion: 3.00, OutputPerMillion: 15.00},
-	"anthropic/claude-3-opus":         {InputPerMillion: 15.00, OutputPerMillion: 75.00},
-	"anthropic/claude-opus-4":         {InputPerMillion: 15.00, OutputPerMillion: 75.00},
-	"anthropic/claude-3-haiku":        {InputPerMillion: 0.25, OutputPerMillion: 1.25},
+	"anthropic/claude-sonnet-4":   {InputPerMillion: 3.00, OutputPerMillion: 15.00},
+	"anthropic/claude-3.5-sonnet": {InputPerMillion: 3.00, OutputPerMillion: 15.00},
+	"anthropic/claude-3-opus":     {InputPerMillion: 15.00, OutputPerMillion: 75.00},
+	"anthropic/claude-opus-4":     {InputPerMillion: 15.00, OutputPerMillion: 75.00},
+	"anthropic/claude-3-haiku":    {InputPerMillion: 0.25, OutputPerMillion: 1.25},
 
 	// OpenAI models
-	"openai/gpt-4o":          {InputPerMillion: 2.50, OutputPerMillion: 10.00},
-	"openai/gpt-4o-mini":     {InputPerMillion: 0.15, OutputPerMillion: 0.60},
-	"openai/gpt-4-turbo":     {InputPerMillion: 10.00, OutputPerMillion: 30.00},
-	"openai/gpt-4.1":         {InputPerMillion: 2.00, OutputPerMillion: 8.00},
-	"openai/gpt-4.1-mini":    {InputPerMillion: 0.40, OutputPerMillion: 1.60},
-	"openai/o1":              {InputPerMillion: 15.00, OutputPerMillion: 60.00},
-	"openai/o1-mini":         {InputPerMillion: 3.00, OutputPerMillion: 12.00},
+	"openai/gpt-4o":       {InputPerMillion: 2.50, OutputPerMillion: 10.00},
+	"openai/gpt-4o-mini":  {InputPerMillion: 0.15, OutputPerMillion: 0.60},
+	"openai/gpt-4-turbo":  {InputPerMillion: 10.00, OutputPerMillion: 30.00},
+	"openai/gpt-4.1":      {InputPerMillion: 2.00, OutputPerMillion: 8.00},
+	"openai/gpt-4.1-mini": {InputPerMillion: 0.40, OutputPerMillion: 1.60},
+	"openai/o1":           {InputPerMillion: 15.00, OutputPerMillion: 60.00},
+	"openai/o1-mini":      {InputPerMillion: 3.00, OutputPerMillion: 12.00},
 
 	// Perplexity models (for pre-search and enrichment)
-	"perplexity/sonar-pro":          {InputPerMillion: 3.00, OutputPerMillion: 15.00},
-	"perplexity/sonar-pro-search":   {InputPerMillion: 3.00, OutputPerMillion: 15.00}, // With search capability
-	"perplexity/sonar":              {InputPerMillion: 1.00, OutputPerMillion: 1.00},
-	"perplexity/sonar-reasoning":    {InputPerMillion: 1.00, OutputPerMillion: 5.00},
+	"perplexity/sonar-pro":        {InputPerMillion: 3.00, OutputPerMillion: 15.00},
+	"perplexity/sonar-pro-search": {InputPerMillion: 3.00, OutputPerMillion: 15.00}, // With search capability
+	"perplexity/sonar":            {InputPerMillion: 1.00, OutputPerMillion: 1.00},
+	"perplexity/sonar-reasoning":  {InputPerMillion: 1.00, OutputPerMillion: 5.00},
 
 	// Meta Llama models (cost-effective fallbacks)
 	"meta-llama/llama-3.3-70b-instruct": {InputPerMillion: 0.35, OutputPerMillion: 0.40},

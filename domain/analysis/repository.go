@@ -17,12 +17,12 @@ type Repository interface {
 	GetBySubmissionID(ctx context.Context, submissionID string) (*Analysis, error)
 	List(ctx context.Context, limit, offset int) ([]*Analysis, error)
 	Delete(ctx context.Context, id string) error
-	BeginTx(ctx context.Context) (*sqlx.Tx, error)                          // Begin transaction
-	SetVisibility(ctx context.Context, id string, visible bool) error       // Toggle user visibility
-	SetBlurStatus(ctx context.Context, id string, blurred bool) error      // Toggle blur status for premium frameworks
-	GetByAccessCode(ctx context.Context, code string) (*Analysis, error)    // Get by public access code
-	SetAccessCode(ctx context.Context, id string, code string) error        // Set access code
-	AccessCodeExists(ctx context.Context, code string) (bool, error)        // Check if code exists (for collision handling)
+	BeginTx(ctx context.Context) (*sqlx.Tx, error)                       // Begin transaction
+	SetVisibility(ctx context.Context, id string, visible bool) error    // Toggle user visibility
+	SetBlurStatus(ctx context.Context, id string, blurred bool) error    // Toggle blur status for premium frameworks
+	GetByAccessCode(ctx context.Context, code string) (*Analysis, error) // Get by public access code
+	SetAccessCode(ctx context.Context, id string, code string) error     // Set access code
+	AccessCodeExists(ctx context.Context, code string) (bool, error)     // Check if code exists (for collision handling)
 }
 
 // PostgresRepository implements Repository using PostgreSQL

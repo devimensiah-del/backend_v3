@@ -40,10 +40,10 @@ func NewService(repo Repository, submissionRepo submission.Repository, llmClient
 		submissionRepo: submissionRepo,
 		llmClient:      llmClient,
 		queueClient:    queueClient,
-		enrichmentCfg:  enrichmentCfg,  // Gemini with Google Search for synthesis
-		preSearchCfg:   preSearchCfg,   // Perplexity for company ID + technical context
-		macroProvider:  macroProvider,  // BCB/IBGE APIs for economic indicators (fallback)
-		macroService:   nil,            // Optional: set via SetMacroService for DB-first
+		enrichmentCfg:  enrichmentCfg, // Gemini with Google Search for synthesis
+		preSearchCfg:   preSearchCfg,  // Perplexity for company ID + technical context
+		macroProvider:  macroProvider, // BCB/IBGE APIs for economic indicators (fallback)
+		macroService:   nil,           // Optional: set via SetMacroService for DB-first
 	}
 }
 
@@ -204,23 +204,23 @@ func (s *Service) CopyEnrichment(ctx context.Context, sourceEnrichmentID, newSub
 	// Create new enrichment with copied data
 	now := time.Now()
 	newEnrichment := &Enrichment{
-		ID:            uuid.New(),
-		SubmissionID:  newSubmissionID,
-		CompanyID:     source.CompanyID, // Preserve company link
-		Status:        StatusCompleted,  // Completed status (no more approved)
-		Progress:      100,
-		CurrentStep:   NullableString("Copied from previous enrichment"),
-		IsLocked:      false,
-		SourcesStatus: source.SourcesStatus,
-		SourcesUsed:   source.SourcesUsed,
-		EnrichedData:  source.EnrichedData, // Copy the enriched data
-		StartedAt:     &now,
-		CompletedAt:   &now,
-		RetryCount:    0,
-		MaxRetries:    3,
+		ID:                  uuid.New(),
+		SubmissionID:        newSubmissionID,
+		CompanyID:           source.CompanyID, // Preserve company link
+		Status:              StatusCompleted,  // Completed status (no more approved)
+		Progress:            100,
+		CurrentStep:         NullableString("Copied from previous enrichment"),
+		IsLocked:            false,
+		SourcesStatus:       source.SourcesStatus,
+		SourcesUsed:         source.SourcesUsed,
+		EnrichedData:        source.EnrichedData, // Copy the enriched data
+		StartedAt:           &now,
+		CompletedAt:         &now,
+		RetryCount:          0,
+		MaxRetries:          3,
 		AutoTriggerAnalysis: false,
-		CreatedAt:     now,
-		UpdatedAt:     now,
+		CreatedAt:           now,
+		UpdatedAt:           now,
 	}
 
 	if err := s.repo.Create(ctx, newEnrichment); err != nil {

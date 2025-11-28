@@ -40,12 +40,12 @@ func (m *MockAsynqClient) Close() error {
 
 func TestService_SubmitForm(t *testing.T) {
 	tests := []struct {
-		name             string
-		request          *submission.SubmitRequest
-		repoMockSetup    func(*MockRepository)
-		wantErr          bool
-		errContains      string
-		assertQueue      func(*testing.T, *MockAsynqClient)
+		name          string
+		request       *submission.SubmitRequest
+		repoMockSetup func(*MockRepository)
+		wantErr       bool
+		errContains   string
+		assertQueue   func(*testing.T, *MockAsynqClient)
 	}{
 		{
 			name: "success - saves submission with provided CNPJ",

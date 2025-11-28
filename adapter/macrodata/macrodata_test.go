@@ -304,8 +304,8 @@ func TestMacroDataProvider_Caching(t *testing.T) {
 // TestParseIBGEPeriod tests date parsing
 func TestParseIBGEPeriod(t *testing.T) {
 	tests := []struct {
-		period   string
-		wantYear int
+		period    string
+		wantYear  int
 		wantMonth time.Month
 	}{
 		{"202411", 2024, time.November},

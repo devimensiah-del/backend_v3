@@ -21,11 +21,11 @@ type BCBSELICResponse []struct {
 
 // SELICData holds the latest SELIC rate information
 type SELICData struct {
-	Rate      float64   `json:"rate"`
-	Date      time.Time `json:"date"`
-	Source    string    `json:"source"`
-	Accuracy  string    `json:"accuracy"` // "Authoritative" - official government API
-	RawDate   string    `json:"raw_date"`  // For debugging
+	Rate     float64   `json:"rate"`
+	Date     time.Time `json:"date"`
+	Source   string    `json:"source"`
+	Accuracy string    `json:"accuracy"` // "Authoritative" - official government API
+	RawDate  string    `json:"raw_date"` // For debugging
 }
 
 // BCBClient handles Banco Central do Brasil API calls

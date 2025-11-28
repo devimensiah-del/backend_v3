@@ -460,7 +460,7 @@ func TestIntegration_Upsert_UpdatesExisting(t *testing.T) {
 		// Upsert with updated data (same submission_id)
 		rep2 := &report.Report{
 			ID:                  uuid.New().String(), // Different ID
-			SubmissionID:        subID,              // Same submission
+			SubmissionID:        subID,               // Same submission
 			AnalysisID:          analysisID,
 			Status:              "completed",
 			PDFGenerationStatus: "completed",

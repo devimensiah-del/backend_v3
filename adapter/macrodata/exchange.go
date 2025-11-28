@@ -286,4 +286,3 @@ func CurrencyPairValidator(from, to string) error {
 
 	return nil
 }
-

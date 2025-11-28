@@ -594,8 +594,8 @@ func main() {
 		enrichSvc,
 		analysisSvc,
 		reportSvc,
-		macroSvc,    // Macroeconomics service for admin endpoints
-		companySvc,  // Company service for re-enrich/re-analyze workflows
+		macroSvc,   // Macroeconomics service for admin endpoints
+		companySvc, // Company service for re-enrich/re-analyze workflows
 	)
 
 	srv := &http.Server{

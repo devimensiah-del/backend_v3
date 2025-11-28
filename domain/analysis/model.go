@@ -307,11 +307,11 @@ type TamSamSomScenarios struct {
 
 // LegalFeasibility assesses juridical risk for a recommendation
 type LegalFeasibility struct {
-	RiskLevel              string   `json:"risk_level"`                         // "Baixo" | "Médio" | "Alto" | "Crítico"
-	RequiresStatutoryChange bool    `json:"requires_statutory_change"`          // Needs assembly/statute changes
-	RequiresLegalOpinion   bool     `json:"requires_legal_opinion"`             // Should get legal counsel
-	RegulatoryDependencies []string `json:"regulatory_dependencies,omitempty"`  // Required licenses/approvals
-	MitigationPlan         string   `json:"mitigation_plan,omitempty"`          // Risk mitigation strategy
+	RiskLevel               string   `json:"risk_level"`                        // "Baixo" | "Médio" | "Alto" | "Crítico"
+	RequiresStatutoryChange bool     `json:"requires_statutory_change"`         // Needs assembly/statute changes
+	RequiresLegalOpinion    bool     `json:"requires_legal_opinion"`            // Should get legal counsel
+	RegulatoryDependencies  []string `json:"regulatory_dependencies,omitempty"` // Required licenses/approvals
+	MitigationPlan          string   `json:"mitigation_plan,omitempty"`         // Risk mitigation strategy
 }
 
 // PriorityRecommendation represents a prioritized strategic recommendation
