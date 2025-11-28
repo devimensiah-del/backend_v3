@@ -8,24 +8,27 @@ import (
 )
 
 // Status constants for Analysis
-// Flow: pending → completed → approved → sent
-// - pending: Initial state, waiting for worker or worker is processing
+// Flow: pending → processing → completed/failed
+// - pending: Queued, waiting for worker
+// - processing: Worker is actively running analysis
 // - completed: Worker finished analysis successfully
-// - approved: Admin approved, PDF generated
-// - sent: Made available to user
+// - failed: Worker encountered an error
 type Status string
 
 const (
-	StatusPending   Status = "pending"   // Initial state, waiting for worker (or worker processing)
-	StatusCompleted Status = "completed" // Worker finished analysis successfully
-	StatusApproved  Status = "approved"  // Admin approved, PDF generated
-	StatusSent      Status = "sent"      // Made available to user
+	StatusPending    Status = "pending"    // Queued, waiting for worker
+	StatusProcessing Status = "processing" // Worker is actively running analysis
+	StatusCompleted  Status = "completed"  // Worker finished analysis successfully
+	StatusFailed     Status = "failed"     // Worker encountered an error
 )
 
 type Analysis struct {
-	ID               string     `db:"id" json:"id"`
-	SubmissionID     string     `db:"submission_id" json:"submission_id"`
-	EnrichmentID     string     `db:"enrichment_id" json:"enrichment_id"`
+	ID           string  `db:"id" json:"id"`
+	SubmissionID string  `db:"submission_id" json:"submission_id"`
+	CompanyID    *string `db:"company_id" json:"company_id,omitempty"` // Direct link to company (migration 026)
+	EnrichmentID string  `db:"enrichment_id" json:"enrichment_id"`
+
+	// Status and processing
 	Status           string     `db:"status" json:"status"`
 	ErrorMessage     *string    `db:"error_message" json:"error_message,omitempty"` // Error details if analysis failed
 	ProcessingTimeMs int64      `db:"processing_time_ms" json:"processing_time_ms"`
@@ -33,14 +36,11 @@ type Analysis struct {
 	UpdatedAt        time.Time  `db:"updated_at" json:"updated_at"`
 	CompletedAt      *time.Time `db:"completed_at" json:"completed_at"`
 
-	// Approval and Send tracking
-	ApprovedAt *time.Time `db:"approved_at" json:"approved_at,omitempty"`
-	ApprovedBy *string    `db:"approved_by" json:"approved_by,omitempty"` // UUID of user who approved
-	SentAt     *time.Time `db:"sent_at" json:"sent_at,omitempty"`
-	SentTo     *string    `db:"sent_to" json:"sent_to,omitempty"` // Email address report was sent to
+	// PDF storage (moved from reports table - migration 028)
+	PdfUrl         *string    `db:"pdf_url" json:"pdf_url,omitempty"`
+	PdfGeneratedAt *time.Time `db:"pdf_generated_at" json:"pdf_generated_at,omitempty"`
 
 	// Visibility control - Admin must explicitly make analysis visible to user
-	// Even after approval and PDF generation, analysis is NOT visible until toggled
 	IsVisibleToUser bool `db:"is_visible_to_user" json:"is_visible_to_user"`
 
 	// Blur control - When true, premium frameworks are blurred for users
@@ -165,6 +165,32 @@ type MonthlyOKR struct {
 	AlignedRecommendation string   `json:"aligned_recommendation"` // Links to Decision Matrix recommendation
 }
 
+// CapacityRequirements defines resource requirements for an execution phase
+type CapacityRequirements struct {
+	Team         string   `json:"team"`          // e.g., "5-10 pessoas"
+	SkillsNeeded []string `json:"skills_needed"` // Required capabilities
+	Dependencies []string `json:"dependencies"`  // External dependencies (partners, approvals)
+}
+
+// ExecutionPhase represents a phase in the phased execution model (Foundation/Validation/Scale)
+type ExecutionPhase struct {
+	Duration             string                `json:"duration"`                        // e.g., "Meses 1-3"
+	Focus                string                `json:"focus"`                           // e.g., "Estruturação"
+	Prerequisites        []string              `json:"prerequisites,omitempty"`         // What must be completed first
+	Objectives           []string              `json:"objectives"`                      // Phase objectives
+	KeyResults           []string              `json:"key_results"`                     // Measurable results
+	InvestmentRange      string                `json:"investment_range"`                // e.g., "R$ 50-100k"
+	CapacityRequirements *CapacityRequirements `json:"capacity_requirements,omitempty"` // Resource needs
+}
+
+// CapacityAssessment evaluates organizational readiness for execution
+type CapacityAssessment struct {
+	TeamReadiness        string   `json:"team_readiness"`        // "Alta" | "Média" | "Baixa"
+	BudgetAdequacy       string   `json:"budget_adequacy"`       // "Suficiente" | "Limitado" | "Insuficiente"
+	StakeholderAlignment string   `json:"stakeholder_alignment"` // "Alinhado" | "Parcial" | "Resistência"
+	Blockers             []string `json:"blockers,omitempty"`    // Identified blockers
+}
+
 type OKRAnalysis struct {
 	// V2: 90-Day Plan format with monthly milestones (preferred)
 	Plan90Days      []MonthlyOKR `json:"plan_90_days,omitempty"` // Monthly OKR structure (Mês 1, 2, 3)
@@ -174,6 +200,11 @@ type OKRAnalysis struct {
 	// V1 Legacy: Quarterly format (for backwards compatibility)
 	// When reading existing data, check if Quarters has data; if Plan90Days is empty, use Quarters
 	Quarters []QuarterlyOKR `json:"quarters,omitempty"` // Quarterly OKR structure (Q1, Q2, Q3)
+
+	// V3: Phased execution model (NeoGovernança realism enhancement)
+	// 3-phase structure: Foundation (1-3mo) → Validation (4-6mo) → Scale (7-12mo)
+	ExecutionPhases    map[string]*ExecutionPhase `json:"execution_phases,omitempty"`    // "foundation", "validation", "scale"
+	CapacityAssessment *CapacityAssessment        `json:"capacity_assessment,omitempty"` // Organizational readiness
 
 	Summary string `json:"summary"`
 }
@@ -244,6 +275,12 @@ type TamSamSomAnalysis struct {
 	// Caveat for low confidence estimates
 	CaveatMessage string `json:"caveat_message,omitempty"` // Warning if confidence < 50
 
+	// V3: 3-tier scenario modeling (NeoGovernança realism enhancement)
+	TamScenarios           *TamSamSomScenarios `json:"tam_scenarios,omitempty"`
+	SamScenarios           *TamSamSomScenarios `json:"sam_scenarios,omitempty"`
+	SomScenarios           *TamSamSomScenarios `json:"som_scenarios,omitempty"`
+	BaselineRecommendation string              `json:"baseline_recommendation,omitempty"` // "conservative" | "realistic"
+
 	Summary string `json:"summary"`
 }
 
@@ -254,6 +291,29 @@ type DataSourcesUsed struct {
 	BenchmarkExtrapolations []string `json:"benchmark_extrapolations,omitempty"` // Industry benchmarks applied
 }
 
+// ScenarioEstimate represents a single scenario (conservative/realistic/optimistic)
+type ScenarioEstimate struct {
+	ValueRange  string `json:"value_range"`            // e.g., "R$ 500k-2M"
+	MarketShare string `json:"market_share,omitempty"` // e.g., "2-5%"
+	Probability int    `json:"probability"`            // 20, 30, 50
+}
+
+// TamSamSomScenarios represents 3-tier scenario modeling for market estimates
+type TamSamSomScenarios struct {
+	Conservative ScenarioEstimate `json:"conservative"` // Pessimistic: execution challenges
+	Realistic    ScenarioEstimate `json:"realistic"`    // Moderate: good execution
+	Optimistic   ScenarioEstimate `json:"optimistic"`   // Favorable: exceptional positioning
+}
+
+// LegalFeasibility assesses juridical risk for a recommendation
+type LegalFeasibility struct {
+	RiskLevel              string   `json:"risk_level"`                         // "Baixo" | "Médio" | "Alto" | "Crítico"
+	RequiresStatutoryChange bool    `json:"requires_statutory_change"`          // Needs assembly/statute changes
+	RequiresLegalOpinion   bool     `json:"requires_legal_opinion"`             // Should get legal counsel
+	RegulatoryDependencies []string `json:"regulatory_dependencies,omitempty"`  // Required licenses/approvals
+	MitigationPlan         string   `json:"mitigation_plan,omitempty"`          // Risk mitigation strategy
+}
+
 // PriorityRecommendation represents a prioritized strategic recommendation
 type PriorityRecommendation struct {
 	Priority    int    `json:"priority"`    // 1, 2, 3 (ordered by priority)
@@ -261,6 +321,9 @@ type PriorityRecommendation struct {
 	Description string `json:"description"` // Detailed description
 	Timeline    string `json:"timeline"`    // Expected duration (e.g., "9-12 meses")
 	Budget      string `json:"budget"`      // Budget estimate (e.g., "R$150-250k")
+
+	// V3: Legal feasibility assessment (NeoGovernança realism enhancement)
+	LegalFeasibility *LegalFeasibility `json:"legal_feasibility,omitempty"`
 }
 
 // ReviewCycle defines the review and monitoring cadence
@@ -285,6 +348,15 @@ type DecisionMatrixAnalysis struct {
 	Summary string `json:"summary"`
 }
 
+// ConsistencyValidation checks alignment across analysis frameworks
+type ConsistencyValidation struct {
+	FinancialAlignment  bool     `json:"financial_alignment"`   // OKRs achievable with conservative SOM?
+	CapacityAlignment   bool     `json:"capacity_alignment"`    // Team/resources support the plan?
+	LegalAlignment      bool     `json:"legal_alignment"`       // High-risk items have mitigation?
+	OverallRealismScore int      `json:"overall_realism_score"` // 1-10 realism rating
+	Flags               []string `json:"flags,omitempty"`       // Inconsistencies or warnings
+}
+
 type AnalysisSynthesis struct {
 	ExecutiveSummary string `json:"executive_summary"`
 
@@ -297,6 +369,9 @@ type AnalysisSynthesis struct {
 	StrategicPriorities   []string `json:"strategic_priorities"`
 	Roadmap               []string `json:"roadmap"`
 	OverallRecommendation string   `json:"overall_recommendation"`
+
+	// V3: Cross-framework consistency validation (NeoGovernança realism enhancement)
+	ConsistencyValidation *ConsistencyValidation `json:"consistency_validation,omitempty"`
 }
 
 // ContextContainer used during processing
@@ -320,11 +395,13 @@ type ContextContainer struct {
 
 // Status management methods for Analysis
 
+// Start marks the analysis as processing (worker started)
 func (a *Analysis) Start() {
-	// Keep status as pending, just update timestamp
+	a.Status = string(StatusProcessing)
 	a.UpdatedAt = time.Now()
 }
 
+// Complete marks the analysis as successfully completed
 func (a *Analysis) Complete() {
 	a.Status = string(StatusCompleted)
 	n := time.Now()
@@ -332,26 +409,52 @@ func (a *Analysis) Complete() {
 	a.UpdatedAt = n
 }
 
-func (a *Analysis) Approve(approvedBy *string) {
-	a.Status = string(StatusApproved)
-	now := time.Now()
-	a.ApprovedAt = &now
-	a.ApprovedBy = approvedBy
-	a.UpdatedAt = now
-}
-
-func (a *Analysis) Send(sentTo *string) {
-	a.Status = string(StatusSent)
-	now := time.Now()
-	a.SentAt = &now
-	a.SentTo = sentTo
-	a.UpdatedAt = now
-}
-
+// Fail marks the analysis as failed with an error message
 func (a *Analysis) Fail(errorMsg string) {
-	// Keep status as pending, set error_message
+	a.Status = string(StatusFailed)
 	a.ErrorMessage = &errorMsg
 	a.UpdatedAt = time.Now()
+}
+
+// SetPdf records the PDF URL and generation timestamp
+func (a *Analysis) SetPdf(pdfUrl string) {
+	a.PdfUrl = &pdfUrl
+	now := time.Now()
+	a.PdfGeneratedAt = &now
+	a.UpdatedAt = now
+}
+
+// MakeVisible makes the analysis visible to the user
+func (a *Analysis) MakeVisible() {
+	a.IsVisibleToUser = true
+	a.UpdatedAt = time.Now()
+}
+
+// MakeInvisible hides the analysis from the user
+func (a *Analysis) MakeInvisible() {
+	a.IsVisibleToUser = false
+	a.UpdatedAt = time.Now()
+}
+
+// SetBlurred enables premium content blurring
+func (a *Analysis) SetBlurred(blurred bool) {
+	a.IsBlurred = blurred
+	a.UpdatedAt = time.Now()
+}
+
+// HasPdf returns true if a PDF has been generated
+func (a *Analysis) HasPdf() bool {
+	return a.PdfUrl != nil && *a.PdfUrl != ""
+}
+
+// IsCompleted returns true if analysis completed successfully
+func (a *Analysis) IsCompleted() bool {
+	return a.Status == string(StatusCompleted)
+}
+
+// IsFailed returns true if analysis failed
+func (a *Analysis) IsFailed() bool {
+	return a.Status == string(StatusFailed)
 }
 
 // ============================================

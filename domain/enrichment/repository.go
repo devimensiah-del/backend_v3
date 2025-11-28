@@ -16,6 +16,7 @@ type Repository interface {
 	Create(ctx context.Context, e *Enrichment) error
 	GetByID(ctx context.Context, id uuid.UUID) (*Enrichment, error)
 	GetBySubmissionID(ctx context.Context, submissionID uuid.UUID) (*Enrichment, error)
+	GetByCompanyID(ctx context.Context, companyID uuid.UUID) (*Enrichment, error)
 	// UpdateSystem updates enrichment ONLY if it is NOT locked by a user (used by Worker)
 	UpdateSystem(ctx context.Context, e *Enrichment) error
 	// UpdateUser updates enrichment and LOCKS it (used by API)
@@ -39,13 +40,13 @@ func (r *PostgresRepository) Create(ctx context.Context, e *Enrichment) error {
 	// sqlx automatically calls .Value() on JSONMap fields
 	query := `
 		INSERT INTO enrichments (
-			id, submission_id, status, progress, current_step, is_locked,
+			id, submission_id, company_id, status, progress, current_step, is_locked,
 			sources_status, sources_used, data, started_at, completed_at,
-			error_message, retry_count, max_retries, created_at, updated_at
+			error_message, retry_count, max_retries, auto_trigger_analysis, created_at, updated_at
 		) VALUES (
-			:id, :submission_id, :status, :progress, :current_step, :is_locked,
+			:id, :submission_id, :company_id, :status, :progress, :current_step, :is_locked,
 			:sources_status, :sources_used, :data, :started_at, :completed_at,
-			:error_message, :retry_count, :max_retries, :created_at, :updated_at
+			:error_message, :retry_count, :max_retries, :auto_trigger_analysis, :created_at, :updated_at
 		)
 	`
 
@@ -60,30 +61,22 @@ func (r *PostgresRepository) Create(ctx context.Context, e *Enrichment) error {
 // enrichmentColumns lists all columns the Enrichment struct expects
 // This avoids SELECT * which fails if DB has extra columns
 const enrichmentColumns = `
-	id, submission_id, status, progress, current_step, is_locked,
+	id, submission_id, company_id, status, progress, current_step, is_locked,
 	sources_status, sources_used, data, started_at, completed_at,
-	error_message, retry_count, max_retries, created_at, updated_at
+	error_message, retry_count, max_retries, auto_trigger_analysis, created_at, updated_at
 `
 
 // GetByID retrieves an enrichment by ID
 func (r *PostgresRepository) GetByID(ctx context.Context, id uuid.UUID) (*Enrichment, error) {
 	query := `SELECT ` + enrichmentColumns + ` FROM enrichments WHERE id = $1`
 
-	fmt.Printf("[DEBUG] GetByID: querying for id=%s\n", id.String())
-
 	var e Enrichment
-	// sqlx automatically calls .Scan() on JSONMap fields
 	if err := r.db.GetContext(ctx, &e, query, id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			fmt.Printf("[DEBUG] GetByID: no rows found for id=%s\n", id.String())
 			return nil, fmt.Errorf("enrichment not found")
 		}
-		fmt.Printf("[DEBUG] GetByID: query failed with error: %v\n", err)
 		return nil, fmt.Errorf("failed to get enrichment: %w", err)
 	}
-
-	fmt.Printf("[DEBUG] GetByID: found enrichment id=%s, status=%s, data_size=%d\n",
-		e.ID.String(), e.Status, len(e.EnrichedData))
 
 	return &e, nil
 }
@@ -97,20 +90,34 @@ func (r *PostgresRepository) GetBySubmissionID(ctx context.Context, submissionID
 		LIMIT 1
 	`
 
-	fmt.Printf("[DEBUG] GetBySubmissionID: querying for submission_id=%s\n", submissionID.String())
-
 	var e Enrichment
 	if err := r.db.GetContext(ctx, &e, query, submissionID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			fmt.Printf("[DEBUG] GetBySubmissionID: no rows found for submission_id=%s\n", submissionID.String())
 			return nil, fmt.Errorf("enrichment not found")
 		}
-		fmt.Printf("[DEBUG] GetBySubmissionID: query failed with error: %v\n", err)
 		return nil, fmt.Errorf("failed to get enrichment: %w", err)
 	}
 
-	fmt.Printf("[DEBUG] GetBySubmissionID: found enrichment id=%s, status=%s, data_size=%d\n",
-		e.ID.String(), e.Status, len(e.EnrichedData))
+	return &e, nil
+}
+
+// GetByCompanyID retrieves the latest enrichment for a company
+// Returns the most recent enrichment linked directly to the company
+func (r *PostgresRepository) GetByCompanyID(ctx context.Context, companyID uuid.UUID) (*Enrichment, error) {
+	query := `
+		SELECT ` + enrichmentColumns + ` FROM enrichments
+		WHERE company_id = $1
+		ORDER BY created_at DESC
+		LIMIT 1
+	`
+
+	var e Enrichment
+	if err := r.db.GetContext(ctx, &e, query, companyID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("enrichment not found for company")
+		}
+		return nil, fmt.Errorf("failed to get enrichment by company: %w", err)
+	}
 
 	return &e, nil
 }
@@ -120,9 +127,6 @@ func (r *PostgresRepository) GetBySubmissionID(ctx context.Context, submissionID
 // CRITICAL: The AND is_locked = FALSE clause prevents the worker from overwriting user edits
 func (r *PostgresRepository) UpdateSystem(ctx context.Context, e *Enrichment) error {
 	e.UpdatedAt = time.Now()
-
-	fmt.Printf("[DEBUG] UpdateSystem: id=%s, status=%s, progress=%d, is_locked=%v, data_size=%d\n",
-		e.ID.String(), e.Status, e.Progress, e.IsLocked, len(e.EnrichedData))
 
 	query := `
 		UPDATE enrichments SET
@@ -143,7 +147,6 @@ func (r *PostgresRepository) UpdateSystem(ctx context.Context, e *Enrichment) er
 
 	result, err := r.db.NamedExecContext(ctx, query, e)
 	if err != nil {
-		fmt.Printf("[DEBUG] UpdateSystem: SQL error: %v\n", err)
 		return fmt.Errorf("failed to update enrichment: %w", err)
 	}
 
@@ -153,20 +156,8 @@ func (r *PostgresRepository) UpdateSystem(ctx context.Context, e *Enrichment) er
 		return fmt.Errorf("failed to get rows affected: %w", err)
 	}
 
-	fmt.Printf("[DEBUG] UpdateSystem: rows affected=%d for id=%s\n", rows, e.ID.String())
-
 	// If 0 rows affected, enrichment is locked by user OR not found
 	if rows == 0 {
-		// Check actual state in DB for debugging
-		var dbLocked bool
-		var dbID string
-		checkQuery := `SELECT id, is_locked FROM enrichments WHERE id = $1`
-		checkErr := r.db.QueryRowContext(ctx, checkQuery, e.ID).Scan(&dbID, &dbLocked)
-		if checkErr != nil {
-			fmt.Printf("[DEBUG] UpdateSystem: check query failed: %v\n", checkErr)
-		} else {
-			fmt.Printf("[DEBUG] UpdateSystem: DB state - id=%s, is_locked=%v\n", dbID, dbLocked)
-		}
 		return fmt.Errorf("enrichment is locked by user or not found - cannot update (progress: %d%%)", e.Progress)
 	}
 
@@ -175,6 +166,7 @@ func (r *PostgresRepository) UpdateSystem(ctx context.Context, e *Enrichment) er
 
 // UpdateUser updates enrichment and LOCKS it
 // This is used by the API (User Dashboard)
+// Note: Cannot edit completed enrichments via this method (use admin override if needed)
 func (r *PostgresRepository) UpdateUser(ctx context.Context, e *Enrichment) error {
 	e.UpdatedAt = time.Now()
 	e.IsLocked = true // Force lock
@@ -186,7 +178,7 @@ func (r *PostgresRepository) UpdateUser(ctx context.Context, e *Enrichment) erro
 			is_locked = TRUE,
 			updated_at = :updated_at
 		WHERE id = :id
-		AND status != 'approved'
+		AND status != 'completed'
 	`
 
 	result, err := r.db.NamedExecContext(ctx, query, e)
@@ -200,6 +192,12 @@ func (r *PostgresRepository) UpdateUser(ctx context.Context, e *Enrichment) erro
 	}
 
 	if rows == 0 {
+		// Check if it exists but is completed
+		var status string
+		checkErr := r.db.QueryRowContext(ctx, `SELECT status FROM enrichments WHERE id = $1`, e.ID).Scan(&status)
+		if checkErr == nil && status == "completed" {
+			return fmt.Errorf("cannot edit completed enrichment - use admin endpoint to modify")
+		}
 		return fmt.Errorf("enrichment not found")
 	}
 
@@ -211,9 +209,6 @@ func (r *PostgresRepository) UpdateUser(ctx context.Context, e *Enrichment) erro
 func (r *PostgresRepository) ForceUpdateAndUnlock(ctx context.Context, e *Enrichment) error {
 	e.UpdatedAt = time.Now()
 	e.IsLocked = false // Force unlock
-
-	fmt.Printf("[DEBUG] ForceUpdateAndUnlock: id=%s, status=%s, progress=%d, data_size=%d\n",
-		e.ID.String(), e.Status, e.Progress, len(e.EnrichedData))
 
 	query := `
 		UPDATE enrichments SET
@@ -228,13 +223,13 @@ func (r *PostgresRepository) ForceUpdateAndUnlock(ctx context.Context, e *Enrich
 			error_message = :error_message,
 			retry_count = :retry_count,
 			is_locked = FALSE,
+			auto_trigger_analysis = :auto_trigger_analysis,
 			updated_at = :updated_at
 		WHERE id = :id
 	`
 
 	result, err := r.db.NamedExecContext(ctx, query, e)
 	if err != nil {
-		fmt.Printf("[DEBUG] ForceUpdateAndUnlock: SQL error: %v\n", err)
 		return fmt.Errorf("failed to force update enrichment: %w", err)
 	}
 
@@ -243,17 +238,7 @@ func (r *PostgresRepository) ForceUpdateAndUnlock(ctx context.Context, e *Enrich
 		return fmt.Errorf("failed to get rows affected: %w", err)
 	}
 
-	fmt.Printf("[DEBUG] ForceUpdateAndUnlock: rows affected=%d for id=%s\n", rows, e.ID.String())
-
 	if rows == 0 {
-		// Check if enrichment exists at all
-		var exists bool
-		checkErr := r.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM enrichments WHERE id = $1)`, e.ID).Scan(&exists)
-		if checkErr != nil {
-			fmt.Printf("[DEBUG] ForceUpdateAndUnlock: existence check failed: %v\n", checkErr)
-		} else {
-			fmt.Printf("[DEBUG] ForceUpdateAndUnlock: enrichment exists=%v for id=%s\n", exists, e.ID.String())
-		}
 		return fmt.Errorf("enrichment not found")
 	}
 

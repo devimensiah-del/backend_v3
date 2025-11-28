@@ -48,7 +48,7 @@ func TestCreateSetsReceivedStatus(t *testing.T) {
 		UpdatedAt:         time.Time{},
 	}
 
-	created, err := svc.Create(context.Background(), sub)
+	created, err := svc.Create(context.Background(), sub, nil)
 	if err != nil {
 		t.Fatalf("create failed: %v", err)
 	}

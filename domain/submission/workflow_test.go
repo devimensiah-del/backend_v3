@@ -144,7 +144,7 @@ func TestService_SubmitForm(t *testing.T) {
 			svc := submission.NewService(mockRepo, mockQueue)
 
 			// Execute
-			result, err := svc.SubmitForm(context.Background(), tt.request)
+			result, err := svc.SubmitForm(context.Background(), tt.request, nil)
 
 			// Verify
 			if tt.wantErr {

@@ -221,8 +221,9 @@ type MarketSignals struct {
 // =================================================================
 
 type Enrichment struct {
-	ID           uuid.UUID `json:"id" db:"id"`
-	SubmissionID uuid.UUID `json:"submissionId" db:"submission_id"`
+	ID           uuid.UUID  `json:"id" db:"id"`
+	SubmissionID uuid.UUID  `json:"submissionId" db:"submission_id"`
+	CompanyID    *uuid.UUID `json:"companyId,omitempty" db:"company_id"` // Direct link to company (migration 027)
 
 	Status      Status         `json:"status" db:"status"`
 	Progress    int            `json:"progress" db:"progress"`
@@ -241,18 +242,30 @@ type Enrichment struct {
 	RetryCount   int            `json:"retryCount" db:"retry_count"`
 	MaxRetries   int            `json:"maxRetries" db:"max_retries"`
 
+	// Auto-trigger analysis after completion (for "enrich and analyze" workflow)
+	AutoTriggerAnalysis bool `json:"autoTriggerAnalysis" db:"auto_trigger_analysis"`
+
 	CreatedAt time.Time `json:"createdAt" db:"created_at"`
 	UpdatedAt time.Time `json:"updatedAt" db:"updated_at"`
+
 }
 
+// Status constants for Enrichment
+// Flow: pending → completed/failed
+// - pending: Queued or worker processing
+// - completed: Worker finished enrichment successfully
+// - failed: Worker encountered an error
 type Status string
 
 const (
-	StatusPending   Status = "pending"   // Initial state, worker processing
+	StatusPending   Status = "pending"   // Queued or worker processing
 	StatusCompleted Status = "completed" // Worker finished enrichment successfully
-	StatusApproved  Status = "approved"  // Admin approved, ready for analysis
+	StatusFailed    Status = "failed"    // Worker encountered an error
 )
 
+// NewEnrichment creates a new enrichment for a submission
+// Note: CompanyID is not set by this constructor - use NewEnrichmentForCompany
+// or call SetCompanyID() after creation to link to a company record
 func NewEnrichment(submissionID uuid.UUID) *Enrichment {
 	now := time.Now()
 	return &Enrichment{
@@ -270,6 +283,15 @@ func NewEnrichment(submissionID uuid.UUID) *Enrichment {
 	}
 }
 
+// NewEnrichmentForCompany creates a new enrichment directly linked to a company
+// Used for re-enrichment workflows that bypass submissions
+func NewEnrichmentForCompany(companyID uuid.UUID, submissionID uuid.UUID) *Enrichment {
+	e := NewEnrichment(submissionID)
+	e.CompanyID = &companyID
+	return e
+}
+
+// Start marks the enrichment as started (worker began processing)
 func (e *Enrichment) Start() {
 	// Status stays "pending" while processing - only changes to "completed" when done
 	n := time.Now()
@@ -277,6 +299,7 @@ func (e *Enrichment) Start() {
 	e.UpdatedAt = n
 }
 
+// Finish marks the enrichment as successfully completed
 func (e *Enrichment) Finish() {
 	e.Status = StatusCompleted
 	n := time.Now()
@@ -286,15 +309,37 @@ func (e *Enrichment) Finish() {
 	e.UpdatedAt = n
 }
 
+// UpdateProgress updates the current step and progress percentage
 func (e *Enrichment) UpdateProgress(step string, pct int) {
 	e.CurrentStep = NullableString(step)
 	e.Progress = pct
 	e.UpdatedAt = time.Now()
 }
 
+// Fail marks the enrichment as failed with an error message
 func (e *Enrichment) Fail(err error) {
-	// Status stays "pending" on failure - error is stored in ErrorMessage
-	// Admin can retry or manually update
+	e.Status = StatusFailed
 	e.ErrorMessage = NullableString(err.Error())
+	e.UpdatedAt = time.Now()
+}
+
+// IsCompleted returns true if enrichment completed successfully
+func (e *Enrichment) IsCompleted() bool {
+	return e.Status == StatusCompleted
+}
+
+// IsFailed returns true if enrichment failed
+func (e *Enrichment) IsFailed() bool {
+	return e.Status == StatusFailed
+}
+
+// IsPending returns true if enrichment is pending or processing
+func (e *Enrichment) IsPending() bool {
+	return e.Status == StatusPending
+}
+
+// SetCompanyID sets the direct company link
+func (e *Enrichment) SetCompanyID(companyID uuid.UUID) {
+	e.CompanyID = &companyID
 	e.UpdatedAt = time.Now()
 }

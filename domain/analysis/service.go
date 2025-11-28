@@ -3,7 +3,6 @@ package analysis
 import (
 	"context"
 	"crypto/rand"
-	"encoding/json"
 	"fmt"
 	"math/big"
 
@@ -256,15 +255,9 @@ func (s *Service) UpdateFields(ctx context.Context, analysisID string, updateDat
 	}
 
 	// Only allow edits when AI has finished (status = "completed")
-	// Block edits during: pending (AI processing), approved, sent
-	if currentAnalysis.Status == string(StatusPending) {
+	// Block edits during: pending (AI processing)
+	if currentAnalysis.Status == string(StatusPending) || currentAnalysis.Status == string(StatusProcessing) {
 		return nil, fmt.Errorf("cannot edit analysis while AI is still processing")
-	}
-	if currentAnalysis.Status == string(StatusApproved) {
-		return nil, fmt.Errorf("cannot edit analysis after approval - PDF has been generated")
-	}
-	if currentAnalysis.Status == string(StatusSent) {
-		return nil, fmt.Errorf("cannot edit analysis after it has been sent to client")
 	}
 
 	// Apply edits to analysis
@@ -282,166 +275,8 @@ func (s *Service) UpdateFields(ctx context.Context, analysisID string, updateDat
 	return currentAnalysis, nil
 }
 
-// Approve changes status from "completed" → "approved" and triggers PDF generation
-func (s *Service) Approve(ctx context.Context, analysisID string) error {
-	// Get analysis
-	analysis, err := s.repo.GetByID(ctx, analysisID)
-	if err != nil {
-		return err
-	}
-
-	// Validate status is "completed"
-	if analysis.Status != string(StatusCompleted) {
-		return fmt.Errorf("analysis must be in 'completed' status to approve, current status: %s", analysis.Status)
-	}
-
-	// Update status to approved
-	analysis.Status = string(StatusApproved)
-
-	// Update via repository
-	if err := s.repo.Update(ctx, analysis); err != nil {
-		return fmt.Errorf("failed to update analysis status: %w", err)
-	}
-
-	s.logger.Info().
-		Str("analysis_id", analysisID).
-		Msg("Analysis approved")
-
-	// PDF DISABLED - TEMPORARY
-	// PDF generation has been temporarily disabled. To re-enable:
-	// 1. Uncomment the code block below
-	// 2. Re-enable frontend PDF UI components
-	/*
-	s.logger.Info().
-		Str("analysis_id", analysisID).
-		Msg("Triggering PDF generation")
-
-	// Enqueue PDF generation job
-	payload := map[string]string{
-		"submission_id": analysis.SubmissionID,
-		"analysis_id":   analysisID,
-	}
-
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		s.logger.Error().Err(err).Msg("Failed to marshal PDF job payload")
-		return fmt.Errorf("failed to create PDF job: %w", err)
-	}
-
-	task := asynq.NewTask("report", payloadBytes)
-	if _, err := s.queueClient.Enqueue(task); err != nil {
-		s.logger.Error().Err(err).Msg("Failed to enqueue PDF generation job")
-		return fmt.Errorf("failed to enqueue PDF job: %w", err)
-	}
-
-	s.logger.Info().
-		Str("analysis_id", analysisID).
-		Str("submission_id", analysis.SubmissionID).
-		Msg("PDF generation job enqueued successfully")
-	*/
-
-	return nil
-}
-
-// Send changes status from "approved" → "sent", records notification details, and triggers user notification
-func (s *Service) Send(ctx context.Context, analysisID string, userEmail string) error {
-	// Get analysis
-	analysis, err := s.repo.GetByID(ctx, analysisID)
-	if err != nil {
-		return err
-	}
-
-	// Validate status is "approved"
-	if analysis.Status != string(StatusApproved) {
-		return fmt.Errorf("analysis must be in 'approved' status to send, current status: %s", analysis.Status)
-	}
-
-	// Validate report exists with a PDF (best-effort guard)
-	if s.reportLookup != nil {
-		rep, repErr := s.reportLookup.GetBySubmissionID(ctx, analysis.SubmissionID)
-		if repErr != nil {
-			return fmt.Errorf("analysis approved but report not found: %w", repErr)
-		}
-		if rep.GetPDFURL() == "" {
-			return fmt.Errorf("analysis approved but PDF não está disponível ainda")
-		}
-	}
-
-	// Update status to sent
-	analysis.Status = string(StatusSent)
-	sentTo := userEmail
-	analysis.SentTo = &sentTo
-
-	// Update via repository
-	if err := s.repo.Update(ctx, analysis); err != nil {
-		return fmt.Errorf("failed to update analysis status: %w", err)
-	}
-
-	s.logger.Info().
-		Str("analysis_id", analysisID).
-		Str("sent_to", userEmail).
-		Msg("Analysis marked as sent, triggering user notification")
-
-	// Enqueue user notification job
-	notificationPayload := map[string]string{
-		"submission_id": analysis.SubmissionID,
-		"analysis_id":   analysisID,
-		"email":         userEmail,
-		"type":          "analysis_ready",
-	}
-
-	notificationBytes, err := json.Marshal(notificationPayload)
-	if err != nil {
-		s.logger.Error().Err(err).Msg("Failed to marshal notification payload")
-		// Don't fail the whole operation if notification fails - analysis is already marked as sent
-		return nil
-	}
-
-	notificationTask := asynq.NewTask("notification", notificationBytes)
-	if _, err := s.queueClient.Enqueue(notificationTask); err != nil {
-		s.logger.Error().Err(err).Msg("Failed to enqueue notification job")
-		// Don't fail the whole operation - analysis is already marked as sent
-	} else {
-		s.logger.Info().
-			Str("analysis_id", analysisID).
-			Str("email", userEmail).
-			Msg("User notification job enqueued successfully")
-	}
-
-	return nil
-}
-
-// ReopenForEditing reverts an approved analysis back to completed status
-// This allows admin to make further edits before re-approving
-func (s *Service) ReopenForEditing(ctx context.Context, analysisID string) (*Analysis, error) {
-	// Get analysis
-	analysis, err := s.repo.GetByID(ctx, analysisID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Only approved analyses can be reopened
-	if analysis.Status != string(StatusApproved) {
-		return nil, fmt.Errorf("only approved analyses can be reopened for editing, current status: %s", analysis.Status)
-	}
-
-	// Revert to completed status
-	analysis.Status = string(StatusCompleted)
-
-	// Update via repository
-	if err := s.repo.Update(ctx, analysis); err != nil {
-		return nil, fmt.Errorf("failed to reopen analysis: %w", err)
-	}
-
-	s.logger.Info().
-		Str("analysis_id", analysisID).
-		Msg("Analysis reopened for editing (approved → completed)")
-
-	return analysis, nil
-}
-
 // SetVisibility toggles user visibility for an analysis
-// Admin must explicitly make analysis visible after approval
+// Admin can make a completed analysis visible to the user
 func (s *Service) SetVisibility(ctx context.Context, analysisID string, visible bool) error {
 	// Get analysis first to validate state
 	analysis, err := s.repo.GetByID(ctx, analysisID)
@@ -449,10 +284,9 @@ func (s *Service) SetVisibility(ctx context.Context, analysisID string, visible 
 		return err
 	}
 
-	// Only allow visibility toggle on approved or sent analyses
-	// (analyses must have PDF generated before being visible)
-	if analysis.Status != string(StatusApproved) && analysis.Status != string(StatusSent) {
-		return fmt.Errorf("analysis must be approved before toggling visibility, current status: %s", analysis.Status)
+	// Only allow visibility toggle on completed analyses
+	if analysis.Status != string(StatusCompleted) {
+		return fmt.Errorf("analysis must be completed before toggling visibility, current status: %s", analysis.Status)
 	}
 
 	if err := s.repo.SetVisibility(ctx, analysisID, visible); err != nil {
@@ -526,15 +360,15 @@ func (s *Service) GetByAccessCode(ctx context.Context, code string) (*Analysis, 
 // GenerateAccessCode creates a unique 8-character access code for public sharing
 // Handles collisions by regenerating up to 5 times
 func (s *Service) GenerateAccessCode(ctx context.Context, analysisID string) (string, error) {
-	// Verify analysis exists and is in approved or sent status
+	// Verify analysis exists and is completed
 	analysis, err := s.repo.GetByID(ctx, analysisID)
 	if err != nil {
 		return "", err
 	}
 
-	// Only allow access code generation for approved or sent analyses
-	if analysis.Status != string(StatusApproved) && analysis.Status != string(StatusSent) {
-		return "", fmt.Errorf("analysis must be approved before generating access code, current status: %s", analysis.Status)
+	// Only allow access code generation for completed analyses
+	if analysis.Status != string(StatusCompleted) {
+		return "", fmt.Errorf("analysis must be completed before generating access code, current status: %s", analysis.Status)
 	}
 
 	const maxRetries = 5

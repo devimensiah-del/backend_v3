@@ -190,7 +190,7 @@ func (s *Service) startAnalysisRecord(ctx context.Context, subID, enrichID strin
 			Msg("startAnalysisRecord: Found existing analysis record")
 
 		switch existing.Status {
-		case string(StatusCompleted), string(StatusApproved), string(StatusSent):
+		case string(StatusCompleted):
 			// Allow re-running analysis by resetting the existing record
 			s.logger.Info().
 				Str("submission_id", subID).

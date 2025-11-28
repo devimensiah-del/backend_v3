@@ -44,14 +44,14 @@ func (r *PostgresRepository) Create(ctx context.Context, analysis *Analysis) err
 			id, submission_id, enrichment_id,
 			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
 			synthesis, status, error_message, processing_time_ms,
-			approved_at, approved_by, sent_at, sent_to, is_visible_to_user, is_blurred, access_code, access_code_created_at, deleted_at,
+			is_visible_to_user, is_blurred, access_code, access_code_created_at, deleted_at,
 			created_at, updated_at, completed_at
 		) VALUES (
 			$1, $2, $3,
 			$4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
 			$15, $16, $17, $18,
-			$19, $20, $21, $22, $23, $24, $25, $26, $27,
-			$28, $29, $30
+			$19, $20, $21, $22, $23,
+			$24, $25, $26
 		)
 	`
 
@@ -59,7 +59,7 @@ func (r *PostgresRepository) Create(ctx context.Context, analysis *Analysis) err
 		analysis.ID, analysis.SubmissionID, analysis.EnrichmentID,
 		analysis.SWOT, analysis.PESTEL, analysis.Porter, analysis.OKRs, analysis.TamSamSom, analysis.Benchmarking, analysis.BlueOcean, analysis.GrowthHacking, analysis.Scenarios, analysis.BSC, analysis.DecisionMatrix,
 		analysis.Synthesis, analysis.Status, analysis.ErrorMessage, analysis.ProcessingTimeMs,
-		analysis.ApprovedAt, analysis.ApprovedBy, analysis.SentAt, analysis.SentTo, analysis.IsVisibleToUser, analysis.IsBlurred, analysis.AccessCode, analysis.AccessCodeCreatedAt, analysis.DeletedAt,
+		analysis.IsVisibleToUser, analysis.IsBlurred, analysis.AccessCode, analysis.AccessCodeCreatedAt, analysis.DeletedAt,
 		analysis.CreatedAt, analysis.UpdatedAt, analysis.CompletedAt,
 	)
 	if err != nil {
@@ -89,27 +89,22 @@ func (r *PostgresRepository) Update(ctx context.Context, analysis *Analysis) err
 			status = $13,
 			error_message = $14,
 			processing_time_ms = $15,
-			approved_at = $16,
-			approved_by = $17,
-			sent_at = $18,
-			sent_to = $19,
-			is_visible_to_user = $20,
-			is_blurred = $21,
-			access_code = $22,
-			access_code_created_at = $23,
-			deleted_at = $24,
-			updated_at = $25,
-			completed_at = $26
-		WHERE id = $27
+			is_visible_to_user = $16,
+			is_blurred = $17,
+			access_code = $18,
+			access_code_created_at = $19,
+			deleted_at = $20,
+			updated_at = $21,
+			completed_at = $22
+		WHERE id = $23
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
 		analysis.SWOT, analysis.PESTEL, analysis.Porter, analysis.OKRs, analysis.TamSamSom,
 		analysis.Benchmarking, analysis.BlueOcean, analysis.GrowthHacking, analysis.Scenarios, analysis.BSC,
 		analysis.DecisionMatrix, analysis.Synthesis, analysis.Status, analysis.ErrorMessage, analysis.ProcessingTimeMs,
-		analysis.ApprovedAt, analysis.ApprovedBy, analysis.SentAt, analysis.SentTo, analysis.IsVisibleToUser,
-		analysis.IsBlurred, analysis.AccessCode, analysis.AccessCodeCreatedAt, analysis.DeletedAt,
-		analysis.UpdatedAt, analysis.CompletedAt, analysis.ID,
+		analysis.IsVisibleToUser, analysis.IsBlurred, analysis.AccessCode, analysis.AccessCodeCreatedAt,
+		analysis.DeletedAt, analysis.UpdatedAt, analysis.CompletedAt, analysis.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update analysis: %w", err)
@@ -147,27 +142,22 @@ func (r *PostgresRepository) UpdateWithTx(ctx context.Context, tx *sqlx.Tx, anal
 			status = $13,
 			error_message = $14,
 			processing_time_ms = $15,
-			approved_at = $16,
-			approved_by = $17,
-			sent_at = $18,
-			sent_to = $19,
-			is_visible_to_user = $20,
-			is_blurred = $21,
-			access_code = $22,
-			access_code_created_at = $23,
-			deleted_at = $24,
-			updated_at = $25,
-			completed_at = $26
-		WHERE id = $27
+			is_visible_to_user = $16,
+			is_blurred = $17,
+			access_code = $18,
+			access_code_created_at = $19,
+			deleted_at = $20,
+			updated_at = $21,
+			completed_at = $22
+		WHERE id = $23
 	`
 
 	result, err := tx.ExecContext(ctx, query,
 		analysis.SWOT, analysis.PESTEL, analysis.Porter, analysis.OKRs, analysis.TamSamSom,
 		analysis.Benchmarking, analysis.BlueOcean, analysis.GrowthHacking, analysis.Scenarios, analysis.BSC,
 		analysis.DecisionMatrix, analysis.Synthesis, analysis.Status, analysis.ErrorMessage, analysis.ProcessingTimeMs,
-		analysis.ApprovedAt, analysis.ApprovedBy, analysis.SentAt, analysis.SentTo, analysis.IsVisibleToUser,
-		analysis.IsBlurred, analysis.AccessCode, analysis.AccessCodeCreatedAt, analysis.DeletedAt,
-		analysis.UpdatedAt, analysis.CompletedAt, analysis.ID,
+		analysis.IsVisibleToUser, analysis.IsBlurred, analysis.AccessCode, analysis.AccessCodeCreatedAt,
+		analysis.DeletedAt, analysis.UpdatedAt, analysis.CompletedAt, analysis.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update analysis in transaction: %w", err)
@@ -201,7 +191,7 @@ func (r *PostgresRepository) GetByID(ctx context.Context, id string) (*Analysis,
 			id, submission_id, enrichment_id,
 			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
 			synthesis, status, error_message, processing_time_ms,
-			approved_at, approved_by, sent_at, sent_to, is_visible_to_user, is_blurred, access_code, access_code_created_at, deleted_at,
+			is_visible_to_user, is_blurred, access_code, access_code_created_at, deleted_at,
 			created_at, updated_at, completed_at
 		FROM analyses
 		WHERE id = $1 AND deleted_at IS NULL
@@ -226,7 +216,7 @@ func (r *PostgresRepository) GetBySubmissionID(ctx context.Context, submissionID
 			id, submission_id, enrichment_id,
 			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
 			synthesis, status, error_message, processing_time_ms,
-			approved_at, approved_by, sent_at, sent_to, is_visible_to_user, is_blurred, access_code, access_code_created_at, deleted_at,
+			is_visible_to_user, is_blurred, access_code, access_code_created_at, deleted_at,
 			created_at, updated_at, completed_at
 		FROM analyses
 		WHERE submission_id = $1 AND deleted_at IS NULL
@@ -252,7 +242,7 @@ func (r *PostgresRepository) List(ctx context.Context, limit, offset int) ([]*An
 			id, submission_id, enrichment_id,
 			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
 			synthesis, status, error_message, processing_time_ms,
-			approved_at, approved_by, sent_at, sent_to, is_visible_to_user, is_blurred, access_code, access_code_created_at, deleted_at,
+			is_visible_to_user, is_blurred, access_code, access_code_created_at, deleted_at,
 			created_at, updated_at, completed_at
 		FROM analyses
 		WHERE deleted_at IS NULL
@@ -343,7 +333,7 @@ func (r *PostgresRepository) GetByAccessCode(ctx context.Context, code string) (
 			id, submission_id, enrichment_id,
 			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
 			synthesis, status, error_message, processing_time_ms,
-			approved_at, approved_by, sent_at, sent_to, is_visible_to_user, is_blurred, access_code, access_code_created_at, deleted_at,
+			is_visible_to_user, is_blurred, access_code, access_code_created_at, deleted_at,
 			created_at, updated_at, completed_at
 		FROM analyses
 		WHERE access_code = $1 AND deleted_at IS NULL

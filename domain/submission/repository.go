@@ -149,23 +149,26 @@ func (r *PostgresRepository) GetEnrichmentStatus(ctx context.Context, submission
 // ReserveEnrichment inserts a placeholder enrichment row to guarantee one-per-submission semantics.
 // Returns true if a new row was created, false if it already existed.
 func (r *PostgresRepository) ReserveEnrichment(ctx context.Context, submissionID uuid.UUID) (bool, error) {
+	// Use RETURNING to confirm the insert and get the enrichment ID
 	query := `
-		INSERT INTO enrichments (submission_id)
-		VALUES ($1)
+		INSERT INTO enrichments (submission_id, status, progress, current_step, created_at, updated_at)
+		VALUES ($1, 'pending', 0, 'Queued', NOW(), NOW())
 		ON CONFLICT (submission_id) DO NOTHING
+		RETURNING id
 	`
 
-	result, err := r.db.ExecContext(ctx, query, submissionID)
+	var enrichmentID string
+	err := r.db.QueryRowContext(ctx, query, submissionID).Scan(&enrichmentID)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// ON CONFLICT triggered - enrichment already exists
+			return false, nil
+		}
 		return false, fmt.Errorf("failed to reserve enrichment: %w", err)
 	}
 
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("failed to get rows affected: %w", err)
-	}
-
-	return rows > 0, nil
+	// If we got an ID back, the insert succeeded
+	return true, nil
 }
 
 // List retrieves submissions with pagination and filtering

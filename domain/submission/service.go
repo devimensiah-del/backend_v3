@@ -13,11 +13,44 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// CompanyServiceInterface defines the contract for company service
+// Using an interface avoids import cycles
+type CompanyServiceInterface interface {
+	CreateFromSubmission(ctx context.Context, input CompanyCreateInput) error
+	IsVerifiedCNPJExists(ctx context.Context, cnpj string) (bool, error)
+}
+
+// CompanyCreateInput contains the data needed to create a company from a submission
+type CompanyCreateInput struct {
+	SubmissionID     uuid.UUID
+	CompanyName      string
+	CNPJ             *string
+	Website          *string
+	Industry         *string
+	CompanySize      *string
+	Location         *string
+	TargetMarket     *string
+	FundingStage     *string
+	AnnualRevenueMin *float64
+	AnnualRevenueMax *float64
+	LinkedInURL      *string
+	TwitterHandle    *string
+}
+
+// CreateOptions contains optional parameters for submission creation
+type CreateOptions struct {
+	IsAdmin bool // If true, bypasses verified CNPJ check
+}
+
+// ErrVerifiedCNPJExists indicates a submission was blocked due to a locked CNPJ
+var ErrVerifiedCNPJExists = fmt.Errorf("this CNPJ is registered to a verified company and cannot be used for new submissions")
+
 // Service holds the tools we need: a Database Repository and a Queue Client
 type Service struct {
 	repo                 Repository
 	queueClient          queueClient
 	revenuePerSubmission float64
+	companyService       CompanyServiceInterface
 }
 
 type queueClient interface {
@@ -34,8 +67,14 @@ func NewService(repo Repository, queueClient queueClient) *Service {
 	}
 }
 
+// SetCompanyService injects the company service (optional, for graceful degradation)
+func (s *Service) SetCompanyService(companySvc CompanyServiceInterface) {
+	s.companyService = companySvc
+}
+
 // Create creates a new submission
-func (s *Service) Create(ctx context.Context, sub *Submission) (*Submission, error) {
+// opts is optional; pass nil for default behavior (non-admin)
+func (s *Service) Create(ctx context.Context, sub *Submission, opts *CreateOptions) (*Submission, error) {
 	// Initialize ID and timestamps if not set
 	if sub.ID == uuid.Nil {
 		sub.ID = uuid.New()
@@ -50,6 +89,19 @@ func (s *Service) Create(ctx context.Context, sub *Submission) (*Submission, err
 		sub.Status = StatusReceived // Submission status always "received"
 	}
 
+	// Check if CNPJ is locked by a verified company (unless admin)
+	isAdmin := opts != nil && opts.IsAdmin
+	if !isAdmin && s.companyService != nil && sub.CNPJ != nil && *sub.CNPJ != "" {
+		exists, err := s.companyService.IsVerifiedCNPJExists(ctx, *sub.CNPJ)
+		if err != nil {
+			log.Warn().Err(err).Str("cnpj", *sub.CNPJ).Msg("Failed to check verified CNPJ - allowing submission")
+			// Graceful degradation: allow submission if check fails
+		} else if exists {
+			log.Info().Str("cnpj", *sub.CNPJ).Msg("Submission blocked: CNPJ belongs to verified company")
+			return nil, ErrVerifiedCNPJExists
+		}
+	}
+
 	// Validate
 	if err := sub.Validate(); err != nil {
 		return nil, err
@@ -61,6 +113,40 @@ func (s *Service) Create(ctx context.Context, sub *Submission) (*Submission, err
 	}
 
 	log.Info().Str("id", sub.ID.String()).Str("company", sub.CompanyName).Msg("submission created")
+
+	// Create company record (non-blocking, graceful degradation)
+	if s.companyService != nil {
+		go func() {
+			companyInput := CompanyCreateInput{
+				SubmissionID:     sub.ID,
+				CompanyName:      sub.CompanyName,
+				CNPJ:             sub.CNPJ,
+				Website:          sub.CompanyWebsite,
+				Industry:         sub.CompanyIndustry,
+				CompanySize:      sub.CompanySize,
+				Location:         sub.CompanyLocation,
+				TargetMarket:     sub.TargetMarket,
+				FundingStage:     sub.FundingStage,
+				AnnualRevenueMin: sub.AnnualRevenueMin,
+				AnnualRevenueMax: sub.AnnualRevenueMax,
+				LinkedInURL:      sub.LinkedInURL,
+				TwitterHandle:    sub.TwitterHandle,
+			}
+			if err := s.companyService.CreateFromSubmission(context.Background(), companyInput); err != nil {
+				log.Warn().
+					Err(err).
+					Str("submission_id", sub.ID.String()).
+					Str("company_name", sub.CompanyName).
+					Msg("Failed to create company record - submission continues without company")
+			} else {
+				log.Info().
+					Str("submission_id", sub.ID.String()).
+					Str("company_name", sub.CompanyName).
+					Msg("Company record created from submission")
+			}
+		}()
+	}
+
 	return sub, nil
 }
 
@@ -241,4 +327,74 @@ func loadRevenuePerSubmission() float64 {
 		return fallback
 	}
 	return parsed
+}
+
+// CreateFromCompanyInput contains the data needed to create a submission from company data
+// Used by admin re-enrich/re-analyze workflows
+type CreateFromCompanyInput struct {
+	CompanyID         uuid.UUID
+	CompanyName       string
+	CNPJ              *string
+	Website           *string
+	Industry          *string
+	CompanySize       *string
+	Location          *string
+	TargetMarket      *string
+	FundingStage      *string
+	AnnualRevenueMin  *float64
+	AnnualRevenueMax  *float64
+	LinkedInURL       *string
+	TwitterHandle     *string
+	BusinessChallenge string // From last submission
+	ContactName       string // From requesting user
+	ContactEmail      string // From requesting user
+	UserID            *uuid.UUID
+}
+
+// CreateFromCompany creates a submission populated from company data
+// Does NOT trigger enrichment automatically (caller controls workflow)
+// Does NOT create company record (company already exists)
+func (s *Service) CreateFromCompany(ctx context.Context, input CreateFromCompanyInput) (*Submission, error) {
+	now := time.Now()
+
+	sub := &Submission{
+		ID:                uuid.New(),
+		CompanyName:       input.CompanyName,
+		CNPJ:              input.CNPJ,
+		CompanyWebsite:    input.Website,
+		CompanyIndustry:   input.Industry,
+		CompanySize:       input.CompanySize,
+		CompanyLocation:   input.Location,
+		ContactName:       input.ContactName,
+		ContactEmail:      input.ContactEmail,
+		TargetMarket:      input.TargetMarket,
+		AnnualRevenueMin:  input.AnnualRevenueMin,
+		AnnualRevenueMax:  input.AnnualRevenueMax,
+		FundingStage:      input.FundingStage,
+		BusinessChallenge: input.BusinessChallenge,
+		LinkedInURL:       input.LinkedInURL,
+		TwitterHandle:     input.TwitterHandle,
+		UserID:            input.UserID,
+		Status:            StatusReceived,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+
+	// Validate
+	if err := sub.Validate(); err != nil {
+		return nil, fmt.Errorf("validation failed: %w", err)
+	}
+
+	// Create in repository (bypass company creation since company already exists)
+	if err := s.repo.Create(ctx, sub); err != nil {
+		return nil, fmt.Errorf("failed to save submission: %w", err)
+	}
+
+	log.Info().
+		Str("id", sub.ID.String()).
+		Str("company", sub.CompanyName).
+		Str("company_id", input.CompanyID.String()).
+		Msg("Submission created from company data (re-enrich/re-analyze workflow)")
+
+	return sub, nil
 }

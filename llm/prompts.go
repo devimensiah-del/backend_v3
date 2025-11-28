@@ -5,9 +5,6 @@ package llm
 // OPTIMIZED FOR: PDF Layout Constraints (16 Pages, No Scroll) & Strategic Density.
 
 const (
-	// PreSearchPrompt runs BEFORE enrichment using Perplexity to gather ALL external data
-	// This is the PRIMARY data gathering step - replaces DNS, scraper, and macrodata adapters
-	// Perplexity excels at real-time web search for: company identification, macro data, technical context
 	// CRITICAL: Output is fed into UnifiedEnrichmentPrompt as {{PRE_SEARCH_CONTEXT}}
 	PreSearchPrompt = `Você é um Agente de Inteligência de Mercado especializado em pesquisa corporativa e macroeconômica.
 Sua missão: Coletar TODOS os dados públicos disponíveis sobre a empresa e seu contexto de mercado.
@@ -16,7 +13,7 @@ DADOS DO USUÁRIO:
 Nome da Empresa: {{COMPANY_NAME}}
 {{USER_CONTEXT}}
 
---- TAREFA COMPLETA (3 PARTES) ---
+--- TAREFA COMPLETA (2 PARTES) ---
 
 ## PARTE 1: IDENTIFICAÇÃO CORPORATIVA
 O nome "{{COMPANY_NAME}}" pode corresponder a múltiplas empresas. BUSQUE ATIVAMENTE:
@@ -35,24 +32,7 @@ Dados a coletar:
 - Setor de atuação (CNAE)
 - Porte estimado (funcionários, faturamento)
 
-## PARTE 2: CONTEXTO MACROECONÔMICO BRASILEIRO (CRÍTICO)
-BUSQUE DADOS ATUALIZADOS sobre o ambiente econômico:
-- "Brasil taxa SELIC atual 2025" → interest_rate
-- "Brasil IPCA inflação acumulada 2025" → inflation_rate
-- "Brasil PIB crescimento 2024 2025" → gdp_growth
-- "dólar real cotação hoje" → exchange_rate
-- "Brasil desemprego taxa atual" → unemployment_rate
-- "Brasil reformas econômicas 2025" → recent_policy_changes
-
-Dados a coletar:
-- Taxa SELIC atual
-- Inflação IPCA
-- Crescimento PIB
-- Câmbio USD/BRL
-- Taxa de desemprego
-- Reformas e políticas recentes
-
-## PARTE 3: TENDÊNCIAS DO SETOR
+## PARTE 2: TENDÊNCIAS DO SETOR
 Baseado no setor identificado, BUSQUE:
 - "[Setor] mercado Brasil 2025 tendências"
 - "[Setor] principais players concorrentes Brasil"
@@ -89,26 +69,14 @@ Retorne JSON estrito (PT-BR):
     "funcionarios_estimativa": "10-50 / 50-200 / etc",
     "faturamento_estimativa": "R$ X - Y (se encontrado)"
   },
-  "macro_context": {
-    "economic_indicators": {
-      "country": "Brasil",
-      "gdp_growth": "+2.5% (2024) ou valor atual",
-      "inflation_rate": "IPCA X.XX% a.a.",
-      "interest_rate": "SELIC XX.XX% a.a.",
-      "exchange_rate": "USD/BRL X.XX",
-      "unemployment_rate": "X.X%",
-      "economic_outlook": "Síntese do cenário atual",
-      "recent_policy_changes": ["Reforma 1", "Política 2"]
-    },
-    "industry_context": {
-      "sector": "Setor da empresa",
-      "growth_rate": "+X% CAGR",
-      "market_size_estimate": "R$ XXB ou TAM estimado",
-      "key_players": ["Concorrente 1", "Concorrente 2", "Concorrente 3"],
-      "technology_trends": ["Trend 1", "Trend 2"],
-      "regulatory_changes": ["Regulação 1", "Lei 2"],
-      "barriers_to_entry": "Alta/Média/Baixa - descrição"
-    }
+  "industry_context": {
+    "sector": "Setor da empresa",
+    "growth_rate": "+X% CAGR",
+    "market_size_estimate": "R$ XXB ou TAM estimado",
+    "key_players": ["Concorrente 1", "Concorrente 2", "Concorrente 3"],
+    "technology_trends": ["Trend 1", "Trend 2"],
+    "regulatory_changes": ["Regulação 1", "Lei 2"],
+    "barriers_to_entry": "Alta/Média/Baixa - descrição"
   },
   "technical_validation": {
     "website_active": true,
@@ -143,16 +111,15 @@ INSTRUÇÕES CRÍTICAS PARA PRÉ-IDENTIFICAÇÃO:
 3. O QUE NOSSOS ROBÔS ENCONTRARAM (Dados Técnicos):
 {{TECHNICAL_CONTEXT}}
 
-4. CONTEXTO MACROECONÔMICO BRASILEIRO (OFICIAL - Banco Central + IBGE):
+4. CONTEXTO MACROECONÔMICO BRASILEIRO (APIs OFICIAIS BCB + IBGE):
 {{REAL_TIME_MACRO_DATA}}
 
-INSTRUÇÕES CRÍTICAS PARA DADOS MACRO:
-- Se os dados acima estiverem disponíveis e atualizados, use-os como fatos estabelecidos
-- Se dados macro faltarem, falharem, ou mostrarem "fetch failed" / "null" / "error":
-  1. BUSQUE ATIVAMENTE NA WEB: "Brasil SELIC taxa atual 2025", "Brasil IPCA inflação atual", "dólar real cotação hoje", "PIB Brasil crescimento 2024 2025"
-  2. Se a busca web retornar dados, use-os e cite a fonte em data_sources
-  3. Se a busca também falhar, retorne null para o campo (NÃO use placeholders como "⚠️ DATO_MACRO_DESATUALIZADO")
-- Priorize dados oficiais: BCB, IBGE, Valor Econômico, InfoMoney
+INSTRUÇÕES CRÍTICAS PARA DADOS MACRO (OBRIGATÓRIO):
+- Os dados acima foram obtidos diretamente das APIs oficiais do Banco Central do Brasil (BCB) e IBGE
+- USE ESTES VALORES EXATOS para SELIC, IPCA e câmbio USD/BRL - NÃO PESQUISE NOVOS VALORES
+- Estes são dados autoritativos de alta confiança (100%) - cite a fonte oficial em suas análises
+- APENAS se os dados estiverem marcados como "Indisponível", então busque na web como fallback
+- Para outros indicadores não incluídos (PIB, desemprego, etc.), você pode buscar na web
 
 5. O QUE FALTA (Sua prioridade de busca):
 {{MISSING_FIELDS}}
@@ -160,7 +127,7 @@ INSTRUÇÕES CRÍTICAS PARA DADOS MACRO:
 --- INSTRUÇÕES DE EXECUÇÃO ---
 
 1. **RESOLUÇÃO DE CONFLITOS:**
-   - Se os "Dados Técnicos" contradizem o Usuário (ex: usuário diz "Tech", scraper diz "Padaria"), confie no Scraper/Web Search.
+   - Se os "Dados Técnicos" contradizem o Usuário (ex: usuário diz "Tech", scraper diz "Padaria"), confie no usuario.
    - Se o usuário não informou Localização, busque a sede da empresa.
 
 2. **BUSCA ATIVA - DADOS PÚBLICOS DA EMPRESA (DESCOBERTA):**
@@ -410,6 +377,33 @@ NÍVEIS DE CONFIANÇA (confidence_level 0-100):
 - 30-49: Principalmente extrapolação de benchmarks setoriais
 - <30: Estimativa especulativa (adicione caveat_message)
 
+MODELAGEM DE CENÁRIOS (OBRIGATÓRIO):
+Para cada métrica (TAM, SAM, SOM), forneça 3 cenários:
+
+1. CONSERVADOR (probabilidade 30%):
+   - Premissas pessimistas: execução com desafios, mercado competitivo
+   - Market share: Startups 0.5-2%, Empresas 3-8%
+   - Use este como BASELINE para planejamento
+
+2. REALISTA (probabilidade 50%):
+   - Premissas moderadas: boa execução, condições normais
+   - Market share: Startups 2-5%, Empresas 8-15%
+   - Principal referência para decisões
+
+3. OTIMISTA (probabilidade 20%):
+   - Premissas favoráveis: execução excepcional, vantagens competitivas
+   - Market share: Startups 5-10%, Empresas 15-25%
+   - Apenas se condições ideais se confirmarem
+
+REGRA CRÍTICA: O cenário CONSERVADOR deve ser viável e sustentável.
+Se o cenário conservador não gera valor, reavalie a estratégia.
+
+VALIDAÇÃO DE REALISMO:
+- Compare SOM com receitas típicas do setor no Brasil
+- Associações setoriais: R$ 2-10M/ano é teto realista
+- Startups early-stage: R$ 500k-5M/ano nos primeiros 3 anos
+- Empresas estabelecidas PME: R$ 5-50M/ano
+
 REGRAS:
 1. Liste EXATAMENTE 3 premissas críticas com fonte/cálculo.
 2. Máximo 100 caracteres por premissa.
@@ -431,6 +425,17 @@ Retorne JSON (valores em PT-BR):
     "proxy_calculations": ["Cálculo proxy usado (se houver)"],
     "benchmark_extrapolations": ["Benchmark aplicado (se houver)"]
   },
+  "tam_scenarios": {
+    "conservative": {"value_range": "R$ X-Y", "probability": 30},
+    "realistic": {"value_range": "R$ X-Y", "probability": 50},
+    "optimistic": {"value_range": "R$ X-Y", "probability": 20}
+  },
+  "som_scenarios": {
+    "conservative": {"value_range": "R$ X-Y", "market_share": "X%", "probability": 30},
+    "realistic": {"value_range": "R$ X-Y", "market_share": "X%", "probability": 50},
+    "optimistic": {"value_range": "R$ X-Y", "market_share": "X%", "probability": 20}
+  },
+  "baseline_recommendation": "conservative ou realistic (qual usar como base)",
   "caveat_message": "⚠️ Aviso se confidence < 50 (opcional)",
   "summary": "Síntese de potencial (max 200 chars)"
 }`
@@ -615,6 +620,44 @@ FORMATO 90 DIAS COM MARCOS MENSAIS:
 - Cada mês tem foco progressivo: Fundação → Crescimento → Consolidação
 - Use datas relativas (não hardcoded como "Q1 2025")
 
+ESTRUTURA DE FASES ESTENDIDA (OBRIGATÓRIO):
+Além do plano de 90 dias, forneça visão de 12 meses em 3 fases:
+
+FASE 1 - FUNDAÇÃO (Meses 1-3):
+Objetivo: Estabelecer bases sólidas antes de escalar
+- Ajustes estruturais, jurídicos, organizacionais
+- Validação de premissas críticas
+- Quick wins de baixo risco
+- NÃO prometa resultados de mercado nesta fase
+
+FASE 2 - VALIDAÇÃO (Meses 4-6):
+Objetivo: Testar hipóteses com escopo limitado
+- Pilotos controlados (1-3 casos)
+- Coleta de feedback real
+- Ajustes baseados em aprendizado
+- Métricas de validação, não de escala
+
+FASE 3 - ESCALA (Meses 7-12):
+Objetivo: Expandir o que foi validado
+- Somente após validação bem-sucedida
+- Crescimento gradual e sustentável
+- Métricas de crescimento realistas
+
+AVALIAÇÃO DE CAPACIDADE (OBRIGATÓRIO):
+Antes de definir KRs, avalie:
+- Equipe disponível: quantidade, skills, dedicação
+- Orçamento realista: não assuma recursos ilimitados
+- Dependências externas: parcerias, aprovações, integrações
+- Resistência interna: stakeholders que podem bloquear
+
+Se capacidade < ambição → REDUZA o escopo, não o prazo.
+
+REGRAS DE REALISMO:
+- Cada KR deve ter responsável identificável
+- Prazos devem considerar férias, feriados, imprevistos
+- Adicione 30% de buffer para contingências
+- Prefira "completar X" sobre "aumentar Y%" quando incerto
+
 REGRAS:
 1. Crie EXATAMENTE 3 blocos mensais (Mês 1, Mês 2, Mês 3).
 2. Para cada mês, defina 1 Objetivo e EXATAMENTE 3 Key Results (KRs).
@@ -653,6 +696,42 @@ Retorne JSON (valores em PT-BR):
   ],
   "total_investment": "R$ 60-110 mil (soma dos 3 meses)",
   "success_metrics": ["Métrica de sucesso 1 para os 90 dias", "Métrica 2", "Métrica 3"],
+  "execution_phases": {
+    "foundation": {
+      "duration": "Meses 1-3",
+      "focus": "Estruturação",
+      "objectives": ["Objetivo de fundação 1", "Objetivo 2"],
+      "key_results": ["KR mensurável 1", "KR 2"],
+      "investment_range": "R$ X-Y",
+      "capacity_requirements": {
+        "team": "X pessoas",
+        "skills_needed": ["Skill 1", "Skill 2"],
+        "dependencies": ["Dependência 1", "Dependência 2"]
+      }
+    },
+    "validation": {
+      "duration": "Meses 4-6",
+      "focus": "Pilotos",
+      "prerequisites": ["Fase 1 concluída", "Aprovações obtidas"],
+      "objectives": ["Objetivo de validação 1", "Objetivo 2"],
+      "key_results": ["KR de validação 1", "KR 2"],
+      "investment_range": "R$ X-Y"
+    },
+    "scale": {
+      "duration": "Meses 7-12",
+      "focus": "Expansão controlada",
+      "prerequisites": ["Validação bem-sucedida", "Métricas atingidas"],
+      "objectives": ["Objetivo de escala 1", "Objetivo 2"],
+      "key_results": ["KR de escala 1", "KR 2"],
+      "investment_range": "R$ X-Y"
+    }
+  },
+  "capacity_assessment": {
+    "team_readiness": "Alta|Média|Baixa",
+    "budget_adequacy": "Suficiente|Limitado|Insuficiente",
+    "stakeholder_alignment": "Alinhado|Parcial|Resistência",
+    "blockers": ["Bloqueio identificado 1", "Bloqueio 2 (se houver)"]
+  },
   "summary": "Roteiro de implementação 90 dias (max 200 chars)"
 }`
 
@@ -680,11 +759,42 @@ Dilema: "Qual a melhor estratégia de crescimento?"
 Contexto: {{COMPANY_DATA}}
 Cenários: {{SCENARIO_INSIGHTS}}
 
+AVALIAÇÃO DE VIABILIDADE JURÍDICA (OBRIGATÓRIO):
+Para cada recomendação priorizada, avalie:
+
+1. VIABILIDADE LEGAL:
+   - Requer alteração estatutária? (Alto risco se sim)
+   - Conflita com regulamentação setorial?
+   - Implica riscos de responsabilidade civil?
+   - Exige licenças/autorizações específicas?
+
+2. COMPLEXIDADE INSTITUCIONAL:
+   - Depende de aprovação de assembleia?
+   - Envolve múltiplas partes (federação, regionais)?
+   - Há precedentes similares no setor?
+
+3. CLASSIFICAÇÃO DE RISCO JURÍDICO:
+   - BAIXO: Operacional, não requer mudanças estruturais
+   - MÉDIO: Requer ajustes contratuais ou regimentais
+   - ALTO: Requer alteração estatutária ou envolve litígio potencial
+   - CRÍTICO: Pode invalidar decisões ou gerar responsabilização
+
+REGRA: Recomendações de risco ALTO ou CRÍTICO devem incluir:
+- Parecer jurídico recomendado antes de execução
+- Plano de mitigação específico
+- Alternativa de menor risco
+
+GATILHOS EXTRAORDINÁRIOS (adicionar):
+- Mudança regulatória que exija >10% de ajuste de custo
+- Nova exigência de licenciamento que bloqueie operação
+- Decisão judicial que afete modelo de negócio
+- Falha de compliance LGPD/setorial
+
 REGRAS:
 1. Liste 3 Alternativas claras.
 2. Liste 3 Critérios de decisão (ex: ROI, Risco, Tempo).
 3. Defina a melhor opção com score (ex: "7.3/10") e comparação (ex: "+23% acima da segunda opção").
-4. Crie 3 Recomendações Prioritárias (prioridade 1, 2, 3) com timeline e budget.
+4. Crie 3 Recomendações Prioritárias (prioridade 1, 2, 3) com timeline, budget E legal_feasibility.
 5. Defina ciclo de revisão (frequência e gatilhos extraordinários).
 6. Liste 5-7 métricas para monitorar execução.
 
@@ -701,26 +811,47 @@ Retorne JSON (valores em PT-BR):
       "title": "Recomendação #1",
       "description": "Descrição detalhada da recomendação",
       "timeline": "9-12 meses",
-      "budget": "R$150-250k"
+      "budget": "R$150-250k",
+      "legal_feasibility": {
+        "risk_level": "Baixo|Médio|Alto|Crítico",
+        "requires_statutory_change": false,
+        "requires_legal_opinion": false,
+        "regulatory_dependencies": ["Licença X", "Aprovação Y (se houver)"],
+        "mitigation_plan": "Plano de mitigação se risco Alto/Crítico"
+      }
     },
     {
       "priority": 2,
       "title": "Recomendação #2",
       "description": "Descrição detalhada",
       "timeline": "6-9 meses",
-      "budget": "R$80-120k"
+      "budget": "R$80-120k",
+      "legal_feasibility": {
+        "risk_level": "Baixo|Médio|Alto|Crítico",
+        "requires_statutory_change": false,
+        "requires_legal_opinion": false,
+        "regulatory_dependencies": [],
+        "mitigation_plan": ""
+      }
     },
     {
       "priority": 3,
       "title": "Recomendação #3",
       "description": "Descrição detalhada",
       "timeline": "3-6 meses",
-      "budget": "R$40-60k"
+      "budget": "R$40-60k",
+      "legal_feasibility": {
+        "risk_level": "Baixo|Médio|Alto|Crítico",
+        "requires_statutory_change": false,
+        "requires_legal_opinion": false,
+        "regulatory_dependencies": [],
+        "mitigation_plan": ""
+      }
     }
   ],
   "review_cycle": {
     "frequency": "Trimestral",
-    "extraordinary_triggers": ["Mudança regulatória significativa", "Entrada de novo competidor relevante", "Variação >20% em KPI crítico"]
+    "extraordinary_triggers": ["Mudança regulatória >10% custo", "Bloqueio de licenciamento", "Decisão judicial relevante", "Falha de compliance LGPD/setorial", "Entrada de competidor relevante"]
   },
   "monitoring_metrics": ["Métrica 1", "Métrica 2", "Métrica 3", "Métrica 4", "Métrica 5"],
   "final_recommendation": "A melhor opção é... (max 300 chars)",
@@ -731,6 +862,29 @@ Retorne JSON (valores em PT-BR):
 	SynthesisPrompt = `Você é um Líder Exponencial. Sintetize os 11 frameworks em um Resumo Executivo estruturado.
 Contexto: {{COMPANY_DATA}}
 Resultados: {{ALL_FRAMEWORK_SUMMARIES}}
+
+VALIDAÇÃO DE CONSISTÊNCIA (OBRIGATÓRIO):
+Antes de finalizar, verifique:
+
+1. ALINHAMENTO FINANCEIRO:
+   - OKRs são atingíveis com o SOM conservador?
+   - Investimento proposto < receita projetada no cenário realista?
+   - Se não → SINALIZAR INCONSISTÊNCIA
+
+2. ALINHAMENTO DE CAPACIDADE:
+   - Equipe disponível suporta os OKRs definidos?
+   - Há skills críticos faltando?
+   - Se não → AJUSTAR ESCOPO ou SINALIZAR
+
+3. ALINHAMENTO JURÍDICO:
+   - Recomendações de alto risco têm mitigação?
+   - Há bloqueios legais não endereçados?
+   - Se sim → DESTACAR COMO RISCO CRÍTICO
+
+4. REALISMO GERAL:
+   - Este plano seria aprovado por um conselho experiente?
+   - As premissas são defensáveis?
+   - Se dúvida → SER CONSERVADOR
 
 REGRAS DE FORMATAÇÃO (CRÍTICO PARA PDF):
 1. **Central Challenge**: Identifique O desafio estratégico central (max 200 chars).
@@ -759,6 +913,13 @@ Retorne JSON (valores em PT-BR):
   "key_findings": ["Insight estratégico 1 (max 150 chars)", "Insight 2", "Insight 3"],
   "strategic_priorities": ["Prioridade 1 (max 100 chars)", "Prioridade 2", "Prioridade 3"],
   "roadmap": ["Curto Prazo (3-6 meses): ...", "Médio Prazo (6-12 meses): ...", "Longo Prazo (12+ meses): ..."],
-  "overall_recommendation": "Conclusão final curta e acionável"
+  "overall_recommendation": "Conclusão final curta e acionável",
+  "consistency_validation": {
+    "financial_alignment": true,
+    "capacity_alignment": true,
+    "legal_alignment": true,
+    "overall_realism_score": 8,
+    "flags": ["Flag de inconsistência 1 (se houver)", "Flag 2 (se houver)"]
+  }
 }`
 )

@@ -21,8 +21,27 @@ import (
 // TEST HELPERS
 // ============================================================================
 
+// submissionSelectCols matches the column list in repository.go
+// Tests use regex matching to avoid brittle exact-query matching
+const submissionSelectCols = `id, company_name, cnpj, company_website, company_industry, company_size, company_location,
+		contact_name, contact_email, contact_phone, contact_position,
+		target_market, annual_revenue_min, annual_revenue_max, funding_stage,
+		business_challenge, additional_notes, linkedin_url, twitter_handle,
+		status, user_id, created_at, updated_at, deleted_at`
+
+// allSubmissionColumns returns all columns for mock rows
+func allSubmissionColumns() []string {
+	return []string{
+		"id", "company_name", "cnpj", "company_website", "company_industry", "company_size", "company_location",
+		"contact_name", "contact_email", "contact_phone", "contact_position",
+		"target_market", "annual_revenue_min", "annual_revenue_max", "funding_stage",
+		"business_challenge", "additional_notes", "linkedin_url", "twitter_handle",
+		"status", "user_id", "created_at", "updated_at", "deleted_at",
+	}
+}
+
 func setupMockDB(t *testing.T) (*sqlx.DB, sqlmock.Sqlmock) {
-	mockDB, mock, err := sqlmock.New()
+	mockDB, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
 	require.NoError(t, err)
 
 	sqlxDB := sqlx.NewDb(mockDB, "postgres")
@@ -173,15 +192,15 @@ func TestRepository_GetByID(t *testing.T) {
 			name: "success - found submission",
 			id:   testID,
 			mockSetup: func(mock sqlmock.Sqlmock) {
-				rows := sqlmock.NewRows([]string{
-					"id", "company_name", "company_website", "contact_name", "contact_email",
-					"business_challenge", "status", "user_id", "created_at", "updated_at", "deleted_at",
-				}).AddRow(
-					testID, "Test Corp", "https://test.com", "John Doe", "john@test.com",
-					"Need to scale", submission.StatusReceived, uuid.New(), time.Now(), time.Now(), nil,
+				rows := sqlmock.NewRows(allSubmissionColumns()).AddRow(
+					testID, "Test Corp", nil, "https://test.com", nil, nil, nil,
+					"John Doe", "john@test.com", nil, nil,
+					nil, nil, nil, nil,
+					"Need to scale", nil, nil, nil,
+					submission.StatusReceived, uuid.New(), time.Now(), time.Now(), nil,
 				)
 
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM submissions WHERE id = $1 AND deleted_at IS NULL`)).
+				mock.ExpectQuery(`SELECT .+ FROM submissions WHERE id = \$1 AND deleted_at IS NULL`).
 					WithArgs(testID).
 					WillReturnRows(rows)
 			},
@@ -192,7 +211,7 @@ func TestRepository_GetByID(t *testing.T) {
 			name: "failure - not found",
 			id:   testID,
 			mockSetup: func(mock sqlmock.Sqlmock) {
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM submissions WHERE id = $1 AND deleted_at IS NULL`)).
+				mock.ExpectQuery(`SELECT .+ FROM submissions WHERE id = \$1 AND deleted_at IS NULL`).
 					WithArgs(testID).
 					WillReturnError(sql.ErrNoRows)
 			},
@@ -204,7 +223,7 @@ func TestRepository_GetByID(t *testing.T) {
 			id:   testID,
 			mockSetup: func(mock sqlmock.Sqlmock) {
 				// Simulates that deleted submissions are filtered by WHERE clause
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM submissions WHERE id = $1 AND deleted_at IS NULL`)).
+				mock.ExpectQuery(`SELECT .+ FROM submissions WHERE id = \$1 AND deleted_at IS NULL`).
 					WithArgs(testID).
 					WillReturnError(sql.ErrNoRows)
 			},
@@ -215,7 +234,7 @@ func TestRepository_GetByID(t *testing.T) {
 			name: "failure - database error",
 			id:   testID,
 			mockSetup: func(mock sqlmock.Sqlmock) {
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM submissions WHERE id = $1 AND deleted_at IS NULL`)).
+				mock.ExpectQuery(`SELECT .+ FROM submissions WHERE id = \$1 AND deleted_at IS NULL`).
 					WithArgs(testID).
 					WillReturnError(errors.New("database connection failed"))
 			},
@@ -273,15 +292,13 @@ func TestRepository_GetByEmail(t *testing.T) {
 			name:  "success - multiple submissions found",
 			email: "john@test.com",
 			mockSetup: func(mock sqlmock.Sqlmock) {
-				rows := sqlmock.NewRows([]string{
-					"id", "company_name", "contact_name", "contact_email", "business_challenge",
-					"status", "created_at", "updated_at", "deleted_at",
-				}).
-					AddRow(uuid.New(), "Corp A", "John", "john@test.com", "Challenge A", submission.StatusReceived, time.Now(), time.Now(), nil).
-					AddRow(uuid.New(), "Corp B", "John", "john@test.com", "Challenge B", submission.StatusReceived, time.Now(), time.Now(), nil).
-					AddRow(uuid.New(), "Corp C", "John", "john@test.com", "Challenge C", submission.StatusReceived, time.Now(), time.Now(), nil)
+				now := time.Now()
+				rows := sqlmock.NewRows(allSubmissionColumns()).
+					AddRow(uuid.New(), "Corp A", nil, nil, nil, nil, nil, "John", "john@test.com", nil, nil, nil, nil, nil, nil, "Challenge A", nil, nil, nil, submission.StatusReceived, nil, now, now, nil).
+					AddRow(uuid.New(), "Corp B", nil, nil, nil, nil, nil, "John", "john@test.com", nil, nil, nil, nil, nil, nil, "Challenge B", nil, nil, nil, submission.StatusReceived, nil, now, now, nil).
+					AddRow(uuid.New(), "Corp C", nil, nil, nil, nil, nil, "John", "john@test.com", nil, nil, nil, nil, nil, nil, "Challenge C", nil, nil, nil, submission.StatusReceived, nil, now, now, nil)
 
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM submissions WHERE contact_email = $1 AND deleted_at IS NULL ORDER BY created_at DESC`)).
+				mock.ExpectQuery(`SELECT .+ FROM submissions WHERE contact_email = \$1 AND deleted_at IS NULL ORDER BY created_at DESC`).
 					WithArgs("john@test.com").
 					WillReturnRows(rows)
 			},
@@ -292,12 +309,9 @@ func TestRepository_GetByEmail(t *testing.T) {
 			name:  "success - none found",
 			email: "nobody@test.com",
 			mockSetup: func(mock sqlmock.Sqlmock) {
-				rows := sqlmock.NewRows([]string{
-					"id", "company_name", "contact_name", "contact_email", "business_challenge",
-					"status", "created_at", "updated_at", "deleted_at",
-				})
+				rows := sqlmock.NewRows(allSubmissionColumns())
 
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM submissions WHERE contact_email = $1 AND deleted_at IS NULL ORDER BY created_at DESC`)).
+				mock.ExpectQuery(`SELECT .+ FROM submissions WHERE contact_email = \$1 AND deleted_at IS NULL ORDER BY created_at DESC`).
 					WithArgs("nobody@test.com").
 					WillReturnRows(rows)
 			},
@@ -309,12 +323,9 @@ func TestRepository_GetByEmail(t *testing.T) {
 			email: "deleted@test.com",
 			mockSetup: func(mock sqlmock.Sqlmock) {
 				// No rows returned because deleted_at IS NULL filters them out
-				rows := sqlmock.NewRows([]string{
-					"id", "company_name", "contact_name", "contact_email", "business_challenge",
-					"status", "created_at", "updated_at", "deleted_at",
-				})
+				rows := sqlmock.NewRows(allSubmissionColumns())
 
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM submissions WHERE contact_email = $1 AND deleted_at IS NULL ORDER BY created_at DESC`)).
+				mock.ExpectQuery(`SELECT .+ FROM submissions WHERE contact_email = \$1 AND deleted_at IS NULL ORDER BY created_at DESC`).
 					WithArgs("deleted@test.com").
 					WillReturnRows(rows)
 			},
@@ -325,7 +336,7 @@ func TestRepository_GetByEmail(t *testing.T) {
 			name:  "failure - database error",
 			email: "error@test.com",
 			mockSetup: func(mock sqlmock.Sqlmock) {
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM submissions WHERE contact_email = $1 AND deleted_at IS NULL ORDER BY created_at DESC`)).
+				mock.ExpectQuery(`SELECT .+ FROM submissions WHERE contact_email = \$1 AND deleted_at IS NULL ORDER BY created_at DESC`).
 					WithArgs("error@test.com").
 					WillReturnError(errors.New("database connection failed"))
 			},
@@ -393,15 +404,13 @@ func TestRepository_List(t *testing.T) {
 					WillReturnRows(countRows)
 
 				// List query
-				rows := sqlmock.NewRows([]string{
-					"id", "company_name", "contact_name", "contact_email", "business_challenge",
-					"status", "created_at", "updated_at", "deleted_at",
-				})
+				now := time.Now()
+				rows := sqlmock.NewRows(allSubmissionColumns())
 				for i := 0; i < 50; i++ {
-					rows.AddRow(uuid.New(), "Corp", "Name", "email@test.com", "Challenge", submission.StatusReceived, time.Now(), time.Now(), nil)
+					rows.AddRow(uuid.New(), "Corp", nil, nil, nil, nil, nil, "Name", "email@test.com", nil, nil, nil, nil, nil, nil, "Challenge", nil, nil, nil, submission.StatusReceived, nil, now, now, nil)
 				}
 
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM submissions WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT $1 OFFSET $2`)).
+				mock.ExpectQuery(`SELECT .+ FROM submissions WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT \$1 OFFSET \$2`).
 					WithArgs(50, 0).
 					WillReturnRows(rows)
 			},
@@ -426,15 +435,13 @@ func TestRepository_List(t *testing.T) {
 					WillReturnRows(countRows)
 
 				// List query with status filter
-				rows := sqlmock.NewRows([]string{
-					"id", "company_name", "contact_name", "contact_email", "business_challenge",
-					"status", "created_at", "updated_at", "deleted_at",
-				})
+				now := time.Now()
+				rows := sqlmock.NewRows(allSubmissionColumns())
 				for i := 0; i < 10; i++ {
-					rows.AddRow(uuid.New(), "Corp", "Name", "email@test.com", "Challenge", submission.StatusReceived, time.Now(), time.Now(), nil)
+					rows.AddRow(uuid.New(), "Corp", nil, nil, nil, nil, nil, "Name", "email@test.com", nil, nil, nil, nil, nil, nil, "Challenge", nil, nil, nil, submission.StatusReceived, nil, now, now, nil)
 				}
 
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM submissions WHERE deleted_at IS NULL AND status = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`)).
+				mock.ExpectQuery(`SELECT .+ FROM submissions WHERE deleted_at IS NULL AND status = \$1 ORDER BY created_at DESC LIMIT \$2 OFFSET \$3`).
 					WithArgs(receivedStatus, 10, 0).
 					WillReturnRows(rows)
 			},
@@ -459,15 +466,13 @@ func TestRepository_List(t *testing.T) {
 					WillReturnRows(countRows)
 
 				// List query with email filter and company_name ASC sort
-				rows := sqlmock.NewRows([]string{
-					"id", "company_name", "contact_name", "contact_email", "business_challenge",
-					"status", "created_at", "updated_at", "deleted_at",
-				})
+				now := time.Now()
+				rows := sqlmock.NewRows(allSubmissionColumns())
 				for i := 0; i < 5; i++ {
-					rows.AddRow(uuid.New(), "Corp", "Name", email, "Challenge", submission.StatusReceived, time.Now(), time.Now(), nil)
+					rows.AddRow(uuid.New(), "Corp", nil, nil, nil, nil, nil, "Name", email, nil, nil, nil, nil, nil, nil, "Challenge", nil, nil, nil, submission.StatusReceived, nil, now, now, nil)
 				}
 
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM submissions WHERE deleted_at IS NULL AND contact_email = $1 ORDER BY company_name ASC LIMIT $2 OFFSET $3`)).
+				mock.ExpectQuery(`SELECT .+ FROM submissions WHERE deleted_at IS NULL AND contact_email = \$1 ORDER BY company_name ASC LIMIT \$2 OFFSET \$3`).
 					WithArgs(email, 20, 0).
 					WillReturnRows(rows)
 			},
@@ -492,15 +497,13 @@ func TestRepository_List(t *testing.T) {
 					WillReturnRows(countRows)
 
 				// List query with user_id filter and pagination
-				rows := sqlmock.NewRows([]string{
-					"id", "company_name", "contact_name", "contact_email", "business_challenge",
-					"status", "user_id", "created_at", "updated_at", "deleted_at",
-				})
+				now := time.Now()
+				rows := sqlmock.NewRows(allSubmissionColumns())
 				for i := 0; i < 15; i++ {
-					rows.AddRow(uuid.New(), "Corp", "Name", "email@test.com", "Challenge", submission.StatusReceived, userID, time.Now(), time.Now(), nil)
+					rows.AddRow(uuid.New(), "Corp", nil, nil, nil, nil, nil, "Name", "email@test.com", nil, nil, nil, nil, nil, nil, "Challenge", nil, nil, nil, submission.StatusReceived, userID, now, now, nil)
 				}
 
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM submissions WHERE deleted_at IS NULL AND user_id = $1 ORDER BY updated_at ASC LIMIT $2 OFFSET $3`)).
+				mock.ExpectQuery(`SELECT .+ FROM submissions WHERE deleted_at IS NULL AND user_id = \$1 ORDER BY updated_at ASC LIMIT \$2 OFFSET \$3`).
 					WithArgs(userID, 30, 10).
 					WillReturnRows(rows)
 			},
@@ -527,15 +530,13 @@ func TestRepository_List(t *testing.T) {
 					WillReturnRows(countRows)
 
 				// List query with all filters
-				rows := sqlmock.NewRows([]string{
-					"id", "company_name", "contact_name", "contact_email", "business_challenge",
-					"status", "user_id", "created_at", "updated_at", "deleted_at",
-				})
+				now := time.Now()
+				rows := sqlmock.NewRows(allSubmissionColumns())
 				for i := 0; i < 3; i++ {
-					rows.AddRow(uuid.New(), "Corp", "Name", email, "Challenge", submission.StatusReceived, userID, time.Now(), time.Now(), nil)
+					rows.AddRow(uuid.New(), "Corp", nil, nil, nil, nil, nil, "Name", email, nil, nil, nil, nil, nil, nil, "Challenge", nil, nil, nil, submission.StatusReceived, userID, now, now, nil)
 				}
 
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM submissions WHERE deleted_at IS NULL AND status = $1 AND contact_email = $2 AND user_id = $3 ORDER BY status DESC LIMIT $4 OFFSET $5`)).
+				mock.ExpectQuery(`SELECT .+ FROM submissions WHERE deleted_at IS NULL AND status = \$1 AND contact_email = \$2 AND user_id = \$3 ORDER BY status DESC LIMIT \$4 OFFSET \$5`).
 					WithArgs(receivedStatus, email, userID, 10, 0).
 					WillReturnRows(rows)
 			},
@@ -583,7 +584,7 @@ func TestRepository_List(t *testing.T) {
 				mock.ExpectQuery(regexp.QuoteMeta(`SELECT COUNT(*) FROM submissions WHERE deleted_at IS NULL`)).
 					WillReturnRows(countRows)
 
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM submissions WHERE deleted_at IS NULL`)).
+				mock.ExpectQuery(`SELECT .+ FROM submissions WHERE deleted_at IS NULL`).
 					WillReturnError(errors.New("database connection failed"))
 			},
 			wantErr: true,

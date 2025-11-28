@@ -10,6 +10,7 @@ import (
 	"backend_v3/config"
 	"backend_v3/domain/analysis"
 	"backend_v3/domain/enrichment"
+	"backend_v3/domain/macroeconomics"
 	"backend_v3/domain/report"
 	"backend_v3/domain/submission"
 	jobtypes "backend_v3/jobs/types"
@@ -35,6 +36,11 @@ type ReportJobPayload struct {
 	AnalysisID   string `json:"analysis_id"`
 }
 
+// MacroFetchPayload is the payload for macro indicator fetch jobs
+type MacroFetchPayload struct {
+	Code string `json:"code"` // Indicator code: selic, ipca, usd_brl
+}
+
 type Worker struct {
 	server            *asynq.Server
 	mux               *asynq.ServeMux
@@ -42,6 +48,7 @@ type Worker struct {
 	enrichmentService *enrichment.Service
 	analysisService   *analysis.Service
 	reportService     *report.Service
+	macroService      *macroeconomics.Service // Optional: can be nil
 	logger            zerolog.Logger
 	redisOpt          asynq.RedisClientOpt
 	asynqClient       *asynq.Client // Reused client for job enqueueing
@@ -122,7 +129,17 @@ func NewWorker(
 	w.mux.HandleFunc(jobtypes.TypeAnalysis, w.HandleAnalysisJob)
 	w.mux.HandleFunc(jobtypes.TypeReport, w.HandleReportJob)
 
+	// Macro handlers (service injected later via SetMacroService)
+	w.mux.HandleFunc(jobtypes.TypeMacroFetch, w.HandleMacroFetchJob)
+	w.mux.HandleFunc(jobtypes.TypeMacroRefreshAll, w.HandleMacroRefreshAllJob)
+
 	return w
+}
+
+// SetMacroService sets the macroeconomics service (for late injection)
+func (w *Worker) SetMacroService(svc *macroeconomics.Service) {
+	w.macroService = svc
+	w.logger.Info().Msg("Macroeconomics service injected into worker")
 }
 
 func (w *Worker) Start() error { return w.server.Start(w.mux) }
@@ -232,7 +249,30 @@ func (w *Worker) HandleEnrichmentJob(ctx context.Context, task *asynq.Task) erro
 		jobLogger.Warn().Err(err).Msg("Failed to update progress")
 	}
 
-	// 4. Success
+	// 4. Check if auto_trigger_analysis is enabled (for "enrich and analyze" workflow)
+	if enrichmentData != nil && enrichmentData.AutoTriggerAnalysis {
+		jobLogger.Info().
+			Str("enrichment_id", enrichmentData.ID.String()).
+			Msg("Auto-triggering analysis job (auto_trigger_analysis=true)")
+
+		analysisPayload := AnalysisJobPayload{
+			SubmissionID: submissionID.String(),
+			EnrichmentID: enrichmentData.ID.String(),
+		}
+		payloadBytes, _ := json.Marshal(analysisPayload)
+		analysisTask := asynq.NewTask(jobtypes.TypeAnalysis, payloadBytes)
+
+		if _, err := w.asynqClient.Enqueue(analysisTask, asynq.MaxRetry(3)); err != nil {
+			jobLogger.Error().Err(err).Msg("Failed to enqueue auto-triggered analysis job")
+			// Don't fail the enrichment job - analysis can be manually triggered later
+		} else {
+			jobLogger.Info().
+				Str("enrichment_id", enrichmentData.ID.String()).
+				Msg("Analysis job auto-triggered successfully")
+		}
+	}
+
+	// 5. Success
 	jobLogger.Info().
 		Str("sub_id", submissionID.String()).
 		Str("enrichment_id", enrichmentData.ID.String()).
@@ -611,4 +651,134 @@ func NewAnalysisTask(payload AnalysisJobPayload) (*asynq.Task, error) {
 		return nil, err
 	}
 	return asynq.NewTask(jobtypes.TypeAnalysis, data), nil
+}
+
+// --- Macroeconomics Job Handlers ---
+
+// HandleMacroFetchJob handles fetching a single macro indicator
+func (w *Worker) HandleMacroFetchJob(ctx context.Context, task *asynq.Task) error {
+	startTime := time.Now()
+
+	taskID := task.ResultWriter().TaskID()
+	retryCount, _ := asynq.GetRetryCount(ctx)
+	maxRetry, _ := asynq.GetMaxRetry(ctx)
+
+	jobLogger := w.logger.With().
+		Str("job_type", jobtypes.TypeMacroFetch).
+		Str("task_id", taskID).
+		Int("retry_count", retryCount).
+		Int("max_retries", maxRetry).
+		Logger()
+
+	// Check if macro service is available
+	if w.macroService == nil {
+		jobLogger.Error().Msg("Macro service not configured - skipping job")
+		return fmt.Errorf("%w: macro service not configured", asynq.SkipRetry)
+	}
+
+	// Parse payload
+	var payload MacroFetchPayload
+	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
+		jobLogger.Error().Err(err).Msg("Failed to unmarshal macro fetch payload")
+		return fmt.Errorf("%w: invalid payload: %v", asynq.SkipRetry, err)
+	}
+
+	if payload.Code == "" {
+		jobLogger.Error().Msg("Empty indicator code in payload")
+		return fmt.Errorf("%w: empty indicator code", asynq.SkipRetry)
+	}
+
+	jobLogger = jobLogger.With().Str("indicator", payload.Code).Logger()
+	jobLogger.Info().Msg("Macro fetch job started")
+
+	// Add timeout
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+
+	// Fetch the indicator
+	if err := w.macroService.FetchIndicator(ctx, payload.Code); err != nil {
+		jobLogger.Error().
+			Err(err).
+			Dur("duration", time.Since(startTime)).
+			Msg("Macro fetch job failed")
+
+		// Check if retryable
+		if isRetryableError(err) {
+			return fmt.Errorf("retryable error: %w", err)
+		}
+
+		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
+	}
+
+	jobLogger.Info().
+		Dur("duration", time.Since(startTime)).
+		Int64("duration_ms", time.Since(startTime).Milliseconds()).
+		Msg("Macro fetch job completed successfully")
+
+	return nil
+}
+
+// HandleMacroRefreshAllJob handles refreshing all macro indicators
+func (w *Worker) HandleMacroRefreshAllJob(ctx context.Context, task *asynq.Task) error {
+	startTime := time.Now()
+
+	taskID := task.ResultWriter().TaskID()
+	retryCount, _ := asynq.GetRetryCount(ctx)
+	maxRetry, _ := asynq.GetMaxRetry(ctx)
+
+	jobLogger := w.logger.With().
+		Str("job_type", jobtypes.TypeMacroRefreshAll).
+		Str("task_id", taskID).
+		Int("retry_count", retryCount).
+		Int("max_retries", maxRetry).
+		Logger()
+
+	// Check if macro service is available
+	if w.macroService == nil {
+		jobLogger.Error().Msg("Macro service not configured - skipping job")
+		return fmt.Errorf("%w: macro service not configured", asynq.SkipRetry)
+	}
+
+	jobLogger.Info().Msg("Macro refresh-all job started")
+
+	// Add timeout (5 minutes for full refresh)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+
+	// Refresh all indicators
+	if err := w.macroService.RefreshAll(ctx); err != nil {
+		jobLogger.Error().
+			Err(err).
+			Dur("duration", time.Since(startTime)).
+			Msg("Macro refresh-all job failed")
+
+		// Check if retryable
+		if isRetryableError(err) {
+			return fmt.Errorf("retryable error: %w", err)
+		}
+
+		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
+	}
+
+	jobLogger.Info().
+		Dur("duration", time.Since(startTime)).
+		Int64("duration_ms", time.Since(startTime).Milliseconds()).
+		Msg("Macro refresh-all job completed successfully")
+
+	return nil
+}
+
+// NewMacroFetchTask creates a new macro fetch task
+func NewMacroFetchTask(code string) (*asynq.Task, error) {
+	payload := MacroFetchPayload{Code: code}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	return asynq.NewTask(jobtypes.TypeMacroFetch, data), nil
+}
+
+// NewMacroRefreshAllTask creates a new macro refresh-all task
+func NewMacroRefreshAllTask() *asynq.Task {
+	return asynq.NewTask(jobtypes.TypeMacroRefreshAll, nil)
 }
