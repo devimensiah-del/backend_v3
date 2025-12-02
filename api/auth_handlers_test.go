@@ -24,7 +24,7 @@ func newTestAuthHandler(t *testing.T) (*AuthHandlers, sqlmock.Sqlmock) {
 	}
 	db := sqlx.NewDb(rawDB, "sqlmock")
 	logger := zerolog.Nop()
-	handler := NewAuthHandlers(db, logger, "mock", "anon", "test-secret")
+	handler := NewAuthHandlers(db, logger, "mock", "anon", "test-secret", nil)
 	return handler, mock
 }
 

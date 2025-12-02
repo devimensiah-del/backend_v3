@@ -67,7 +67,7 @@ func (s *Service) EnrichSubmission(ctx context.Context, submissionID uuid.UUID) 
 		Model:        s.enrichmentCfg.Model,
 		SystemPrompt: "You are a JSON-only Corporate Intelligence Agent.",
 		Messages:     []llm.Message{{Role: "user", Content: prompt}},
-		Tools:        []string{"search"}, // Gemini can still search if needed
+		Tools:        nil, // Perplexity did all searching in PreSearch - Gemini synthesizes only
 		Temperature:  s.enrichmentCfg.Temperature,
 		MaxTokens:    s.enrichmentCfg.MaxTokens,
 	}
@@ -103,8 +103,9 @@ func (s *Service) EnrichSubmission(ctx context.Context, submissionID uuid.UUID) 
 	// INJECT submitted_data section from the original submission form
 	finalProfile["submitted_data"] = s.buildSubmittedData(sub)
 
-	// INJECT authoritative macro data directly (don't trust AI to copy it correctly)
-	s.injectMacroDataIntoProfile(ctx, finalProfile)
+	// NOTE: Macro data is NOT stored in enrichment - it's only used for prompt context
+	// Analysis workflow fetches macro data directly from the database
+	// Enrichment should only contain company-specific data
 
 	enrichment.EnrichedData = JSONMap(finalProfile)
 	enrichment.SourcesStatus = s.combineAISources(resp.Sources)
@@ -193,7 +194,7 @@ func (s *Service) EnrichCompany(ctx context.Context, companyID uuid.UUID) (*Enri
 		Model:        s.enrichmentCfg.Model,
 		SystemPrompt: "You are a JSON-only Corporate Intelligence Agent.",
 		Messages:     []llm.Message{{Role: "user", Content: prompt}},
-		Tools:        []string{"search"},
+		Tools:        nil, // Perplexity did all searching in PreSearch - Gemini synthesizes only
 		Temperature:  s.enrichmentCfg.Temperature,
 		MaxTokens:    s.enrichmentCfg.MaxTokens,
 	}
@@ -228,8 +229,9 @@ func (s *Service) EnrichCompany(ctx context.Context, companyID uuid.UUID) (*Enri
 	// Build company_data section (like submitted_data but from company record)
 	finalProfile["company_data"] = s.buildCompanyDataSection(company)
 
-	// INJECT authoritative macro data directly (don't trust AI to copy it correctly)
-	s.injectMacroDataIntoProfile(ctx, finalProfile)
+	// NOTE: Macro data is NOT stored in enrichment - it's only used for prompt context
+	// Analysis workflow fetches macro data directly from the database
+	// Enrichment should only contain company-specific data
 
 	enrichment.EnrichedData = JSONMap(finalProfile)
 	enrichment.SourcesStatus = s.combineAISources(resp.Sources)

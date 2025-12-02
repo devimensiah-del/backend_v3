@@ -47,6 +47,12 @@ func (f *fakeSubmissionRepo) GetEnrichmentStatus(ctx context.Context, submission
 func (f *fakeSubmissionRepo) ReserveEnrichment(ctx context.Context, submissionID uuid.UUID) (bool, error) {
 	panic("not used")
 }
+func (f *fakeSubmissionRepo) GetAnonymousByEmail(ctx context.Context, email string) ([]*submission.Submission, error) {
+	panic("not used")
+}
+func (f *fakeSubmissionRepo) UpdateUserID(ctx context.Context, submissionID, userID uuid.UUID) error {
+	panic("not used")
+}
 
 type noopEnrichmentGetter struct{}
 

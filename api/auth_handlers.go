@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,14 +18,21 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// SubmissionLinkingService defines the contract for linking anonymous submissions
+// Using an interface avoids import cycles with the submission package
+type SubmissionLinkingService interface {
+	LinkAnonymousToUser(ctx context.Context, userID uuid.UUID, email string) error
+}
+
 // AuthHandlers holds all service dependencies and configuration for auth handlers
 type AuthHandlers struct {
-	DB              *sqlx.DB
-	Logger          zerolog.Logger
-	SupabaseURL     string
-	SupabaseAnonKey string
-	JWTSecret       string
-	MockMode        bool
+	DB                *sqlx.DB
+	Logger            zerolog.Logger
+	SupabaseURL       string
+	SupabaseAnonKey   string
+	JWTSecret         string
+	MockMode          bool
+	SubmissionService SubmissionLinkingService // Optional - for linking anonymous submissions on signup
 }
 
 // NewAuthHandlers creates a new auth handler set with all dependencies
@@ -34,15 +42,17 @@ func NewAuthHandlers(
 	supabaseURL string,
 	supabaseAnonKey string,
 	jwtSecret string,
+	submissionSvc SubmissionLinkingService, // Optional - can be nil for graceful degradation
 ) *AuthHandlers {
 	mockMode := strings.EqualFold(supabaseURL, "mock") || strings.EqualFold(os.Getenv("MOCK_AUTH"), "true")
 	return &AuthHandlers{
-		DB:              db,
-		Logger:          logger,
-		SupabaseURL:     supabaseURL,
-		SupabaseAnonKey: supabaseAnonKey,
-		JWTSecret:       jwtSecret,
-		MockMode:        mockMode,
+		DB:                db,
+		Logger:            logger,
+		SupabaseURL:       supabaseURL,
+		SupabaseAnonKey:   supabaseAnonKey,
+		JWTSecret:         jwtSecret,
+		MockMode:          mockMode,
+		SubmissionService: submissionSvc,
 	}
 }
 
@@ -50,7 +60,7 @@ func NewAuthHandlers(
 func (h *AuthHandlers) GetCurrentUser(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Unauthorized", Message: "User not authenticated"})
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Não autorizado", Message: "Usuário não autenticado"})
 		return
 	}
 
@@ -64,7 +74,7 @@ func (h *AuthHandlers) GetCurrentUser(c *gin.Context) {
 	err := h.DB.Get(&profile, query, userID)
 	if err != nil {
 		h.Logger.Error().Err(err).Str("user_id", fmt.Sprintf("%v", userID)).Msg("Failed to fetch user profile")
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "User profile not found"})
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Não encontrado", Message: "Perfil do usuário não encontrado"})
 		return
 	}
 
@@ -76,8 +86,8 @@ func (h *AuthHandlers) Login(c *gin.Context) {
 	var req LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Error:   "Invalid request",
-			Message: "Please provide a valid email and password",
+			Error:   "Requisição inválida",
+			Message: "Por favor, informe e-mail e senha válidos",
 		})
 		return
 	}
@@ -86,13 +96,13 @@ func (h *AuthHandlers) Login(c *gin.Context) {
 		userID, role, err := h.ensureUserExists(req.Email)
 		if err != nil {
 			h.Logger.Error().Err(err).Msg("Mock login failed: ensure user")
-			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Login failed", Message: "mock auth error"})
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Falha no login", Message: "Erro de autenticação"})
 			return
 		}
 		token, err := h.issueMockToken(userID, role, req.Email)
 		if err != nil {
 			h.Logger.Error().Err(err).Msg("Mock login failed: token")
-			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Login failed", Message: "mock token error"})
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Falha no login", Message: "Erro ao gerar token"})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{
@@ -117,7 +127,7 @@ func (h *AuthHandlers) Login(c *gin.Context) {
 	resp, err := h.callSupabaseAuth("POST", authURL, payload)
 	if err != nil {
 		h.Logger.Error().Err(err).Msg("Login failed")
-		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Login failed", Message: "Invalid credentials"})
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Falha no login", Message: err.Error()})
 		return
 	}
 
@@ -133,8 +143,8 @@ func (h *AuthHandlers) Signup(c *gin.Context) {
 	var req SignupRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Error:   "Invalid request",
-			Message: "Please provide all required fields",
+			Error:   "Requisição inválida",
+			Message: "Por favor, preencha todos os campos obrigatórios",
 		})
 		return
 	}
@@ -143,15 +153,19 @@ func (h *AuthHandlers) Signup(c *gin.Context) {
 		userID, role, err := h.ensureUserExists(req.Email)
 		if err != nil {
 			h.Logger.Error().Err(err).Msg("Mock signup failed: ensure user")
-			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Signup failed", Message: "mock auth error"})
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Falha no cadastro", Message: "Erro de autenticação"})
 			return
 		}
 		token, err := h.issueMockToken(userID, role, req.Email)
 		if err != nil {
 			h.Logger.Error().Err(err).Msg("Mock signup failed: token")
-			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Signup failed", Message: "mock token error"})
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Falha no cadastro", Message: "Erro ao gerar token"})
 			return
 		}
+
+		// Link anonymous submissions to the new user (non-blocking)
+		h.linkAnonymousSubmissions(userID, req.Email)
+
 		c.JSON(http.StatusOK, gin.H{
 			"access_token": token,
 			"token":        token,
@@ -177,12 +191,17 @@ func (h *AuthHandlers) Signup(c *gin.Context) {
 	resp, err := h.callSupabaseAuth("POST", authURL, payload)
 	if err != nil {
 		h.Logger.Error().Err(err).Msg("Signup failed")
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Signup failed", Message: err.Error()})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Falha no cadastro", Message: err.Error()})
 		return
 	}
 
 	if accessToken, ok := resp["access_token"].(string); ok {
 		resp["token"] = accessToken
+	}
+
+	// Extract userID from Supabase response and link anonymous submissions
+	if userID := h.extractUserIDFromResponse(resp); userID != "" {
+		h.linkAnonymousSubmissions(userID, req.Email)
 	}
 
 	c.JSON(http.StatusCreated, resp)
@@ -191,13 +210,13 @@ func (h *AuthHandlers) Signup(c *gin.Context) {
 // Logout handles POST /api/v1/auth/logout
 func (h *AuthHandlers) Logout(c *gin.Context) {
 	if h.MockMode {
-		c.JSON(http.StatusOK, MessageResponse{Message: "Logged out successfully (mock)"})
+		c.JSON(http.StatusOK, MessageResponse{Message: "Logout realizado com sucesso"})
 		return
 	}
 
 	token := c.GetHeader("Authorization")
 	if token == "" {
-		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Unauthorized", Message: "No token provided"})
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Não autorizado", Message: "Token não fornecido"})
 		return
 	}
 	if len(token) > 7 && strings.HasPrefix(token, "Bearer ") {
@@ -214,7 +233,7 @@ func (h *AuthHandlers) Logout(c *gin.Context) {
 	httpResp, err := client.Do(req)
 	if err != nil {
 		h.Logger.Error().Err(err).Msg("Logout request failed")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Logout failed", Message: err.Error()})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Falha no logout", Message: "Erro ao encerrar sessão"})
 		return
 	}
 	defer httpResp.Body.Close()
@@ -223,13 +242,13 @@ func (h *AuthHandlers) Logout(c *gin.Context) {
 		body, _ := io.ReadAll(httpResp.Body)
 		h.Logger.Error().Int("status", httpResp.StatusCode).Str("body", string(body)).Msg("Logout failed")
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:   "Logout failed",
-			Message: "Failed to invalidate session",
+			Error:   "Falha no logout",
+			Message: "Não foi possível encerrar a sessão",
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, MessageResponse{Message: "Logged out successfully"})
+	c.JSON(http.StatusOK, MessageResponse{Message: "Logout realizado com sucesso"})
 }
 
 // ForgotPassword handles POST /api/v1/auth/forgot-password
@@ -237,15 +256,15 @@ func (h *AuthHandlers) ForgotPassword(c *gin.Context) {
 	var req ForgotPasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Error:   "Invalid request",
-			Message: "Please provide a valid email",
+			Error:   "Requisição inválida",
+			Message: "Por favor, informe um e-mail válido",
 		})
 		return
 	}
 
 	if h.MockMode {
 		c.JSON(http.StatusOK, PasswordResetResponse{
-			Message: "Password reset email sent (mock)",
+			Message: "E-mail de recuperação enviado",
 		})
 		return
 	}
@@ -262,7 +281,7 @@ func (h *AuthHandlers) ForgotPassword(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, PasswordResetResponse{
-		Message: "If an account exists with this email, you will receive password reset instructions.",
+		Message: "Se existe uma conta com este e-mail, você receberá instruções para redefinir sua senha.",
 	})
 }
 
@@ -271,14 +290,14 @@ func (h *AuthHandlers) ResetPassword(c *gin.Context) {
 	var req ResetPasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Error:   "Invalid request",
-			Message: "Token and new password are required",
+			Error:   "Requisição inválida",
+			Message: "Token e nova senha são obrigatórios",
 		})
 		return
 	}
 
 	if h.MockMode {
-		c.JSON(http.StatusOK, MessageResponse{Message: "Password reset successful (mock)"})
+		c.JSON(http.StatusOK, MessageResponse{Message: "Senha redefinida com sucesso"})
 		return
 	}
 
@@ -292,7 +311,7 @@ func (h *AuthHandlers) ResetPassword(c *gin.Context) {
 	resp, err := h.callSupabaseAuth("POST", authURL, payload)
 	if err != nil {
 		h.Logger.Error().Err(err).Msg("Password reset failed")
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Password reset failed", Message: "Invalid or expired token"})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Falha ao redefinir senha", Message: "Token inválido ou expirado"})
 		return
 	}
 
@@ -304,20 +323,20 @@ func (h *AuthHandlers) UpdatePassword(c *gin.Context) {
 	var req UpdatePasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Error:   "Invalid request",
-			Message: "Current password and new password are required",
+			Error:   "Requisição inválida",
+			Message: "Senha atual e nova senha são obrigatórias",
 		})
 		return
 	}
 
 	if h.MockMode {
-		c.JSON(http.StatusOK, MessageResponse{Message: "Password updated successfully (mock)"})
+		c.JSON(http.StatusOK, MessageResponse{Message: "Senha atualizada com sucesso"})
 		return
 	}
 
 	token := c.GetHeader("Authorization")
 	if token == "" {
-		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Unauthorized", Message: "No token provided"})
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Não autorizado", Message: "Token não fornecido"})
 		return
 	}
 	if len(token) > 7 && strings.HasPrefix(token, "Bearer ") {
@@ -341,7 +360,7 @@ func (h *AuthHandlers) UpdatePassword(c *gin.Context) {
 	httpResp, err := client.Do(httpReq)
 	if err != nil {
 		h.Logger.Error().Err(err).Msg("Update password request failed")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Update failed", Message: err.Error()})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Falha na atualização", Message: "Erro ao atualizar senha"})
 		return
 	}
 	defer httpResp.Body.Close()
@@ -350,7 +369,7 @@ func (h *AuthHandlers) UpdatePassword(c *gin.Context) {
 
 	if httpResp.StatusCode != http.StatusOK {
 		h.Logger.Error().Int("status", httpResp.StatusCode).Str("body", string(body)).Msg("Update password failed")
-		c.JSON(httpResp.StatusCode, ErrorResponse{Error: "Update failed", Message: "Failed to update password"})
+		c.JSON(httpResp.StatusCode, ErrorResponse{Error: "Falha na atualização", Message: "Não foi possível atualizar a senha"})
 		return
 	}
 
@@ -396,6 +415,55 @@ func (h *AuthHandlers) issueMockToken(userID, role, email string) (string, error
 	return token.SignedString([]byte(h.JWTSecret))
 }
 
+// supabaseErrorTranslations maps Supabase error codes to Portuguese messages
+var supabaseErrorTranslations = map[string]string{
+	"user_already_exists":        "Este e-mail já está cadastrado",
+	"invalid_credentials":        "E-mail ou senha inválidos",
+	"email_not_confirmed":        "E-mail ainda não foi verificado",
+	"user_not_found":             "Usuário não encontrado",
+	"invalid_grant":              "Credenciais inválidas",
+	"email_address_invalid":      "Endereço de e-mail inválido",
+	"weak_password":              "Senha muito fraca. Use pelo menos 6 caracteres",
+	"over_request_rate_limit":    "Muitas tentativas. Aguarde alguns minutos",
+	"over_email_send_rate_limit": "Muitos e-mails enviados. Aguarde alguns minutos",
+	"signup_disabled":            "Cadastro temporariamente desabilitado",
+	"user_banned":                "Conta suspensa",
+	"session_not_found":          "Sessão não encontrada",
+	"flow_state_not_found":       "Sessão expirada. Tente novamente",
+	"flow_state_expired":         "Sessão expirada. Tente novamente",
+	"same_password":              "A nova senha deve ser diferente da atual",
+	"validation_failed":          "Dados inválidos. Verifique os campos",
+}
+
+// translateSupabaseError extracts the error code from Supabase response and returns a Portuguese message
+func translateSupabaseError(body []byte) string {
+	var supaErr struct {
+		ErrorCode string `json:"error_code"`
+		Msg       string `json:"msg"`
+		Error     string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &supaErr); err != nil {
+		return "Erro de autenticação. Tente novamente"
+	}
+
+	// Check error_code first (newer Supabase format)
+	if supaErr.ErrorCode != "" {
+		if translated, ok := supabaseErrorTranslations[supaErr.ErrorCode]; ok {
+			return translated
+		}
+	}
+
+	// Fallback to error field (older format)
+	if supaErr.Error != "" {
+		if translated, ok := supabaseErrorTranslations[supaErr.Error]; ok {
+			return translated
+		}
+	}
+
+	// Default message
+	return "Erro de autenticação. Tente novamente"
+}
+
 // callSupabaseAuth is a helper function to make authenticated requests to Supabase Auth API
 func (h *AuthHandlers) callSupabaseAuth(method, url string, payload interface{}) (map[string]interface{}, error) {
 	payloadBytes, err := json.Marshal(payload)
@@ -425,7 +493,8 @@ func (h *AuthHandlers) callSupabaseAuth(method, url string, payload interface{})
 
 	if resp.StatusCode >= 400 {
 		h.Logger.Error().Int("status", resp.StatusCode).Str("body", string(body)).Msg("Supabase Auth API error")
-		return nil, fmt.Errorf("authentication failed: %s", string(body))
+		translatedMsg := translateSupabaseError(body)
+		return nil, fmt.Errorf("%s", translatedMsg)
 	}
 
 	var result map[string]interface{}
@@ -434,4 +503,52 @@ func (h *AuthHandlers) callSupabaseAuth(method, url string, payload interface{})
 	}
 
 	return result, nil
+}
+
+// extractUserIDFromResponse safely extracts the user ID from a Supabase auth response
+// Returns empty string if extraction fails (graceful degradation)
+func (h *AuthHandlers) extractUserIDFromResponse(resp map[string]interface{}) string {
+	user, ok := resp["user"].(map[string]interface{})
+	if !ok {
+		h.Logger.Debug().Msg("No 'user' object in auth response")
+		return ""
+	}
+	id, ok := user["id"].(string)
+	if !ok {
+		h.Logger.Debug().Msg("No 'id' string in user object")
+		return ""
+	}
+	return id
+}
+
+// linkAnonymousSubmissions links anonymous submissions to a newly signed-up user
+// Runs in a goroutine to avoid blocking the signup response
+func (h *AuthHandlers) linkAnonymousSubmissions(userIDStr, email string) {
+	if h.SubmissionService == nil {
+		return // Graceful degradation if service not configured
+	}
+
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		h.Logger.Warn().Str("user_id", userIDStr).Err(err).Msg("Invalid user ID format - cannot link submissions")
+		return
+	}
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		if err := h.SubmissionService.LinkAnonymousToUser(ctx, userID, email); err != nil {
+			h.Logger.Error().
+				Err(err).
+				Str("email", email).
+				Str("user_id", userIDStr).
+				Msg("Failed to link anonymous submissions")
+		} else {
+			h.Logger.Info().
+				Str("email", email).
+				Str("user_id", userIDStr).
+				Msg("Anonymous submissions linked to new user")
+		}
+	}()
 }

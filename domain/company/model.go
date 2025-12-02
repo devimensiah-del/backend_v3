@@ -359,6 +359,7 @@ type AnalysisHistoryItem struct {
 	BusinessChallenge string     `json:"business_challenge" db:"business_challenge"` // The challenge this analysis addresses
 	IsBlurred         bool       `json:"is_blurred" db:"is_blurred"`                 // Whether report is blurred for non-admins
 	IsVisibleToUser   bool       `json:"is_visible_to_user" db:"is_visible_to_user"` // Whether user can see this report
+	IsPublic          bool       `json:"is_public" db:"is_public"`                   // Whether accessible without login
 	AccessCode        *string    `json:"access_code,omitempty" db:"access_code"`     // Public access code (if generated)
 	PdfUrl            *string    `json:"pdf_url,omitempty" db:"pdf_url"`             // PDF URL if generated
 	CompletedAt       *time.Time `json:"completed_at,omitempty" db:"completed_at"`   // When analysis completed

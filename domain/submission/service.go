@@ -18,6 +18,7 @@ import (
 type CompanyServiceInterface interface {
 	CreateFromSubmission(ctx context.Context, input CompanyCreateInput) error
 	IsVerifiedCNPJExists(ctx context.Context, cnpj string) (bool, error)
+	SetOwnerFromSubmission(ctx context.Context, submissionID, userID uuid.UUID) error
 }
 
 // CompanyCreateInput contains the data needed to create a company from a submission
@@ -397,4 +398,57 @@ func (s *Service) CreateFromCompany(ctx context.Context, input CreateFromCompany
 		Msg("Submission created from company data (re-enrich/re-analyze workflow)")
 
 	return sub, nil
+}
+
+// ==================== ANONYMOUS SUBMISSION LINKING ====================
+
+// LinkAnonymousToUser links all anonymous submissions with matching email to the new user
+// This is called after a successful signup to connect pre-existing submissions
+// It also updates company ownership for linked companies
+func (s *Service) LinkAnonymousToUser(ctx context.Context, userID uuid.UUID, email string) error {
+	submissions, err := s.repo.GetAnonymousByEmail(ctx, email)
+	if err != nil {
+		return fmt.Errorf("failed to find anonymous submissions: %w", err)
+	}
+	if len(submissions) == 0 {
+		log.Debug().Str("email", email).Msg("No anonymous submissions to link")
+		return nil
+	}
+
+	log.Info().
+		Str("email", email).
+		Str("user_id", userID.String()).
+		Int("count", len(submissions)).
+		Msg("Linking anonymous submissions to new user")
+
+	linkedCount := 0
+	for _, sub := range submissions {
+		// Update submission's user_id
+		if err := s.repo.UpdateUserID(ctx, sub.ID, userID); err != nil {
+			log.Error().
+				Err(err).
+				Str("submission_id", sub.ID.String()).
+				Msg("Failed to link submission - continuing with others")
+			continue // Don't fail entire operation
+		}
+		linkedCount++
+
+		// Update company ownership (if company service is available)
+		if s.companyService != nil {
+			if err := s.companyService.SetOwnerFromSubmission(ctx, sub.ID, userID); err != nil {
+				log.Warn().
+					Err(err).
+					Str("submission_id", sub.ID.String()).
+					Msg("Failed to update company owner - submission still linked")
+			}
+		}
+	}
+
+	log.Info().
+		Str("email", email).
+		Int("linked_count", linkedCount).
+		Int("total_found", len(submissions)).
+		Msg("Anonymous submission linking completed")
+
+	return nil
 }

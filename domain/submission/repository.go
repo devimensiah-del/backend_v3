@@ -31,6 +31,10 @@ type Repository interface {
 	GetTotalCount(ctx context.Context) (int, error)
 	GetActiveCount(ctx context.Context) (int, error)
 	GetCompletedCount(ctx context.Context) (int, error)
+
+	// Anonymous submission linking (for signup auto-link)
+	GetAnonymousByEmail(ctx context.Context, email string) ([]*Submission, error)
+	UpdateUserID(ctx context.Context, submissionID, userID uuid.UUID) error
 }
 
 // PostgresRepository implements Repository using PostgreSQL
@@ -381,4 +385,51 @@ func (r *PostgresRepository) GetCompletedCount(ctx context.Context) (int, error)
 	}
 
 	return count, nil
+}
+
+// ==================== ANONYMOUS SUBMISSION LINKING ====================
+
+// GetAnonymousByEmail returns submissions with matching email and NULL user_id
+// Used during signup to find submissions to link to the new user
+func (r *PostgresRepository) GetAnonymousByEmail(ctx context.Context, email string) ([]*Submission, error) {
+	query := `
+		SELECT id, company_name, cnpj, company_website, company_industry, company_size, company_location,
+			contact_name, contact_email, contact_phone, contact_position,
+			target_market, annual_revenue_min, annual_revenue_max, funding_stage,
+			business_challenge, additional_notes, linkedin_url, twitter_handle,
+			status, user_id, created_at, updated_at, deleted_at
+		FROM submissions
+		WHERE LOWER(contact_email) = LOWER($1)
+		AND user_id IS NULL
+		AND deleted_at IS NULL
+	`
+
+	var submissions []*Submission
+	if err := r.db.SelectContext(ctx, &submissions, query, email); err != nil {
+		return nil, fmt.Errorf("failed to get anonymous submissions by email: %w", err)
+	}
+
+	return submissions, nil
+}
+
+// UpdateUserID sets the user_id on a submission
+// Used during signup to link anonymous submissions to the new user
+func (r *PostgresRepository) UpdateUserID(ctx context.Context, submissionID, userID uuid.UUID) error {
+	query := `UPDATE submissions SET user_id = $1, updated_at = NOW() WHERE id = $2 AND deleted_at IS NULL`
+
+	result, err := r.db.ExecContext(ctx, query, userID, submissionID)
+	if err != nil {
+		return fmt.Errorf("failed to update submission user_id: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rows == 0 {
+		return fmt.Errorf("submission not found: %s", submissionID)
+	}
+
+	return nil
 }

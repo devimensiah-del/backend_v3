@@ -6,47 +6,31 @@ package llm
 
 const (
 	// CRITICAL: Output is fed into UnifiedEnrichmentPrompt as {{PRE_SEARCH_CONTEXT}}
-	PreSearchPrompt = `Você é um Agente de Inteligência de Mercado especializado em pesquisa corporativa e macroeconômica.
-Sua missão: Coletar TODOS os dados públicos disponíveis sobre a empresa e seu contexto de mercado.
+	// PreSearch does ALL web searching - Gemini synthesis has NO search tool
+	PreSearchPrompt = `Você é um Agente de Inteligência de Mercado com acesso à web.
+Sua missão: Identificar a empresa EXATA e coletar TODOS os dados públicos disponíveis.
 
 DADOS DO USUÁRIO:
 Nome da Empresa: {{COMPANY_NAME}}
 {{USER_CONTEXT}}
 
---- TAREFA COMPLETA (2 PARTES) ---
+--- TAREFA: COLETA COMPLETA DE DADOS ---
 
-## PARTE 1: IDENTIFICAÇÃO CORPORATIVA
-O nome "{{COMPANY_NAME}}" pode corresponder a múltiplas empresas. BUSQUE ATIVAMENTE:
+O nome "{{COMPANY_NAME}}" pode corresponder a múltiplas empresas. BUSQUE:
 - "[{{COMPANY_NAME}}] empresa Brasil site oficial"
-- "[{{COMPANY_NAME}}] CNPJ razão social Receita Federal"
-- "[{{COMPANY_NAME}}] LinkedIn company page Brasil"
+- "[{{COMPANY_NAME}}] CNPJ razão social"
+- "[{{COMPANY_NAME}}] LinkedIn company page"
 - "[{{COMPANY_NAME}}] fundação história"
+- "[Setor] mercado Brasil tendências concorrentes"
 
-Dados a coletar:
-- Razão social oficial, nome fantasia
-- CNPJ (se público)
-- Website oficial
-- LinkedIn, Twitter/X
-- Ano de fundação
-- Sede (cidade, estado, país)
-- Setor de atuação (CNAE)
-- Porte estimado (funcionários, faturamento)
-
-## PARTE 2: TENDÊNCIAS DO SETOR
-Baseado no setor identificado, BUSQUE:
-- "[Setor] mercado Brasil 2025 tendências"
-- "[Setor] principais players concorrentes Brasil"
-- "[Setor] regulamentação leis 2025"
-- "[Setor] tecnologia inovação disrupção"
-
-Dados a coletar:
-- Crescimento do setor (CAGR)
-- Principais concorrentes
-- Novas regulamentações
-- Tendências tecnológicas
-- Barreiras de entrada
-
----
+COLETE TODOS OS DADOS POSSÍVEIS:
+1. Identificação: Razão social, nome fantasia, CNPJ, website, LinkedIn, Twitter
+2. Localização: Sede (cidade, estado, país)
+3. História: Ano de fundação
+4. Porte: Funcionários estimado, faturamento estimado
+5. Setor: CNAE, setor de atuação
+6. Mercado: Concorrentes, crescimento do setor, tendências, barreiras
+7. Digital: Presença online, maturidade digital
 
 Retorne JSON estrito (PT-BR):
 {
@@ -78,7 +62,7 @@ Retorne JSON estrito (PT-BR):
     "regulatory_changes": ["Regulação 1", "Lei 2"],
     "barriers_to_entry": "Alta/Média/Baixa - descrição"
   },
-  "technical_validation": {
+  "digital_assessment": {
     "website_active": true,
     "social_presence": ["LinkedIn", "Twitter", "Instagram"],
     "digital_maturity": "Alta/Média/Baixa",
@@ -86,134 +70,77 @@ Retorne JSON estrito (PT-BR):
   },
   "confidence_score": 85,
   "disambiguation_notes": "Se houver empresas similares, liste aqui",
-  "sources_used": ["URL1", "URL2", "URL3"],
-  "search_quality": "high/medium/low",
-  "data_freshness": "2025-11-26"
+  "sources_used": ["URL1", "URL2", "URL3"]
 }`
 
-	UnifiedEnrichmentPrompt = `Você é um Agente de Inteligência Corporativa (CIA).
-Sua missão: Criar um JSON de Perfil Corporativo Perfeito, fundindo dados do usuário, dados técnicos coletados, contexto macroeconômico REAL em tempo real, e suas próprias pesquisas na web.
+	// UnifiedEnrichment: Gemini synthesizes data - NO search tool, NO macro research
+	// All searching was done by Perplexity in PreSearch. Macro comes from DB.
+	UnifiedEnrichmentPrompt = `Você é um Agente de Síntese de Dados Corporativos.
+Sua missão: ORGANIZAR e ESTRUTURAR os dados já coletados em um perfil corporativo unificado.
 
---- FONTES DE DADOS ---
+--- FONTES DE DADOS (JÁ COLETADOS - NÃO BUSQUE NOVOS) ---
 
-1. O QUE O USUÁRIO DISSE:
+1. DADOS DO USUÁRIO (AUTORITATIVO - maior prioridade):
 {{USER_CONTEXT}}
 
-2. PRÉ-IDENTIFICAÇÃO DA EMPRESA (PERPLEXITY - Alta Precisão):
+2. PRÉ-PESQUISA PERPLEXITY (dados descobertos na web):
 {{PRE_SEARCH_CONTEXT}}
 
-INSTRUÇÕES CRÍTICAS PARA PRÉ-IDENTIFICAÇÃO:
-- Se os dados acima contiverem uma empresa identificada com alta confiança (confidence_score > 70), USE ESSES DADOS como fonte primária
-- O nome oficial, CNPJ, website e dados da sede devem ser priorizados se presentes
-- Se houver "disambiguation_notes" sobre empresas similares, use para evitar confusão
-- Se a pré-identificação falhou, continue com busca ativa normal
-
-3. O QUE NOSSOS ROBÔS ENCONTRARAM (Dados Técnicos):
-{{TECHNICAL_CONTEXT}}
-
-4. CONTEXTO MACROECONÔMICO BRASILEIRO (APIs OFICIAIS BCB + IBGE):
+3. DADOS MACROECONÔMICOS (autoritativos do BCB/IBGE):
 {{REAL_TIME_MACRO_DATA}}
 
-INSTRUÇÕES CRÍTICAS PARA DADOS MACRO (OBRIGATÓRIO):
-- Os dados acima foram obtidos diretamente das APIs oficiais do Banco Central do Brasil (BCB) e IBGE
-- USE ESTES VALORES EXATOS para SELIC, IPCA e câmbio USD/BRL - NÃO PESQUISE NOVOS VALORES
-- Estes são dados autoritativos de alta confiança (100%) - cite a fonte oficial em suas análises
-- APENAS se os dados estiverem marcados como "Indisponível", então busque na web como fallback
-- Para outros indicadores não incluídos (PIB, desemprego, etc.), você pode buscar na web
-
-5. O QUE FALTA (Sua prioridade de busca):
+4. CAMPOS FALTANTES (para referência):
 {{MISSING_FIELDS}}
 
---- INSTRUÇÕES DE EXECUÇÃO ---
+--- REGRAS DE PRIORIDADE (CRÍTICO) ---
 
-1. **RESOLUÇÃO DE CONFLITOS:**
-   - Se os "Dados Técnicos" contradizem o Usuário (ex: usuário diz "Tech", scraper diz "Padaria"), confie no usuario.
-   - Se o usuário não informou Localização, busque a sede da empresa.
+1. **DADOS DO USUÁRIO > DADOS DA PRÉ-PESQUISA**
+   - Se o usuário informou um campo, USE O VALOR DO USUÁRIO
+   - Dados da pré-pesquisa servem para COMPLEMENTAR lacunas, não para contradizer
+   - Exemplo: Se usuário disse "B2B" e pré-pesquisa diz "B2C", use "B2B"
 
-2. **BUSCA ATIVA - DADOS PÚBLICOS DA EMPRESA (DESCOBERTA):**
-   Busque e preencha a seção "discovered_data" com informações públicas que o usuário NÃO forneceu:
+2. **PRÉ-PESQUISA COM ALTA CONFIANÇA**
+   - Se confidence_score > 70, use os dados da pré-pesquisa para campos não informados
+   - Respeite disambiguation_notes se houver empresas similares
 
-   A. **CNPJ e RAZÃO SOCIAL:**
-      - Busque: "[Empresa] CNPJ consulta"
-      - Busque: "[Empresa] razão social receita federal"
+3. **DADOS MACRO - USE EXATAMENTE COMO FORNECIDO**
+   - SELIC, IPCA, USD/BRL: copie os valores exatos do {{REAL_TIME_MACRO_DATA}}
+   - NÃO modifique, NÃO estime, NÃO busque novos valores
+   - Se um valor está "Indisponível", mantenha null
 
-   B. **LINKEDIN DA EMPRESA:**
-      - Busque: "[Empresa] linkedin company page"
-      - URL típica: linkedin.com/company/[nome-empresa]
+--- NÃO BUSQUE NA INTERNET ---
+Todos os dados necessários já estão nas fontes acima.
+Sua tarefa é ORGANIZAR e ESTRUTURAR, não pesquisar.
 
-   C. **TWITTER/X DA EMPRESA:**
-      - Busque: "[Empresa] twitter X perfil oficial"
-
-   D. **WEBSITE OFICIAL:**
-      - Se não fornecido, busque: "[Empresa] site oficial"
-
-   E. **ANO DE FUNDAÇÃO:**
-      - Busque: "[Empresa] fundação história ano criação"
-
-   F. **TAMANHO DA EMPRESA (funcionários):**
-      - Busque: "[Empresa] número funcionários glassdoor linkedin"
-
-   G. **FATURAMENTO ESTIMADO:**
-      - Busque: "[Empresa] faturamento receita valor econômico"
-
-   H. **SETOR/INDÚSTRIA:**
-      - Busque: "[Empresa] setor atuação CNAE"
-
-3. **BUSCA ATIVA - PERFIL DA EMPRESA:**
-   - Para cada item faltante listado acima, use a ferramenta de busca.
-   - Exemplo: Se falta faturamento, busque "Faturamento [Empresa] valor econômico".
-   - Exemplo: Se falta localização, busque "[Empresa] sede address".
-
-4. **BUSCA ATIVA - CONTEXTO MACROECONÔMICO (CRÍTICO):**
-   Esta é a seção mais importante para garantir análises precisas. Busque dados atualizados sobre:
-
-   A. **INDICADORES ECONÔMICOS DO PAÍS:**
-      - Busque: "[País] PIB crescimento 2025"
-      - Busque: "[País] inflação IPCA taxa juros SELIC 2025"
-      - Busque: "[País] câmbio dólar real 2025"
-      - Busque: "[País] reformas políticas mudanças regulatórias 2025"
-
-   B. **TENDÊNCIAS DO SETOR:**
-      - Busque: "[Setor da empresa] crescimento tendências Brasil 2025"
-      - Busque: "[Setor] tecnologia inovação adoção Brasil"
-      - Busque: "[Setor] fusões aquisições M&A Brasil 2025"
-      - Busque: "[Setor] principais players concentração mercado Brasil"
-
-   C. **AMBIENTE REGULATÓRIO:**
-      - Busque: "[Setor] novas leis regulamentações Brasil 2025"
-      - Busque: "[Setor] compliance normas padrões ISO Brasil"
-
-   D. **SINAIS DE MERCADO:**
-      - Busque: "[Insumos relevantes] preços commodities Brasil 2025" (ex: "aço preços Brasil 2025" se for indústria)
-      - Busque: "[Concorrentes identificados] novos produtos lançamentos 2025"
-
-5. **ESTRUTURA DE RETORNO (JSON OBRIGATÓRIO):**
-Preencha TODOS os campos. Se não achar exato, estime e marque como "estimated".
+--- ESTRUTURA DE RETORNO (JSON) ---
 
 {
+  "submitted_data": {
+    "_comment": "Copie os dados exatos que o usuário forneceu - para referência"
+  },
   "discovered_data": {
-    "cnpj": "CNPJ encontrado (ou null se não encontrado)",
-    "website": "Website oficial descoberto (ou null)",
-    "linkedin_url": "URL do LinkedIn da empresa (ou null)",
-    "twitter_handle": "@handle do Twitter/X (ou null)",
-    "industry": "Setor/CNAE descoberto (ou null)",
-    "company_size": "Faixa de funcionários descoberta (ou null)",
-    "location": "Sede/Localização descoberta (ou null)",
-    "foundation_year": "Ano de fundação descoberto (ou null)",
-    "funding_stage": "Estágio de financiamento descoberto (ou null)",
-    "annual_revenue_estimate": "Faturamento estimado descoberto (ou null)",
-    "target_market": "Mercado alvo descoberto (ou null)"
+    "cnpj": "Da pré-pesquisa (ou null)",
+    "website": "Da pré-pesquisa (ou null)",
+    "linkedin_url": "Da pré-pesquisa (ou null)",
+    "twitter_handle": "Da pré-pesquisa (ou null)",
+    "industry": "Da pré-pesquisa (ou null)",
+    "company_size": "Da pré-pesquisa (ou null)",
+    "location": "Da pré-pesquisa (ou null)",
+    "foundation_year": "Da pré-pesquisa (ou null)",
+    "funding_stage": "Da pré-pesquisa (ou null)",
+    "annual_revenue_estimate": "Da pré-pesquisa (ou null)",
+    "target_market": "Da pré-pesquisa (ou null)"
   },
   "profile_overview": {
-    "legal_name": "Razão Social Completa",
-    "website": "URL Verificada",
-    "foundation_year": "Ano (ou N/A)",
-    "headquarters": "Cidade, Estado, País (Essencial)"
+    "legal_name": "Razão Social (pré-pesquisa ou usuário)",
+    "website": "URL verificada",
+    "foundation_year": "Ano",
+    "headquarters": "Cidade, Estado, País"
   },
   "market_position": {
-    "sector": "Setor Específico (ex: SaaS Fintech)",
+    "sector": "Setor específico",
     "target_audience": "Descrição do ICP",
-    "value_proposition": "Proposta de valor principal"
+    "value_proposition": "Proposta de valor"
   },
   "financials": {
     "employees_range": "Ex: 10-50",
@@ -221,52 +148,38 @@ Preencha TODOS os campos. Se não achar exato, estime e marque como "estimated".
     "business_model": "Ex: B2B Recorrente"
   },
   "competitive_landscape": {
-    "competitors": ["Concorrente A", "Concorrente B", "Concorrente C"],
-    "market_share_status": "Líder / Desafiador / Nicho"
+    "competitors": ["Da pré-pesquisa"],
+    "market_share_status": "Líder/Desafiador/Nicho"
   },
   "strategic_assessment": {
     "digital_maturity": 7,
-    "strengths": ["Força 1", "Força 2"],
-    "weaknesses": ["Fraqueza 1", "Fraqueza 2"]
+    "strengths": ["Baseado na pré-pesquisa"],
+    "weaknesses": ["Baseado na pré-pesquisa"]
   },
-  "macro_context": {
-    "economic_indicators": {
-      "country": "Brasil",
-      "gdp_growth": "Ex: +2.5% (2024) ou null se indisponível",
-      "inflation_rate": "Ex: IPCA 4.83% a.a. ou null se indisponível",
-      "interest_rate": "Ex: SELIC 12.25% a.a. ou null se indisponível",
-      "exchange_rate": "Ex: USD/BRL 5.85 ou null se indisponível",
-      "unemployment_rate": "Ex: 6.5% ou null se indisponível",
-      "political_stability": "Ex: Moderada - reformas em andamento",
-      "economic_outlook": "Síntese do cenário econômico atual",
-      "recent_policy_changes": ["Reforma Tributária 2025", "Plano Safra 2025/26"]
-    },
-    "industry_trends": {
-      "industry_sector": "Agronegócio Tecnológico",
-      "growth_rate": "+12% CAGR (2024-2028)",
-      "key_trends": ["Adoção de IoT", "Foco em sustentabilidade", "Transformação digital"],
-      "technology_adoption": "Alta adoção de cloud/IA no setor",
-      "market_concentration": "Fragmentado - sem player dominante",
-      "barriers_to_entry": "Médio - requer expertise técnica e capital",
-      "mergers_acquisitions": ["Empresa X adquiriu Y em 2024", "Consolidação em andamento"]
-    },
-    "regulatory_landscape": {
-      "recent_regulations": ["Lei do Agro 2025", "Nova conformidade ambiental"],
-      "upcoming_changes": ["Proposta de imposto sobre carbono", "Atualização lei de dados"],
-      "compliance_requirements": "ISO 9001, rastreabilidade obrigatória",
-      "industry_standards": ["ISO 9001", "ISO 14001", "Rastreabilidade MAPA"]
-    },
-    "market_signals": {
-      "commodity_prices": ["Aço +12% YoY", "Cobre estável"],
-      "supply_chain_status": "Atrasos moderados em componentes eletrônicos",
-      "consumer_sentiment": "Cauteloso devido a inflação",
-      "competitor_activity": ["Concorrente X lançou novo produto", "Concorrente Y expandiu para nova região"],
-      "emerging_threats": ["Novo entrante low-cost da China", "Tecnologia substituta ganhando tração"]
-    },
-    "data_sources": ["url1", "url2", "url3"],
-    "last_updated": "2025-11-22"
-  }
+  "industry_context": {
+    "growth_rate": "Da pré-pesquisa",
+    "technology_trends": ["Da pré-pesquisa"],
+    "regulatory_changes": ["Da pré-pesquisa"],
+    "barriers_to_entry": "Da pré-pesquisa"
+  },
+  "sources_used": ["URLs da pré-pesquisa"]
 }`
+
+	// DataPriorityInstruction is injected into all analysis framework prompts
+	// This ensures AI-discovered data never overwrites user-provided data
+	DataPriorityInstruction = `
+--- REGRA DE PRIORIDADE DE DADOS (CRÍTICO) ---
+FONTES DE DADOS (em ordem de prioridade):
+1. **COMPANY_DATA** = Dados fornecidos DIRETAMENTE pelo cliente (AUTORITATIVO)
+2. **ENRICHMENT_DATA.submitted_data** = Dados do formulário original (AUTORITATIVO)
+3. **ENRICHMENT_DATA.discovered_data** = Dados descobertos por IA (SUPLEMENTAR)
+
+REGRAS:
+- Em caso de CONFLITO, SEMPRE priorize dados do cliente (company_data ou submitted_data)
+- Dados descobertos por IA servem para COMPLEMENTAR lacunas, nunca para contradizer o cliente
+- Para indicadores macro (SELIC, IPCA, USD/BRL), use EXATAMENTE os valores de MACRO_CONTEXT
+--- FIM REGRA DE PRIORIDADE ---
+`
 
 	// 1. PESTEL - Modelo SCAN [cite: 416] - CONSTRAINED
 	FrameworkPESTELPrompt = `Realize uma análise PESTEL (Modelo SCAN) priorizada para relatório executivo.
@@ -520,18 +433,30 @@ Retorne JSON (valores em PT-BR):
 }`
 
 	// 7. GROWTH HACKING - LEAP + SCALE Loops [cite: 1164] - CONSTRAINED
+	// DEPENDENCIES: SWOT (weaknesses/opportunities), TAM-SAM-SOM (market scale)
 	FrameworkGrowthHackingPrompt = `Crie estratégias de Growth Hacking com LEAP Loop (Aquisição) e SCALE Loop (Monetização).
 Contexto: {{COMPANY_DATA}}
+Inteligência: {{ENRICHMENT_DATA}}
+Análise SWOT: {{SWOT_SUMMARY}}
+Fraquezas Identificadas: {{SWOT_WEAKNESSES}}
+Oportunidades Identificadas: {{SWOT_OPPORTUNITIES}}
+Escala de Mercado: {{MARKET_SCALE}}
 Meta: Acelerar tração e maximizar valor do cliente.
 
+INSTRUÇÕES CRÍTICAS:
+1. Use as FRAQUEZAS da SWOT para identificar bottlenecks a resolver
+2. Use as OPORTUNIDADES da SWOT para orientar táticas de aquisição
+3. Use a ESCALA DE MERCADO para dimensionar os loops corretamente
+4. Cada tática deve ser específica para a empresa, não genérica
+
 LEAP LOOP (Aquisição):
-1. **Land** (Aterrissar): Como prospects chegam?
-2. **Engage** (Engajar): Como envolvê-los?
+1. **Land** (Aterrissar): Como prospects chegam? (baseie nas oportunidades)
+2. **Engage** (Engajar): Como envolvê-los? (considere digital maturity)
 3. **Activate** (Ativar): Como converter em usuários?
 4. **Propagate** (Propagar): Como gerar viralidade?
 
 SCALE LOOP (Monetização):
-1. **Satisfy** (Satisfazer): Como entregar valor?
+1. **Satisfy** (Satisfazer): Como entregar valor? (aborde as fraquezas)
 2. **Convert** (Converter): Como monetizar?
 3. **Loop Back** (Retornar): Como gerar recorrência?
 4. **Expand** (Expandir): Como aumentar LTV?
@@ -539,7 +464,7 @@ SCALE LOOP (Monetização):
 REGRAS:
 1. Para cada loop, defina os 4 passos com clareza (max 120 chars cada).
 2. Identifique métricas-chave para cada loop.
-3. Identifique o principal bottleneck (gargalo) de cada loop.
+3. Identifique o principal bottleneck (gargalo) de cada loop baseado nas FRAQUEZAS.
 
 Retorne JSON (valores em PT-BR):
 {

@@ -553,6 +553,77 @@ func (h *CompanyHandlers) GetCompany(c *gin.Context) {
 	})
 }
 
+// UpdateCompanyUser handles PUT /api/v1/companies/:id
+// Allows company owners to update their company fields with auto-verification
+func (h *CompanyHandlers) UpdateCompanyUser(c *gin.Context) {
+	companyID := c.Param("id")
+
+	companyUUID, err := uuid.Parse(companyID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "ID inválido", Message: "Formato de ID inválido"})
+		return
+	}
+
+	// Parse request body
+	var req struct {
+		Fields map[string]interface{} `json:"fields"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Requisição inválida", Message: err.Error()})
+		return
+	}
+
+	if len(req.Fields) == 0 {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Requisição inválida", Message: "Nenhum campo fornecido"})
+		return
+	}
+
+	// Get user ID from context
+	userIDStr, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Não autorizado", Message: "Usuário não autenticado"})
+		return
+	}
+
+	userID, err := uuid.Parse(userIDStr.(string))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Erro interno", Message: "ID de usuário inválido"})
+		return
+	}
+
+	// Get company to check ownership
+	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
+	if err != nil || comp == nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Não encontrado", Message: "Empresa não encontrada"})
+		return
+	}
+
+	// Check if user is the owner
+	if comp.OwnerID == nil || *comp.OwnerID != userID {
+		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Acesso negado", Message: "Apenas o proprietário pode editar os dados da empresa"})
+		return
+	}
+
+	// Update company fields with auto-verification
+	updatedCompany, err := h.CompanyService.UpdateFieldsWithAutoVerification(c.Request.Context(), companyUUID, req.Fields, userID)
+	if err != nil {
+		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to update company")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Falha na atualização", Message: err.Error()})
+		return
+	}
+
+	h.Logger.Info().
+		Str("company_id", companyID).
+		Str("user_id", userID.String()).
+		Int("fields_updated", len(req.Fields)).
+		Msg("Company fields updated by owner")
+
+	c.JSON(http.StatusOK, gin.H{
+		"company": updatedCompany,
+		"message": "Empresa atualizada com sucesso",
+	})
+}
+
 // ChallengeOverrideRequest allows specifying a new business challenge for analysis
 // If NewChallenge is empty, falls back to the last submission's challenge
 type ChallengeOverrideRequest struct {
@@ -1311,6 +1382,193 @@ func (h *CompanyHandlers) UnverifyAllFields(c *gin.Context) {
 		Data: map[string]interface{}{
 			"company_id":        companyID,
 			"fields_unverified": len(company.VerifiableFields),
+		},
+	})
+}
+
+// ============================================================================
+// USER-LEVEL VERIFICATION ENDPOINTS
+// These allow users (owner or in allowed_users) to verify their own company data
+// ============================================================================
+
+// GetFieldVerificationsUser handles GET /api/v1/companies/:id/verifications
+// Returns field verification status for user's company
+func (h *CompanyHandlers) GetFieldVerificationsUser(c *gin.Context) {
+	companyID := c.Param("id")
+
+	companyUUID, err := uuid.Parse(companyID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
+		return
+	}
+
+	// Get company (validates exists)
+	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
+	if err != nil || comp == nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Company not found"})
+		return
+	}
+
+	// Check access - user must be owner or in allowed_users
+	if !h.checkCompanyAccess(c, comp) {
+		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Access denied"})
+		return
+	}
+
+	// Get field verifications
+	verifications, err := h.CompanyService.GetFieldVerifications(c.Request.Context(), companyUUID)
+	if err != nil {
+		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to get field verifications")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Database error", Message: "Failed to retrieve verifications"})
+		return
+	}
+
+	// Build response with verification status for each field
+	verifiedSet := make(map[string]bool)
+	for _, v := range verifications {
+		verifiedSet[v.FieldName] = true
+	}
+
+	fields := make([]map[string]interface{}, 0, len(company.VerifiableFields))
+	for _, fieldName := range company.VerifiableFields {
+		field := map[string]interface{}{
+			"field_name": fieldName,
+			"verified":   verifiedSet[fieldName],
+		}
+		for _, v := range verifications {
+			if v.FieldName == fieldName {
+				field["verified_at"] = v.VerifiedAt
+				field["verified_by"] = v.VerifiedBy
+				break
+			}
+		}
+		fields = append(fields, field)
+	}
+
+	c.JSON(http.StatusOK, MessageResponse{
+		Message: "Field verifications retrieved",
+		Data: map[string]interface{}{
+			"company_id":       companyID,
+			"fields":           fields,
+			"total_verifiable": len(company.VerifiableFields),
+			"total_verified":   len(verifications),
+		},
+	})
+}
+
+// VerifyFieldUser handles POST /api/v1/companies/:id/verifications
+// Allows user to verify a field on their own company
+func (h *CompanyHandlers) VerifyFieldUser(c *gin.Context) {
+	companyID := c.Param("id")
+
+	companyUUID, err := uuid.Parse(companyID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
+		return
+	}
+
+	// Parse request body
+	var req VerifyFieldRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request", Message: "field_name is required"})
+		return
+	}
+
+	// Get company (validates exists)
+	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
+	if err != nil || comp == nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Company not found"})
+		return
+	}
+
+	// Check access - user must be owner or in allowed_users
+	if !h.checkCompanyAccess(c, comp) {
+		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Access denied"})
+		return
+	}
+
+	// Get verified_by user ID
+	var verifiedBy *uuid.UUID
+	if userIDStr, exists := c.Get("userID"); exists {
+		if uid, err := uuid.Parse(userIDStr.(string)); err == nil {
+			verifiedBy = &uid
+		}
+	}
+
+	// Verify the field
+	if err := h.CompanyService.VerifyField(c.Request.Context(), companyUUID, req.FieldName, verifiedBy); err != nil {
+		h.Logger.Error().Err(err).
+			Str("company_id", companyID).
+			Str("field_name", req.FieldName).
+			Msg("Failed to verify field")
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Verification failed", Message: err.Error()})
+		return
+	}
+
+	h.Logger.Info().
+		Str("company_id", companyID).
+		Str("field_name", req.FieldName).
+		Msg("Field verified by user")
+
+	c.JSON(http.StatusOK, MessageResponse{
+		Message: "Field verified",
+		Data: map[string]interface{}{
+			"company_id": companyID,
+			"field_name": req.FieldName,
+			"verified":   true,
+		},
+	})
+}
+
+// VerifyAllFieldsUser handles POST /api/v1/companies/:id/verifications/all
+// Allows user to verify all fields on their own company
+func (h *CompanyHandlers) VerifyAllFieldsUser(c *gin.Context) {
+	companyID := c.Param("id")
+
+	companyUUID, err := uuid.Parse(companyID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
+		return
+	}
+
+	// Get company (validates exists)
+	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
+	if err != nil || comp == nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Company not found"})
+		return
+	}
+
+	// Check access - user must be owner or in allowed_users
+	if !h.checkCompanyAccess(c, comp) {
+		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Access denied"})
+		return
+	}
+
+	// Get verified_by user ID
+	var verifiedBy *uuid.UUID
+	if userIDStr, exists := c.Get("userID"); exists {
+		if uid, err := uuid.Parse(userIDStr.(string)); err == nil {
+			verifiedBy = &uid
+		}
+	}
+
+	// Verify all fields
+	if err := h.CompanyService.VerifyAllFields(c.Request.Context(), companyUUID, verifiedBy); err != nil {
+		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to verify all fields")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Verification failed", Message: err.Error()})
+		return
+	}
+
+	h.Logger.Info().
+		Str("company_id", companyID).
+		Int("field_count", len(company.VerifiableFields)).
+		Msg("All fields verified by user")
+
+	c.JSON(http.StatusOK, MessageResponse{
+		Message: "All fields verified",
+		Data: map[string]interface{}{
+			"company_id":      companyID,
+			"fields_verified": len(company.VerifiableFields),
 		},
 	})
 }

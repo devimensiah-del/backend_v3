@@ -627,6 +627,55 @@ func (s *Service) TransferOwnership(ctx context.Context, companyID, newOwnerID u
 	return company, nil
 }
 
+// SetOwnerFromSubmission sets owner_id and allowed_users for company linked to submission
+// Used when linking anonymous submissions to newly signed-up users
+// Only sets owner if company doesn't already have one (idempotent)
+func (s *Service) SetOwnerFromSubmission(ctx context.Context, submissionID, userID uuid.UUID) error {
+	s.logger.Debug().
+		Str("submission_id", submissionID.String()).
+		Str("user_id", userID.String()).
+		Msg("Setting owner from submission")
+
+	// Find company linked to this submission
+	company, err := s.repo.GetBySubmissionID(ctx, submissionID)
+	if err != nil {
+		return fmt.Errorf("failed to get company for submission: %w", err)
+	}
+	if company == nil {
+		s.logger.Debug().
+			Str("submission_id", submissionID.String()).
+			Msg("No company linked to submission - skipping owner assignment")
+		return nil // No company to update, not an error
+	}
+
+	// Skip if already has an owner
+	if company.OwnerID != nil {
+		s.logger.Debug().
+			Str("company_id", company.ID.String()).
+			Str("existing_owner", company.OwnerID.String()).
+			Msg("Company already has owner - skipping")
+		return nil
+	}
+
+	// Set owner and add to allowed_users
+	company.OwnerID = &userID
+	if !company.AllowedUsers.Contains(userID) {
+		company.AllowedUsers = append(company.AllowedUsers, userID)
+	}
+
+	if err := s.repo.Update(ctx, company); err != nil {
+		return fmt.Errorf("failed to update company owner: %w", err)
+	}
+
+	s.logger.Info().
+		Str("company_id", company.ID.String()).
+		Str("company_name", company.Name).
+		Str("new_owner", userID.String()).
+		Msg("Company owner set from submission")
+
+	return nil
+}
+
 // GetHistory retrieves all history entries for a company
 func (s *Service) GetHistory(ctx context.Context, companyID uuid.UUID) ([]*DataHistoryEntry, error) {
 	return s.repo.GetHistory(ctx, companyID)

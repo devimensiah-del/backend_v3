@@ -47,6 +47,10 @@ type Analysis struct {
 	// Independent of visibility (can be visible but blurred)
 	IsBlurred bool `db:"is_blurred" json:"is_blurred"`
 
+	// Public access control - When true, report is accessible via access code without login
+	// When false, access code requires authentication
+	IsPublic bool `db:"is_public" json:"is_public"`
+
 	// Public sharing via access code
 	AccessCode          *string    `db:"access_code" json:"access_code,omitempty"`
 	AccessCodeCreatedAt *time.Time `db:"access_code_created_at" json:"access_code_created_at,omitempty"`
@@ -439,6 +443,12 @@ func (a *Analysis) MakeInvisible() {
 // SetBlurred enables premium content blurring
 func (a *Analysis) SetBlurred(blurred bool) {
 	a.IsBlurred = blurred
+	a.UpdatedAt = time.Now()
+}
+
+// SetPublic controls whether the report is accessible without login
+func (a *Analysis) SetPublic(public bool) {
+	a.IsPublic = public
 	a.UpdatedAt = time.Now()
 }
 

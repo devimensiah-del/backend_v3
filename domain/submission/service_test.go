@@ -90,6 +90,19 @@ func (m *MockRepository) ReserveEnrichment(ctx context.Context, submissionID uui
 	return args.Bool(0), args.Error(1)
 }
 
+func (m *MockRepository) GetAnonymousByEmail(ctx context.Context, email string) ([]*submission.Submission, error) {
+	args := m.Called(ctx, email)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*submission.Submission), args.Error(1)
+}
+
+func (m *MockRepository) UpdateUserID(ctx context.Context, submissionID, userID uuid.UUID) error {
+	args := m.Called(ctx, submissionID, userID)
+	return args.Error(0)
+}
+
 // ============================================================================
 // TEST CREATE
 // ============================================================================

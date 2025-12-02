@@ -20,6 +20,7 @@ type Repository interface {
 	BeginTx(ctx context.Context) (*sqlx.Tx, error)                       // Begin transaction
 	SetVisibility(ctx context.Context, id string, visible bool) error    // Toggle user visibility
 	SetBlurStatus(ctx context.Context, id string, blurred bool) error    // Toggle blur status for premium frameworks
+	SetPublicStatus(ctx context.Context, id string, public bool) error   // Toggle public access (no login required)
 	GetByAccessCode(ctx context.Context, code string) (*Analysis, error) // Get by public access code
 	SetAccessCode(ctx context.Context, id string, code string) error     // Set access code
 	AccessCodeExists(ctx context.Context, code string) (bool, error)     // Check if code exists (for collision handling)
@@ -44,14 +45,14 @@ func (r *PostgresRepository) Create(ctx context.Context, analysis *Analysis) err
 			id, submission_id, enrichment_id,
 			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
 			synthesis, status, error_message, processing_time_ms,
-			is_visible_to_user, is_blurred, access_code, access_code_created_at, deleted_at,
+			is_visible_to_user, is_blurred, is_public, access_code, access_code_created_at, deleted_at,
 			created_at, updated_at, completed_at
 		) VALUES (
 			$1, $2, $3,
 			$4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
 			$15, $16, $17, $18,
-			$19, $20, $21, $22, $23,
-			$24, $25, $26
+			$19, $20, $21, $22, $23, $24,
+			$25, $26, $27
 		)
 	`
 
@@ -59,7 +60,7 @@ func (r *PostgresRepository) Create(ctx context.Context, analysis *Analysis) err
 		analysis.ID, analysis.SubmissionID, analysis.EnrichmentID,
 		analysis.SWOT, analysis.PESTEL, analysis.Porter, analysis.OKRs, analysis.TamSamSom, analysis.Benchmarking, analysis.BlueOcean, analysis.GrowthHacking, analysis.Scenarios, analysis.BSC, analysis.DecisionMatrix,
 		analysis.Synthesis, analysis.Status, analysis.ErrorMessage, analysis.ProcessingTimeMs,
-		analysis.IsVisibleToUser, analysis.IsBlurred, analysis.AccessCode, analysis.AccessCodeCreatedAt, analysis.DeletedAt,
+		analysis.IsVisibleToUser, analysis.IsBlurred, analysis.IsPublic, analysis.AccessCode, analysis.AccessCodeCreatedAt, analysis.DeletedAt,
 		analysis.CreatedAt, analysis.UpdatedAt, analysis.CompletedAt,
 	)
 	if err != nil {
@@ -91,19 +92,20 @@ func (r *PostgresRepository) Update(ctx context.Context, analysis *Analysis) err
 			processing_time_ms = $15,
 			is_visible_to_user = $16,
 			is_blurred = $17,
-			access_code = $18,
-			access_code_created_at = $19,
-			deleted_at = $20,
-			updated_at = $21,
-			completed_at = $22
-		WHERE id = $23
+			is_public = $18,
+			access_code = $19,
+			access_code_created_at = $20,
+			deleted_at = $21,
+			updated_at = $22,
+			completed_at = $23
+		WHERE id = $24
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
 		analysis.SWOT, analysis.PESTEL, analysis.Porter, analysis.OKRs, analysis.TamSamSom,
 		analysis.Benchmarking, analysis.BlueOcean, analysis.GrowthHacking, analysis.Scenarios, analysis.BSC,
 		analysis.DecisionMatrix, analysis.Synthesis, analysis.Status, analysis.ErrorMessage, analysis.ProcessingTimeMs,
-		analysis.IsVisibleToUser, analysis.IsBlurred, analysis.AccessCode, analysis.AccessCodeCreatedAt,
+		analysis.IsVisibleToUser, analysis.IsBlurred, analysis.IsPublic, analysis.AccessCode, analysis.AccessCodeCreatedAt,
 		analysis.DeletedAt, analysis.UpdatedAt, analysis.CompletedAt, analysis.ID,
 	)
 	if err != nil {
@@ -144,19 +146,20 @@ func (r *PostgresRepository) UpdateWithTx(ctx context.Context, tx *sqlx.Tx, anal
 			processing_time_ms = $15,
 			is_visible_to_user = $16,
 			is_blurred = $17,
-			access_code = $18,
-			access_code_created_at = $19,
-			deleted_at = $20,
-			updated_at = $21,
-			completed_at = $22
-		WHERE id = $23
+			is_public = $18,
+			access_code = $19,
+			access_code_created_at = $20,
+			deleted_at = $21,
+			updated_at = $22,
+			completed_at = $23
+		WHERE id = $24
 	`
 
 	result, err := tx.ExecContext(ctx, query,
 		analysis.SWOT, analysis.PESTEL, analysis.Porter, analysis.OKRs, analysis.TamSamSom,
 		analysis.Benchmarking, analysis.BlueOcean, analysis.GrowthHacking, analysis.Scenarios, analysis.BSC,
 		analysis.DecisionMatrix, analysis.Synthesis, analysis.Status, analysis.ErrorMessage, analysis.ProcessingTimeMs,
-		analysis.IsVisibleToUser, analysis.IsBlurred, analysis.AccessCode, analysis.AccessCodeCreatedAt,
+		analysis.IsVisibleToUser, analysis.IsBlurred, analysis.IsPublic, analysis.AccessCode, analysis.AccessCodeCreatedAt,
 		analysis.DeletedAt, analysis.UpdatedAt, analysis.CompletedAt, analysis.ID,
 	)
 	if err != nil {
@@ -191,7 +194,7 @@ func (r *PostgresRepository) GetByID(ctx context.Context, id string) (*Analysis,
 			id, submission_id, enrichment_id,
 			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
 			synthesis, status, error_message, processing_time_ms,
-			is_visible_to_user, is_blurred, access_code, access_code_created_at, deleted_at,
+			is_visible_to_user, is_blurred, is_public, access_code, access_code_created_at, deleted_at,
 			created_at, updated_at, completed_at
 		FROM analyses
 		WHERE id = $1 AND deleted_at IS NULL
@@ -216,7 +219,7 @@ func (r *PostgresRepository) GetBySubmissionID(ctx context.Context, submissionID
 			id, submission_id, enrichment_id,
 			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
 			synthesis, status, error_message, processing_time_ms,
-			is_visible_to_user, is_blurred, access_code, access_code_created_at, deleted_at,
+			is_visible_to_user, is_blurred, is_public, access_code, access_code_created_at, deleted_at,
 			created_at, updated_at, completed_at
 		FROM analyses
 		WHERE submission_id = $1 AND deleted_at IS NULL
@@ -242,7 +245,7 @@ func (r *PostgresRepository) List(ctx context.Context, limit, offset int) ([]*An
 			id, submission_id, enrichment_id,
 			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
 			synthesis, status, error_message, processing_time_ms,
-			is_visible_to_user, is_blurred, access_code, access_code_created_at, deleted_at,
+			is_visible_to_user, is_blurred, is_public, access_code, access_code_created_at, deleted_at,
 			created_at, updated_at, completed_at
 		FROM analyses
 		WHERE deleted_at IS NULL
@@ -325,6 +328,30 @@ func (r *PostgresRepository) SetBlurStatus(ctx context.Context, id string, blurr
 	return nil
 }
 
+// SetPublicStatus toggles the is_public flag for an analysis
+// This controls whether the report is accessible without authentication
+// When true, anyone with the access code can view the report
+// When false, the access code requires authentication
+func (r *PostgresRepository) SetPublicStatus(ctx context.Context, id string, public bool) error {
+	query := `UPDATE analyses SET is_public = $1, updated_at = NOW() WHERE id = $2 AND deleted_at IS NULL`
+
+	result, err := r.db.ExecContext(ctx, query, public, id)
+	if err != nil {
+		return fmt.Errorf("failed to update public status: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("analysis not found: %s", id)
+	}
+
+	return nil
+}
+
 // GetByAccessCode retrieves an analysis by its public access code
 // Returns nil, nil if code doesn't exist (for 404 handling)
 func (r *PostgresRepository) GetByAccessCode(ctx context.Context, code string) (*Analysis, error) {
@@ -333,7 +360,7 @@ func (r *PostgresRepository) GetByAccessCode(ctx context.Context, code string) (
 			id, submission_id, enrichment_id,
 			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
 			synthesis, status, error_message, processing_time_ms,
-			is_visible_to_user, is_blurred, access_code, access_code_created_at, deleted_at,
+			is_visible_to_user, is_blurred, is_public, access_code, access_code_created_at, deleted_at,
 			created_at, updated_at, completed_at
 		FROM analyses
 		WHERE access_code = $1 AND deleted_at IS NULL

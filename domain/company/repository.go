@@ -591,6 +591,7 @@ func (r *PostgresRepository) GetAnalysesHistory(ctx context.Context, companyID u
 			s.business_challenge,
 			a.is_blurred,
 			a.is_visible_to_user,
+			a.is_public,
 			a.access_code,
 			a.pdf_url,
 			a.completed_at,

@@ -79,6 +79,7 @@ func SetupRouter(
 		supabaseURL,
 		supabaseAnonKey,
 		supabaseJWTSecret,
+		submissionSvc, // For linking anonymous submissions on signup
 	)
 	enrichmentHandlers := NewEnrichmentHandlers(
 		submissionSvc,
@@ -195,8 +196,14 @@ func SetupRouter(
 		// Company routes - user's companies (owner or in allowed_users)
 		protectedAPI.GET("/companies", mainHandler.CompanyHandlers.GetMyCompanies)
 		protectedAPI.GET("/companies/:id", mainHandler.CompanyHandlers.GetCompany)
+		protectedAPI.PUT("/companies/:id", mainHandler.CompanyHandlers.UpdateCompanyUser)
 		protectedAPI.POST("/companies/:id/users", mainHandler.CompanyHandlers.AddUserToCompany)
 		protectedAPI.DELETE("/companies/:id/users/:userId", mainHandler.CompanyHandlers.RemoveUserFromCompany)
+
+		// User-level field verification - users can verify their own company data
+		protectedAPI.GET("/companies/:id/verifications", mainHandler.CompanyHandlers.GetFieldVerificationsUser)
+		protectedAPI.POST("/companies/:id/verifications", mainHandler.CompanyHandlers.VerifyFieldUser)
+		protectedAPI.POST("/companies/:id/verifications/all", mainHandler.CompanyHandlers.VerifyAllFieldsUser)
 	}
 
 	// Admin API routes (v1)
@@ -226,6 +233,7 @@ func SetupRouter(
 		adminAPI.PUT("/analysis/:id", mainHandler.AnalysisHandlers.UpdateAnalysis)
 		adminAPI.POST("/analysis/:id/visibility", mainHandler.AnalysisHandlers.ToggleVisibility)
 		adminAPI.POST("/analysis/:id/blur", mainHandler.AnalysisHandlers.ToggleBlur)
+		adminAPI.POST("/analysis/:id/public", mainHandler.AnalysisHandlers.TogglePublic)
 		adminAPI.POST("/analysis/:id/access-code", mainHandler.AnalysisHandlers.GenerateAccessCode)
 
 		// Macroeconomics management (SELIC, IPCA, USD/BRL)

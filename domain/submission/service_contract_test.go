@@ -34,6 +34,12 @@ func (m *memRepo) GetEnrichmentStatus(ctx context.Context, submissionID uuid.UUI
 func (m *memRepo) ReserveEnrichment(ctx context.Context, submissionID uuid.UUID) (bool, error) {
 	return true, nil
 }
+func (m *memRepo) GetAnonymousByEmail(ctx context.Context, email string) ([]*Submission, error) {
+	return nil, nil
+}
+func (m *memRepo) UpdateUserID(ctx context.Context, submissionID, userID uuid.UUID) error {
+	return nil
+}
 
 func TestCreateSetsReceivedStatus(t *testing.T) {
 	repo := &memRepo{}

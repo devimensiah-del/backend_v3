@@ -204,6 +204,7 @@ type AnalysisResponse struct {
 	Analysis        map[string]interface{} `json:"analysis"` // Contains all framework data
 	IsVisibleToUser bool                   `json:"is_visible_to_user"`
 	IsBlurred       bool                   `json:"is_blurred"` // Controls premium framework blur overlay
+	IsPublic        bool                   `json:"is_public"`  // Controls whether access code works without login
 	AccessCode      *string                `json:"access_code,omitempty"`
 	CreatedAt       time.Time              `json:"createdAt"`
 	UpdatedAt       time.Time              `json:"updatedAt"`

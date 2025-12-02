@@ -133,6 +133,7 @@ func (h *AnalysisHandlers) GetAnalysis(c *gin.Context) {
 		Analysis:        analysisData,
 		IsVisibleToUser: analysis.IsVisibleToUser,
 		IsBlurred:       analysis.IsBlurred,
+		IsPublic:        analysis.IsPublic,
 		AccessCode:      analysis.AccessCode,
 		CreatedAt:       analysis.CreatedAt,
 		UpdatedAt:       analysis.UpdatedAt,
@@ -181,6 +182,7 @@ func (h *AnalysisHandlers) UpdateAnalysis(c *gin.Context) {
 		Analysis:        analysisData,
 		IsVisibleToUser: updatedAnalysis.IsVisibleToUser,
 		IsBlurred:       updatedAnalysis.IsBlurred,
+		IsPublic:        updatedAnalysis.IsPublic,
 		AccessCode:      updatedAnalysis.AccessCode,
 		CreatedAt:       updatedAnalysis.CreatedAt,
 		UpdatedAt:       updatedAnalysis.UpdatedAt,
@@ -218,6 +220,7 @@ func (h *AnalysisHandlers) GetAnalysisAdmin(c *gin.Context) {
 		Analysis:        analysisData,
 		IsVisibleToUser: analysis.IsVisibleToUser,
 		IsBlurred:       analysis.IsBlurred,
+		IsPublic:        analysis.IsPublic,
 		AccessCode:      analysis.AccessCode,
 		CreatedAt:       analysis.CreatedAt,
 		UpdatedAt:       analysis.UpdatedAt,
@@ -255,6 +258,7 @@ func (h *AnalysisHandlers) GetAnalysisBySubmissionAdmin(c *gin.Context) {
 		Analysis:        analysisData,
 		IsVisibleToUser: analysis.IsVisibleToUser,
 		IsBlurred:       analysis.IsBlurred,
+		IsPublic:        analysis.IsPublic,
 		AccessCode:      analysis.AccessCode,
 		CreatedAt:       analysis.CreatedAt,
 		UpdatedAt:       analysis.UpdatedAt,
@@ -315,6 +319,7 @@ func (h *AnalysisHandlers) ToggleVisibility(c *gin.Context) {
 		Analysis:        analysisData,
 		IsVisibleToUser: updatedAnalysis.IsVisibleToUser,
 		IsBlurred:       updatedAnalysis.IsBlurred,
+		IsPublic:        updatedAnalysis.IsPublic,
 		AccessCode:      updatedAnalysis.AccessCode,
 		CreatedAt:       updatedAnalysis.CreatedAt,
 		UpdatedAt:       updatedAnalysis.UpdatedAt,
@@ -381,6 +386,7 @@ func (h *AnalysisHandlers) ToggleBlur(c *gin.Context) {
 		Analysis:        analysisData,
 		IsVisibleToUser: updatedAnalysis.IsVisibleToUser,
 		IsBlurred:       updatedAnalysis.IsBlurred,
+		IsPublic:        updatedAnalysis.IsPublic,
 		AccessCode:      updatedAnalysis.AccessCode,
 		CreatedAt:       updatedAnalysis.CreatedAt,
 		UpdatedAt:       updatedAnalysis.UpdatedAt,
@@ -394,6 +400,75 @@ func (h *AnalysisHandlers) ToggleBlur(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"analysis": response,
 		"message":  "Analysis premium frameworks " + action + " successfully",
+	})
+}
+
+// TogglePublic handles POST /api/v1/admin/analysis/:id/public
+// Admin toggles whether the analysis is accessible without login
+// When true: anyone with access code can view (public)
+// When false: access code requires authentication (private)
+func (h *AnalysisHandlers) TogglePublic(c *gin.Context) {
+	analysisID := c.Param("id")
+
+	// Parse request body
+	var req struct {
+		Public bool `json:"public"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid request",
+			Message: "public field is required (boolean)",
+		})
+		return
+	}
+
+	// Toggle public status via service
+	err := h.AnalysisService.SetPublicStatus(c.Request.Context(), analysisID, req.Public)
+	if err != nil {
+		h.Logger.Error().Err(err).Str("analysis_id", analysisID).Msg("Failed to toggle public status")
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Toggle failed",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	// Fetch updated analysis
+	updatedAnalysis, err := h.AnalysisService.GetByID(c.Request.Context(), analysisID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Fetch failed",
+			Message: "Public status toggled but failed to fetch updated analysis",
+		})
+		return
+	}
+
+	// Transform to response
+	analysisData := make(map[string]interface{})
+	analysisBytes, _ := json.Marshal(updatedAnalysis)
+	json.Unmarshal(analysisBytes, &analysisData)
+
+	response := AnalysisResponse{
+		ID:              updatedAnalysis.ID,
+		SubmissionID:    updatedAnalysis.SubmissionID,
+		Status:          updatedAnalysis.Status,
+		Analysis:        analysisData,
+		IsVisibleToUser: updatedAnalysis.IsVisibleToUser,
+		IsBlurred:       updatedAnalysis.IsBlurred,
+		IsPublic:        updatedAnalysis.IsPublic,
+		AccessCode:      updatedAnalysis.AccessCode,
+		CreatedAt:       updatedAnalysis.CreatedAt,
+		UpdatedAt:       updatedAnalysis.UpdatedAt,
+	}
+
+	action := "made private (login required)"
+	if req.Public {
+		action = "made public (no login required)"
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"analysis": response,
+		"message":  "Analysis " + action + " successfully",
 	})
 }
 
@@ -428,8 +503,9 @@ func (h *AnalysisHandlers) GenerateAccessCode(c *gin.Context) {
 }
 
 // GetPublicReport handles GET /api/v1/public/report/:code
-// Public endpoint - no auth required for public users
+// Public endpoint - no auth required for public users IF is_public=true
 // Admin users can preview even if visibility is OFF (they need to pass ?preview=admin with valid JWT)
+// Authenticated users can access even if is_public=false (private mode requires login)
 // Returns analysis data for public viewing if access code is valid and analysis is visible
 func (h *AnalysisHandlers) GetPublicReport(c *gin.Context) {
 	accessCode := c.Param("code")
@@ -456,6 +532,7 @@ func (h *AnalysisHandlers) GetPublicReport(c *gin.Context) {
 
 	// Check if this is an admin preview request
 	isAdminPreview := false
+	isAuthenticated := false
 	if c.Query("preview") == "admin" {
 		// Check if we have a valid Authorization header with admin role
 		role, exists := c.Get("userRole")
@@ -463,8 +540,15 @@ func (h *AnalysisHandlers) GetPublicReport(c *gin.Context) {
 			userRole, ok := role.(string)
 			if ok && (userRole == "admin" || userRole == "super_admin") {
 				isAdminPreview = true
+				isAuthenticated = true
 			}
 		}
+	}
+
+	// Check if user is authenticated (non-admin)
+	if !isAuthenticated {
+		_, exists := c.Get("userID")
+		isAuthenticated = exists
 	}
 
 	// Check if analysis is visible to users (skip if admin preview)
@@ -472,6 +556,16 @@ func (h *AnalysisHandlers) GetPublicReport(c *gin.Context) {
 		c.JSON(http.StatusNotFound, ErrorResponse{
 			Error:   "Not found",
 			Message: "Relatório não encontrado. O código de acesso é inválido ou o relatório não está mais disponível.",
+		})
+		return
+	}
+
+	// Check public access: if is_public=false, user must be authenticated
+	// This implements the 4-state visibility matrix
+	if !analysis.IsPublic && !isAuthenticated && !isAdminPreview {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{
+			Error:   "Authentication required",
+			Message: "Este relatório requer autenticação. Por favor, faça login para acessar.",
 		})
 		return
 	}
@@ -489,6 +583,7 @@ func (h *AnalysisHandlers) GetPublicReport(c *gin.Context) {
 		"analysis":      analysisData,
 		"created_at":    analysis.CreatedAt,
 		"is_blurred":    analysis.IsBlurred,
+		"is_public":     analysis.IsPublic,
 	}
 
 	// Add preview flag for admin preview
