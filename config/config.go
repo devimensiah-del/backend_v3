@@ -313,76 +313,100 @@ func getEnvFloat(key string, fallback float64) float64 {
 	return fallback
 }
 
-// loadFrameworkConfigs generates framework configurations from 5-model approach
-// Enrichment uses dedicated search-capable model, Analysis uses PrimaryModel, Synthesis uses SynthesisModel
+// loadFrameworkConfigs generates framework configurations with per-framework model support
+// Each framework can have its own model via AI_{FRAMEWORK}_MODEL env vars, falling back to AI_PRIMARY_MODEL
 func loadFrameworkConfigs() map[string]FrameworkConfig {
 	configs := make(map[string]FrameworkConfig)
 
-	// Load 6-model configuration (PreSearch + Enrichment + Primary + Synthesis)
-	preSearchModel := getEnv("AI_PRESEARCH_MODEL", "perplexity/sonar-pro")   // Perplexity for company identification
-	preSearchFallback := getEnv("AI_PRESEARCH_FALLBACK", "perplexity/sonar") // Fallback Perplexity model
+	// Load default models (used as fallbacks when per-framework vars not set)
+	preSearchModel := getEnv("AI_PRESEARCH_MODEL", "perplexity/sonar-pro")
+	preSearchFallback := getEnv("AI_PRESEARCH_FALLBACK", "perplexity/sonar")
 	enrichmentModel := getEnv("AI_ENRICHMENT_MODEL", "google/gemini-2.5-flash")
 	enrichmentFallback := getEnv("AI_ENRICHMENT_FALLBACK", "google/gemini-2.5-pro-preview")
 	primaryModel := getEnv("AI_PRIMARY_MODEL", "google/gemini-2.5-flash")
 	primaryFallback := getEnv("AI_PRIMARY_FALLBACK", "openai/gpt-4.1-mini")
 	synthesisModel := getEnv("AI_SYNTHESIS_MODEL", "google/gemini-2.5-pro-preview")
 	synthesisFallback := getEnv("AI_SYNTHESIS_FALLBACK", "openai/gpt-4.1")
-	temperature := getEnvFloat("AI_TEMPERATURE", 0.5)
+	defaultTemp := getEnvFloat("AI_TEMPERATURE", 0.5)
 	tokensEnrichment := getEnvInt("AI_MAX_TOKENS_ENRICHMENT", 10000)
-	tokensAnalysis := getEnvInt("AI_MAX_TOKENS_ANALYSIS", 4000)
+	defaultTokensAnalysis := getEnvInt("AI_MAX_TOKENS_ANALYSIS", 4000)
 	tokensSynthesis := getEnvInt("AI_MAX_TOKENS_SYNTHESIS", 6000)
 
 	log.Info().
 		Str("presearch_model", preSearchModel).
-		Str("presearch_fallback", preSearchFallback).
 		Str("enrichment_model", enrichmentModel).
-		Str("enrichment_fallback", enrichmentFallback).
 		Str("primary_model", primaryModel).
-		Str("primary_fallback", primaryFallback).
 		Str("synthesis_model", synthesisModel).
-		Str("synthesis_fallback", synthesisFallback).
-		Float64("temperature", temperature).
-		Msg("Loading 6-model AI configuration (PreSearch + Enrichment + Primary + Synthesis)")
+		Float64("default_temperature", defaultTemp).
+		Msg("Loading AI configuration with per-framework model support")
 
 	// Pre-Search Layer (Layer -1) - Company Identification via Perplexity
-	// Runs BEFORE enrichment to solve company disambiguation (Virtus.br problem)
 	configs["presearch"] = FrameworkConfig{
 		Model:         preSearchModel,
-		Temperature:   0.3,  // Lower temperature for consistent identification
-		MaxTokens:     2000, // Smaller response for pre-search
+		Temperature:   0.3,
+		MaxTokens:     2000,
 		FallbackModel: preSearchFallback,
 	}
 
-	// Enrichment Layer (Layer 0) - Discovery & Data Gathering (MUST support Google Search)
+	// Enrichment Layer (Layer 0) - Discovery & Data Gathering
 	configs["enrichment"] = FrameworkConfig{
 		Model:         enrichmentModel,
-		Temperature:   temperature,
-		MaxTokens:     tokensEnrichment,
+		Temperature:   getEnvFloat("AI_ENRICHMENT_TEMP", defaultTemp),
+		MaxTokens:     getEnvInt("AI_ENRICHMENT_MAX_TOKENS", tokensEnrichment),
 		FallbackModel: enrichmentFallback,
 	}
 
-	// All 11 Analysis Frameworks use Primary Model
-	analysisFrameworks := []string{
-		"pestel", "porter", "tam_sam_som", // Layer 1: Environment
-		"swot", "benchmarking", // Layer 2: Positioning
-		"blue_ocean", "growth_hacking", "scenarios", // Layer 3: Strategy
-		"okrs", "bsc", "decision_matrix", // Layer 4: Execution
+	// Per-framework configuration with env var overrides
+	// Format: AI_{FRAMEWORK}_MODEL, AI_{FRAMEWORK}_TEMP, AI_{FRAMEWORK}_MAX_TOKENS
+	frameworkConfigs := map[string]struct {
+		envPrefix   string
+		defaultTemp float64
+	}{
+		"pestel":          {"PESTEL", 0.2},
+		"porter":          {"PORTER", 0.3},
+		"tam_sam_som":     {"TAM", 0.1},
+		"swot":            {"SWOT", 0.4},
+		"benchmarking":    {"BENCHMARKING", 0.35},
+		"blue_ocean":      {"BLUE_OCEAN", 0.7},
+		"growth_hacking":  {"GROWTH_HACKING", 0.6},
+		"scenarios":       {"SCENARIOS", 0.6},
+		"okrs":            {"OKRS", 0.25},
+		"bsc":             {"BSC", 0.35},
+		"decision_matrix": {"DECISION_MATRIX", 0.2},
 	}
 
-	for _, framework := range analysisFrameworks {
+	for framework, cfg := range frameworkConfigs {
+		modelEnv := "AI_" + cfg.envPrefix + "_MODEL"
+		tempEnv := "AI_" + cfg.envPrefix + "_TEMP"
+		tokensEnv := "AI_" + cfg.envPrefix + "_MAX_TOKENS"
+
+		model := getEnv(modelEnv, primaryModel)
+		temp := getEnvFloat(tempEnv, cfg.defaultTemp)
+		tokens := getEnvInt(tokensEnv, defaultTokensAnalysis)
+
 		configs[framework] = FrameworkConfig{
-			Model:         primaryModel,
-			Temperature:   temperature,
-			MaxTokens:     tokensAnalysis,
+			Model:         model,
+			Temperature:   temp,
+			MaxTokens:     tokens,
 			FallbackModel: primaryFallback,
+		}
+
+		// Log if using custom model
+		if model != primaryModel {
+			log.Info().
+				Str("framework", framework).
+				Str("model", model).
+				Float64("temp", temp).
+				Int("max_tokens", tokens).
+				Msg("Using custom model for framework")
 		}
 	}
 
 	// Synthesis Layer - Final Executive Summary (Premium Model)
 	configs["synthesis"] = FrameworkConfig{
-		Model:         synthesisModel,
-		Temperature:   temperature,
-		MaxTokens:     tokensSynthesis,
+		Model:         getEnv("AI_SYNTHESIS_MODEL", synthesisModel),
+		Temperature:   getEnvFloat("AI_SYNTHESIS_TEMP", defaultTemp),
+		MaxTokens:     getEnvInt("AI_SYNTHESIS_MAX_TOKENS", tokensSynthesis),
 		FallbackModel: synthesisFallback,
 	}
 
