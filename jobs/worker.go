@@ -291,6 +291,12 @@ func (w *Worker) HandleAnalysisJob(ctx context.Context, task *asynq.Task) error 
 	retryCount, _ := asynq.GetRetryCount(ctx)
 	maxRetry, _ := asynq.GetMaxRetry(ctx)
 
+	// CRITICAL DEBUG LOG - This should appear immediately when job is picked up
+	w.logger.Info().
+		Str("task_id", taskID).
+		Str("raw_payload", string(task.Payload())).
+		Msg("🔥 ANALYSIS JOB HANDLER INVOKED - Worker is processing")
+
 	// Add timeout to context
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(w.cfg.AnalysisTimeout)*time.Second)
 	defer cancel()

@@ -159,6 +159,13 @@ func (h *AnalysisHandlers) UpdateAnalysis(c *gin.Context) {
 		return
 	}
 
+	// Unwrap "analysis" key if frontend sends nested structure
+	// Frontend may send: {"analysis": {"swot": {...}}} instead of {"swot": {...}}
+	if nested, ok := updateData["analysis"].(map[string]interface{}); ok {
+		h.Logger.Debug().Msg("Unwrapping nested 'analysis' key from request")
+		updateData = nested
+	}
+
 	// Update analysis fields via service
 	updatedAnalysis, err := h.AnalysisService.UpdateFields(c.Request.Context(), analysisID, updateData)
 	if err != nil {

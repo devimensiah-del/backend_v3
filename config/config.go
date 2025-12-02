@@ -127,7 +127,7 @@ func Load() (*Config, error) {
 		SynthesisFallback:   getEnv("AI_SYNTHESIS_FALLBACK", "openai/gpt-4.1"),
 		AITemperature:       getEnvFloat("AI_TEMPERATURE", 0.5),
 		MaxTokensEnrichment: getEnvInt("AI_MAX_TOKENS_ENRICHMENT", 10000),
-		MaxTokensAnalysis:   getEnvInt("AI_MAX_TOKENS_ANALYSIS", 4000),
+		MaxTokensAnalysis:   getEnvInt("AI_MAX_TOKENS_ANALYSIS", 8000),
 		MaxTokensSynthesis:  getEnvInt("AI_MAX_TOKENS_SYNTHESIS", 6000),
 
 		// Redis & Worker
@@ -333,7 +333,7 @@ func loadFrameworkConfigs() map[string]FrameworkConfig {
 
 	temperature := getEnvFloat("AI_TEMPERATURE", 0.5)
 	tokensEnrichment := getEnvInt("AI_MAX_TOKENS_ENRICHMENT", 10000)
-	tokensAnalysis := getEnvInt("AI_MAX_TOKENS_ANALYSIS", 4000)
+	tokensAnalysis := getEnvInt("AI_MAX_TOKENS_ANALYSIS", 8000)
 	tokensSynthesis := getEnvInt("AI_MAX_TOKENS_SYNTHESIS", 6000)
 
 	log.Info().

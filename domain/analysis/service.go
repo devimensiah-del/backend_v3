@@ -147,22 +147,98 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 
 // applyEditsToAnalysis applies edits from a map to the analysis structure
 func (s *Service) applyEditsToAnalysis(analysis *Analysis, edits map[string]interface{}) {
-	// This is a helper method to apply edits to specific frameworks
-	// You can expand this based on your needs
+	// Debug: Log what we received
+	s.logger.Debug().
+		Interface("edits_keys", getMapKeys(edits)).
+		Msg("applyEditsToAnalysis received")
 
 	if pestelEdits, ok := edits["pestel"].(map[string]interface{}); ok {
+		s.logger.Debug().Msg("Applying PESTEL edits")
 		s.applyPESTELEdits(&analysis.PESTEL, pestelEdits)
 	}
 
 	if porterEdits, ok := edits["porter"].(map[string]interface{}); ok {
+		s.logger.Debug().Msg("Applying Porter edits")
 		s.applyPorterEdits(&analysis.Porter, porterEdits)
 	}
 
 	if swotEdits, ok := edits["swot"].(map[string]interface{}); ok {
+		s.logger.Debug().
+			Interface("swot_edits_keys", getMapKeys(swotEdits)).
+			Msg("Applying SWOT edits")
 		s.applySWOTEdits(&analysis.SWOT, swotEdits)
+	} else if _, exists := edits["swot"]; exists {
+		// SWOT key exists but type assertion failed - log what type we got
+		s.logger.Warn().
+			Str("actual_type", fmt.Sprintf("%T", edits["swot"])).
+			Msg("SWOT edits type assertion failed")
 	}
 
-	// Add more framework edits as needed...
+	if okrsEdits, ok := edits["okrs"].(map[string]interface{}); ok {
+		s.logger.Debug().Msg("Applying OKRs edits")
+		s.applyOKRsEdits(&analysis.OKRs, okrsEdits)
+	} else if _, exists := edits["okrs"]; exists {
+		s.logger.Warn().
+			Str("actual_type", fmt.Sprintf("%T", edits["okrs"])).
+			Msg("OKRs edits type assertion failed")
+	}
+
+	if tamEdits, ok := edits["tam_sam_som"].(map[string]interface{}); ok {
+		s.logger.Debug().Msg("Applying TAM-SAM-SOM edits")
+		s.applyTamSamSomEdits(&analysis.TamSamSom, tamEdits)
+	} else if _, exists := edits["tam_sam_som"]; exists {
+		s.logger.Warn().
+			Str("actual_type", fmt.Sprintf("%T", edits["tam_sam_som"])).
+			Msg("TAM-SAM-SOM edits type assertion failed")
+	}
+
+	if benchEdits, ok := edits["benchmarking"].(map[string]interface{}); ok {
+		s.logger.Debug().Msg("Applying Benchmarking edits")
+		s.applyBenchmarkingEdits(&analysis.Benchmarking, benchEdits)
+	}
+
+	if blueOceanEdits, ok := edits["blue_ocean"].(map[string]interface{}); ok {
+		s.logger.Debug().Msg("Applying Blue Ocean edits")
+		s.applyBlueOceanEdits(&analysis.BlueOcean, blueOceanEdits)
+	}
+
+	if growthEdits, ok := edits["growth_hacking"].(map[string]interface{}); ok {
+		s.logger.Debug().Msg("Applying Growth Hacking edits")
+		s.applyGrowthHackingEdits(&analysis.GrowthHacking, growthEdits)
+	}
+
+	if scenarioEdits, ok := edits["scenarios"].(map[string]interface{}); ok {
+		s.logger.Debug().Msg("Applying Scenarios edits")
+		s.applyScenariosEdits(&analysis.Scenarios, scenarioEdits)
+	}
+
+	if bscEdits, ok := edits["bsc"].(map[string]interface{}); ok {
+		s.logger.Debug().Msg("Applying BSC edits")
+		s.applyBSCEdits(&analysis.BSC, bscEdits)
+	}
+
+	if decisionEdits, ok := edits["decision_matrix"].(map[string]interface{}); ok {
+		s.logger.Debug().Msg("Applying Decision Matrix edits")
+		s.applyDecisionMatrixEdits(&analysis.DecisionMatrix, decisionEdits)
+	} else if _, exists := edits["decision_matrix"]; exists {
+		s.logger.Warn().
+			Str("actual_type", fmt.Sprintf("%T", edits["decision_matrix"])).
+			Msg("Decision Matrix edits type assertion failed")
+	}
+
+	if synthesisEdits, ok := edits["synthesis"].(map[string]interface{}); ok {
+		s.logger.Debug().Msg("Applying Synthesis edits")
+		s.applySynthesisEdits(&analysis.Synthesis, synthesisEdits)
+	}
+}
+
+// Helper to get map keys for debugging
+func getMapKeys(m map[string]interface{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 // Helper methods to apply edits to specific frameworks
@@ -232,6 +308,226 @@ func (s *Service) applySWOTEdits(swot *SWOTAnalysis, edits map[string]interface{
 	}
 }
 
+func (s *Service) applyOKRsEdits(okrs *OKRAnalysis, edits map[string]interface{}) {
+	if summary, ok := edits["summary"].(string); ok {
+		okrs.Summary = summary
+	}
+	if totalInvestment, ok := edits["total_investment"].(string); ok {
+		okrs.TotalInvestment = totalInvestment
+	}
+	if successMetrics, ok := edits["success_metrics"].([]interface{}); ok {
+		okrs.SuccessMetrics = interfaceSliceToStringSlice(successMetrics)
+	}
+	// Handle plan_90_days array
+	if plan90Days, ok := edits["plan_90_days"].([]interface{}); ok {
+		okrs.Plan90Days = interfaceSliceToMonthlyOKRSlice(plan90Days)
+	}
+}
+
+func (s *Service) applyTamSamSomEdits(tam *TamSamSomAnalysis, edits map[string]interface{}) {
+	if tamValue, ok := edits["tam"].(string); ok {
+		tam.TAM = tamValue
+	}
+	if sam, ok := edits["sam"].(string); ok {
+		tam.SAM = sam
+	}
+	if som, ok := edits["som"].(string); ok {
+		tam.SOM = som
+	}
+	if assumptions, ok := edits["assumptions"].([]interface{}); ok {
+		tam.Assumptions = interfaceSliceToStringSlice(assumptions)
+	}
+	if cagr, ok := edits["cagr"].(string); ok {
+		tam.CAGR = cagr
+	}
+	if confidenceLevel, ok := edits["confidence_level"].(float64); ok {
+		tam.ConfidenceLevel = int(confidenceLevel)
+	}
+	if estimationMethod, ok := edits["estimation_method"].(string); ok {
+		tam.EstimationMethod = estimationMethod
+	}
+	if summary, ok := edits["summary"].(string); ok {
+		tam.Summary = summary
+	}
+}
+
+func (s *Service) applyBenchmarkingEdits(bench *BenchmarkingAnalysis, edits map[string]interface{}) {
+	if competitors, ok := edits["competitors_analyzed"].([]interface{}); ok {
+		bench.Competitors = interfaceSliceToStringSlice(competitors)
+	}
+	if performanceGaps, ok := edits["performance_gaps"].([]interface{}); ok {
+		bench.PerformanceGaps = interfaceSliceToStringSlice(performanceGaps)
+	}
+	if bestPractices, ok := edits["best_practices"].([]interface{}); ok {
+		bench.BestPractices = interfaceSliceToStringSlice(bestPractices)
+	}
+	if summary, ok := edits["summary"].(string); ok {
+		bench.Summary = summary
+	}
+}
+
+func (s *Service) applyBlueOceanEdits(blueOcean *BlueOceanAnalysis, edits map[string]interface{}) {
+	if eliminate, ok := edits["eliminate"].([]interface{}); ok {
+		blueOcean.Eliminate = interfaceSliceToStringSlice(eliminate)
+	}
+	if reduce, ok := edits["reduce"].([]interface{}); ok {
+		blueOcean.Reduce = interfaceSliceToStringSlice(reduce)
+	}
+	if raise, ok := edits["raise"].([]interface{}); ok {
+		blueOcean.Raise = interfaceSliceToStringSlice(raise)
+	}
+	if create, ok := edits["create"].([]interface{}); ok {
+		blueOcean.Create = interfaceSliceToStringSlice(create)
+	}
+	if newValueCurve, ok := edits["new_value_curve"].(string); ok {
+		blueOcean.NewValueCurve = newValueCurve
+	}
+	if summary, ok := edits["summary"].(string); ok {
+		blueOcean.Summary = summary
+	}
+}
+
+func (s *Service) applyGrowthHackingEdits(gh *GrowthHackingAnalysis, edits map[string]interface{}) {
+	if leapLoop, ok := edits["leap_loop"].(map[string]interface{}); ok {
+		applyGrowthLoopEdits(&gh.LeapLoop, leapLoop)
+	}
+	if scaleLoop, ok := edits["scale_loop"].(map[string]interface{}); ok {
+		applyGrowthLoopEdits(&gh.ScaleLoop, scaleLoop)
+	}
+	if summary, ok := edits["summary"].(string); ok {
+		gh.Summary = summary
+	}
+}
+
+func applyGrowthLoopEdits(loop *GrowthLoop, edits map[string]interface{}) {
+	if name, ok := edits["name"].(string); ok {
+		loop.Name = name
+	}
+	if loopType, ok := edits["type"].(string); ok {
+		loop.Type = loopType
+	}
+	if steps, ok := edits["steps"].([]interface{}); ok {
+		loop.Steps = interfaceSliceToStringSlice(steps)
+	}
+	if metrics, ok := edits["metrics"].([]interface{}); ok {
+		loop.Metrics = interfaceSliceToStringSlice(metrics)
+	}
+	if bottleneck, ok := edits["bottleneck"].(string); ok {
+		loop.Bottleneck = bottleneck
+	}
+}
+
+func (s *Service) applyScenariosEdits(scenarios *ScenarioAnalysis, edits map[string]interface{}) {
+	if optimistic, ok := edits["optimistic"].(map[string]interface{}); ok {
+		applyScenarioEdits(&scenarios.Optimistic, optimistic)
+	}
+	if realist, ok := edits["realist"].(map[string]interface{}); ok {
+		applyScenarioEdits(&scenarios.Realist, realist)
+	}
+	if pessimistic, ok := edits["pessimistic"].(map[string]interface{}); ok {
+		applyScenarioEdits(&scenarios.Pessimistic, pessimistic)
+	}
+	if mitigationTactics, ok := edits["mitigation_tactics"].([]interface{}); ok {
+		scenarios.MitigationTactics = interfaceSliceToStringSlice(mitigationTactics)
+	}
+	if earlyWarningSignals, ok := edits["early_warning_signals"].([]interface{}); ok {
+		scenarios.EarlyWarningSignals = interfaceSliceToStringSlice(earlyWarningSignals)
+	}
+	if summary, ok := edits["summary"].(string); ok {
+		scenarios.Summary = summary
+	}
+}
+
+func applyScenarioEdits(scenario *Scenario, edits map[string]interface{}) {
+	if name, ok := edits["name"].(string); ok {
+		scenario.Name = name
+	}
+	if probability, ok := edits["probability"].(float64); ok {
+		scenario.Probability = int(probability)
+	}
+	if description, ok := edits["description"].(string); ok {
+		scenario.Description = description
+	}
+	if requiredActions, ok := edits["required_actions"].([]interface{}); ok {
+		scenario.RequiredActions = interfaceSliceToStringSlice(requiredActions)
+	}
+}
+
+func (s *Service) applyBSCEdits(bsc *BalancedScorecardAnalysis, edits map[string]interface{}) {
+	if financial, ok := edits["financial"].([]interface{}); ok {
+		bsc.Financial = interfaceSliceToStringSlice(financial)
+	}
+	if customer, ok := edits["customer"].([]interface{}); ok {
+		bsc.Customer = interfaceSliceToStringSlice(customer)
+	}
+	if internal, ok := edits["internal_processes"].([]interface{}); ok {
+		bsc.Internal = interfaceSliceToStringSlice(internal)
+	}
+	if learningGrowth, ok := edits["learning_growth"].([]interface{}); ok {
+		bsc.LearningGrowth = interfaceSliceToStringSlice(learningGrowth)
+	}
+	if summary, ok := edits["summary"].(string); ok {
+		bsc.Summary = summary
+	}
+}
+
+func (s *Service) applyDecisionMatrixEdits(dm *DecisionMatrixAnalysis, edits map[string]interface{}) {
+	if alternatives, ok := edits["alternatives"].([]interface{}); ok {
+		dm.Alternatives = interfaceSliceToStringSlice(alternatives)
+	}
+	if criteria, ok := edits["criteria"].([]interface{}); ok {
+		dm.Criteria = interfaceSliceToStringSlice(criteria)
+	}
+	if finalRecommendation, ok := edits["final_recommendation"].(string); ok {
+		dm.FinalRecommendation = finalRecommendation
+	}
+	if recommendedOption, ok := edits["recommended_option"].(string); ok {
+		dm.RecommendedOption = recommendedOption
+	}
+	if score, ok := edits["score"].(string); ok {
+		dm.Score = score
+	}
+	if scoreComparison, ok := edits["score_comparison"].(string); ok {
+		dm.ScoreComparison = scoreComparison
+	}
+	if priorityRecommendations, ok := edits["priority_recommendations"].([]interface{}); ok {
+		dm.PriorityRecommendations = interfaceSliceToPriorityRecommendationSlice(priorityRecommendations)
+	}
+	if monitoringMetrics, ok := edits["monitoring_metrics"].([]interface{}); ok {
+		dm.MonitoringMetrics = interfaceSliceToStringSlice(monitoringMetrics)
+	}
+	if summary, ok := edits["summary"].(string); ok {
+		dm.Summary = summary
+	}
+}
+
+func (s *Service) applySynthesisEdits(synthesis *AnalysisSynthesis, edits map[string]interface{}) {
+	if executiveSummary, ok := edits["executive_summary"].(string); ok {
+		synthesis.ExecutiveSummary = executiveSummary
+	}
+	if centralChallenge, ok := edits["central_challenge"].(string); ok {
+		synthesis.CentralChallenge = centralChallenge
+	}
+	if mainFindings, ok := edits["main_findings"].([]interface{}); ok {
+		synthesis.MainFindings = interfaceSliceToStringSlice(mainFindings)
+	}
+	if importantNotes, ok := edits["important_notes"].([]interface{}); ok {
+		synthesis.ImportantNotes = interfaceSliceToStringSlice(importantNotes)
+	}
+	if keyFindings, ok := edits["key_findings"].([]interface{}); ok {
+		synthesis.KeyFindings = interfaceSliceToStringSlice(keyFindings)
+	}
+	if strategicPriorities, ok := edits["strategic_priorities"].([]interface{}); ok {
+		synthesis.StrategicPriorities = interfaceSliceToStringSlice(strategicPriorities)
+	}
+	if roadmap, ok := edits["roadmap"].([]interface{}); ok {
+		synthesis.Roadmap = interfaceSliceToStringSlice(roadmap)
+	}
+	if overallRecommendation, ok := edits["overall_recommendation"].(string); ok {
+		synthesis.OverallRecommendation = overallRecommendation
+	}
+}
+
 // Helper function to convert []interface{} to []string
 func interfaceSliceToStringSlice(slice []interface{}) []string {
 	result := make([]string, len(slice))
@@ -268,6 +564,63 @@ func interfaceSliceToSWOTItemSlice(slice []interface{}) []SWOTItem {
 				Confidence: "Média",              // Default confidence for legacy data
 				Source:     "análise de mercado", // Default source
 			})
+		}
+	}
+	return result
+}
+
+// Helper function to convert []interface{} to []MonthlyOKR
+func interfaceSliceToMonthlyOKRSlice(slice []interface{}) []MonthlyOKR {
+	result := make([]MonthlyOKR, 0, len(slice))
+	for _, v := range slice {
+		if itemMap, ok := v.(map[string]interface{}); ok {
+			item := MonthlyOKR{}
+			if month, ok := itemMap["month"].(string); ok {
+				item.Month = month
+			}
+			if focus, ok := itemMap["focus"].(string); ok {
+				item.Focus = focus
+			}
+			if objective, ok := itemMap["objective"].(string); ok {
+				item.Objective = objective
+			}
+			if keyResults, ok := itemMap["key_results"].([]interface{}); ok {
+				item.KeyResults = interfaceSliceToStringSlice(keyResults)
+			}
+			if investment, ok := itemMap["investment"].(string); ok {
+				item.Investment = investment
+			}
+			if alignedRec, ok := itemMap["aligned_recommendation"].(string); ok {
+				item.AlignedRecommendation = alignedRec
+			}
+			result = append(result, item)
+		}
+	}
+	return result
+}
+
+// Helper function to convert []interface{} to []PriorityRecommendation
+func interfaceSliceToPriorityRecommendationSlice(slice []interface{}) []PriorityRecommendation {
+	result := make([]PriorityRecommendation, 0, len(slice))
+	for _, v := range slice {
+		if itemMap, ok := v.(map[string]interface{}); ok {
+			item := PriorityRecommendation{}
+			if priority, ok := itemMap["priority"].(float64); ok {
+				item.Priority = int(priority)
+			}
+			if title, ok := itemMap["title"].(string); ok {
+				item.Title = title
+			}
+			if description, ok := itemMap["description"].(string); ok {
+				item.Description = description
+			}
+			if timeline, ok := itemMap["timeline"].(string); ok {
+				item.Timeline = timeline
+			}
+			if budget, ok := itemMap["budget"].(string); ok {
+				item.Budget = budget
+			}
+			result = append(result, item)
 		}
 	}
 	return result

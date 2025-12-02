@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"backend_v3/domain/company"
 	"backend_v3/domain/enrichment"
@@ -326,11 +327,24 @@ func (h *CompanyHandlers) ReAnalyzeCompany(c *gin.Context) {
 	}
 	payloadBytes, _ := json.Marshal(payload)
 	task := asynq.NewTask("analysis_job", payloadBytes)
-	if _, err := h.AsynqClient.Enqueue(task); err != nil {
+
+	// Enqueue with explicit options for better visibility
+	taskInfo, err := h.AsynqClient.Enqueue(task,
+		asynq.MaxRetry(3),
+		asynq.Queue("default"),
+		asynq.Retention(24*time.Hour),
+	)
+	if err != nil {
 		h.Logger.Error().Err(err).Msg("Failed to enqueue analysis job")
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Enqueue failed", Message: "Failed to start analysis"})
 		return
 	}
+
+	h.Logger.Info().
+		Str("task_id", taskInfo.ID).
+		Str("queue", taskInfo.Queue).
+		Str("submission_id", sub.ID.String()).
+		Msg("Analysis job enqueued successfully")
 
 	h.Logger.Info().
 		Str("company_id", companyID).
