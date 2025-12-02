@@ -91,6 +91,44 @@ func (a macroServiceAdapter) GetLatestSnapshot(ctx context.Context) (*enrichment
 	return result, nil
 }
 
+// macroServiceAdapterForAnalysis implements analysis.MacroServiceInterface
+// Converts macroeconomics.LatestSnapshot to analysis.MacroSnapshot
+type macroServiceAdapterForAnalysis struct {
+	svc *macroeconomics.Service
+}
+
+func (a macroServiceAdapterForAnalysis) GetLatestSnapshot(ctx context.Context) (*analysis.MacroSnapshot, error) {
+	snapshot, err := a.svc.GetLatestSnapshot(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if snapshot == nil {
+		return nil, nil
+	}
+
+	// Convert macroeconomics types to analysis types
+	result := &analysis.MacroSnapshot{
+		Indicators: make(map[string]*analysis.MacroIndicator),
+	}
+
+	for code, v := range snapshot.Indicators {
+		if v != nil {
+			unit := ""
+			if v.Unit != "" {
+				unit = v.Unit
+			}
+			result.Indicators[code] = &analysis.MacroIndicator{
+				Code:  v.Code,
+				Name:  v.Name,
+				Value: v.Value,
+				Unit:  unit,
+			}
+		}
+	}
+
+	return result, nil
+}
+
 // companyServiceAdapterForSubmission implements submission.CompanyServiceInterface
 type companyServiceAdapterForSubmission struct {
 	svc *company.Service
@@ -117,6 +155,10 @@ func (a companyServiceAdapterForSubmission) CreateFromSubmission(ctx context.Con
 
 func (a companyServiceAdapterForSubmission) IsVerifiedCNPJExists(ctx context.Context, cnpj string) (bool, error) {
 	return a.svc.IsVerifiedCNPJExists(ctx, cnpj)
+}
+
+func (a companyServiceAdapterForSubmission) SetOwnerFromSubmission(ctx context.Context, submissionID, userID uuid.UUID) error {
+	return a.svc.SetOwnerFromSubmission(ctx, submissionID, userID)
 }
 
 // companyServiceAdapterForEnrichment implements enrichment.CompanyServiceInterface
@@ -489,11 +531,15 @@ func main() {
 		log.Logger,
 		asynqClient,
 	)
-	// Inject all framework-specific configs (heterogeneous routing)
+	// Inject framework configs (4-model approach)
 	analysisSvc.SetFrameworks(cfg.Frameworks)
 	log.Info().
 		Int("framework_count", len(cfg.Frameworks)).
-		Msg("Analysis service initialized with heterogeneous model routing")
+		Msg("Analysis service initialized with 4-model configuration")
+
+	// Inject macro service for direct DB access (preferred over extracting from enrichment)
+	analysisSvc.SetMacroService(macroServiceAdapterForAnalysis{svc: macroSvc})
+	log.Info().Msg("MacroService injected into analysis (DB-first macro data enabled)")
 
 	// Report (The Publisher)
 	reportSvc := report.NewService(

@@ -16,7 +16,6 @@ import (
 )
 
 // GenerationOptions holds model-specific parameters for LLM generation
-// Supports heterogeneous model routing with framework-specific configurations
 type GenerationOptions struct {
 	Model         string
 	Temperature   float64
@@ -59,8 +58,7 @@ func NewClientWithBaseURL(apiKey, baseURL string) *Client {
 	}
 }
 
-// GenerateStructuredWithOptions is the "Magic Method" for framework-specific model routing.
-// Supports heterogeneous model configurations with automatic fallback on failure.
+// GenerateStructuredWithOptions generates structured output with automatic fallback on failure.
 //
 // Fallback Strategy:
 //  1. Try primary model (opts.Model)

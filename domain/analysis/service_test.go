@@ -104,6 +104,11 @@ func (m *MockRepository) AccessCodeExists(ctx context.Context, code string) (boo
 	return args.Bool(0), args.Error(1)
 }
 
+func (m *MockRepository) SetPublicStatus(ctx context.Context, id string, public bool) error {
+	args := m.Called(ctx, id, public)
+	return args.Error(0)
+}
+
 type MockSubmissionRepository struct {
 	mock.Mock
 }

@@ -115,7 +115,7 @@ func Load() (*Config, error) {
 		DBMaxIdleConns:    getEnvInt("DB_MAX_IDLE_CONNS", 5),  // Idle connections to keep alive
 		DBConnMaxLifetime: time.Duration(getEnvInt("DB_CONN_MAX_LIFETIME_MINUTES", 5)) * time.Minute,
 
-		// AI Configuration (6-Model Approach: PreSearch + Enrichment + Primary + Synthesis)
+		// AI Configuration (4-Model Approach: PreSearch + Enrichment + Primary + Synthesis)
 		OpenRouterAPIKey:    getEnv("OPENAI_API_KEY", ""),
 		EnrichmentModel:     getEnv("AI_ENRICHMENT_MODEL", "google/gemini-2.5-flash"),          // Must support Google Search
 		EnrichmentFallback:  getEnv("AI_ENRICHMENT_FALLBACK", "google/gemini-2.5-pro-preview"), // Fallback must also support search
@@ -313,34 +313,37 @@ func getEnvFloat(key string, fallback float64) float64 {
 	return fallback
 }
 
-// loadFrameworkConfigs generates framework configurations with per-framework model support
-// Each framework can have its own model via AI_{FRAMEWORK}_MODEL env vars, falling back to AI_PRIMARY_MODEL
+// loadFrameworkConfigs generates framework configurations using simplified 4-model approach:
+// 1. PreSearch (Perplexity) - Company identification
+// 2. Enrichment - Data gathering with search capability
+// 3. Primary - All 11 analysis frameworks
+// 4. Synthesis - Executive summary (premium model)
 func loadFrameworkConfigs() map[string]FrameworkConfig {
 	configs := make(map[string]FrameworkConfig)
 
-	// Load default models (used as fallbacks when per-framework vars not set)
+	// 4-Model Configuration
 	preSearchModel := getEnv("AI_PRESEARCH_MODEL", "perplexity/sonar-pro")
 	preSearchFallback := getEnv("AI_PRESEARCH_FALLBACK", "perplexity/sonar")
 	enrichmentModel := getEnv("AI_ENRICHMENT_MODEL", "google/gemini-2.5-flash")
 	enrichmentFallback := getEnv("AI_ENRICHMENT_FALLBACK", "google/gemini-2.5-pro-preview")
-	primaryModel := getEnv("AI_PRIMARY_MODEL", "google/gemini-2.5-flash")
-	primaryFallback := getEnv("AI_PRIMARY_FALLBACK", "openai/gpt-4.1-mini")
-	synthesisModel := getEnv("AI_SYNTHESIS_MODEL", "google/gemini-2.5-pro-preview")
-	synthesisFallback := getEnv("AI_SYNTHESIS_FALLBACK", "openai/gpt-4.1")
-	defaultTemp := getEnvFloat("AI_TEMPERATURE", 0.5)
+	primaryModel := getEnv("AI_PRIMARY_MODEL", "openai/gpt-5.1")
+	primaryFallback := getEnv("AI_PRIMARY_FALLBACK", "google/gemini-3-pro-preview")
+	synthesisModel := getEnv("AI_SYNTHESIS_MODEL", "anthropic/claude-opus-4.5")
+	synthesisFallback := getEnv("AI_SYNTHESIS_FALLBACK", "google/gemini-3-pro-preview")
+
+	temperature := getEnvFloat("AI_TEMPERATURE", 0.5)
 	tokensEnrichment := getEnvInt("AI_MAX_TOKENS_ENRICHMENT", 10000)
-	defaultTokensAnalysis := getEnvInt("AI_MAX_TOKENS_ANALYSIS", 4000)
+	tokensAnalysis := getEnvInt("AI_MAX_TOKENS_ANALYSIS", 4000)
 	tokensSynthesis := getEnvInt("AI_MAX_TOKENS_SYNTHESIS", 6000)
 
 	log.Info().
-		Str("presearch_model", preSearchModel).
-		Str("enrichment_model", enrichmentModel).
-		Str("primary_model", primaryModel).
-		Str("synthesis_model", synthesisModel).
-		Float64("default_temperature", defaultTemp).
-		Msg("Loading AI configuration with per-framework model support")
+		Str("presearch", preSearchModel).
+		Str("enrichment", enrichmentModel).
+		Str("primary", primaryModel).
+		Str("synthesis", synthesisModel).
+		Msg("Loading 4-model AI configuration")
 
-	// Pre-Search Layer (Layer -1) - Company Identification via Perplexity
+	// PreSearch - Perplexity for company identification
 	configs["presearch"] = FrameworkConfig{
 		Model:         preSearchModel,
 		Temperature:   0.3,
@@ -348,69 +351,39 @@ func loadFrameworkConfigs() map[string]FrameworkConfig {
 		FallbackModel: preSearchFallback,
 	}
 
-	// Enrichment Layer (Layer 0) - Discovery & Data Gathering
+	// Enrichment - Data gathering (must support search)
 	configs["enrichment"] = FrameworkConfig{
 		Model:         enrichmentModel,
-		Temperature:   getEnvFloat("AI_ENRICHMENT_TEMP", defaultTemp),
-		MaxTokens:     getEnvInt("AI_ENRICHMENT_MAX_TOKENS", tokensEnrichment),
+		Temperature:   temperature,
+		MaxTokens:     tokensEnrichment,
 		FallbackModel: enrichmentFallback,
 	}
 
-	// Per-framework configuration with env var overrides
-	// Format: AI_{FRAMEWORK}_MODEL, AI_{FRAMEWORK}_TEMP, AI_{FRAMEWORK}_MAX_TOKENS
-	frameworkConfigs := map[string]struct {
-		envPrefix   string
-		defaultTemp float64
-	}{
-		"pestel":          {"PESTEL", 0.2},
-		"porter":          {"PORTER", 0.3},
-		"tam_sam_som":     {"TAM", 0.1},
-		"swot":            {"SWOT", 0.4},
-		"benchmarking":    {"BENCHMARKING", 0.35},
-		"blue_ocean":      {"BLUE_OCEAN", 0.7},
-		"growth_hacking":  {"GROWTH_HACKING", 0.6},
-		"scenarios":       {"SCENARIOS", 0.6},
-		"okrs":            {"OKRS", 0.25},
-		"bsc":             {"BSC", 0.35},
-		"decision_matrix": {"DECISION_MATRIX", 0.2},
+	// All 11 Analysis Frameworks use Primary Model
+	analysisFrameworks := []string{
+		"pestel", "porter", "tam_sam_som",
+		"swot", "benchmarking",
+		"blue_ocean", "growth_hacking", "scenarios",
+		"okrs", "bsc", "decision_matrix",
 	}
-
-	for framework, cfg := range frameworkConfigs {
-		modelEnv := "AI_" + cfg.envPrefix + "_MODEL"
-		tempEnv := "AI_" + cfg.envPrefix + "_TEMP"
-		tokensEnv := "AI_" + cfg.envPrefix + "_MAX_TOKENS"
-
-		model := getEnv(modelEnv, primaryModel)
-		temp := getEnvFloat(tempEnv, cfg.defaultTemp)
-		tokens := getEnvInt(tokensEnv, defaultTokensAnalysis)
-
+	for _, framework := range analysisFrameworks {
 		configs[framework] = FrameworkConfig{
-			Model:         model,
-			Temperature:   temp,
-			MaxTokens:     tokens,
+			Model:         primaryModel,
+			Temperature:   temperature,
+			MaxTokens:     tokensAnalysis,
 			FallbackModel: primaryFallback,
 		}
-
-		// Log if using custom model
-		if model != primaryModel {
-			log.Info().
-				Str("framework", framework).
-				Str("model", model).
-				Float64("temp", temp).
-				Int("max_tokens", tokens).
-				Msg("Using custom model for framework")
-		}
 	}
 
-	// Synthesis Layer - Final Executive Summary (Premium Model)
+	// Synthesis - Premium model for executive summary
 	configs["synthesis"] = FrameworkConfig{
-		Model:         getEnv("AI_SYNTHESIS_MODEL", synthesisModel),
-		Temperature:   getEnvFloat("AI_SYNTHESIS_TEMP", defaultTemp),
-		MaxTokens:     getEnvInt("AI_SYNTHESIS_MAX_TOKENS", tokensSynthesis),
+		Model:         synthesisModel,
+		Temperature:   temperature,
+		MaxTokens:     tokensSynthesis,
 		FallbackModel: synthesisFallback,
 	}
 
-	log.Info().Int("frameworks_loaded", len(configs)).Msg("Framework configurations loaded successfully")
+	log.Info().Int("frameworks_loaded", len(configs)).Msg("Framework configurations loaded")
 	return configs
 }
 

@@ -79,13 +79,13 @@ Handlers are composed via `NewHandler()` in `router.go:120-136`.
 
 ## AI Model Configuration
 
-6-model approach via OpenRouter (`config/config.go:317-391`):
-1. **PreSearch** (`AI_PRESEARCH_MODEL`): Perplexity for company identification
-2. **Enrichment** (`AI_ENRICHMENT_MODEL`): Gemini with Google Search
+4-model approach via OpenRouter (`config/config.go:316-388`):
+1. **PreSearch** (`AI_PRESEARCH_MODEL`): Perplexity sonar-pro for company identification
+2. **Enrichment** (`AI_ENRICHMENT_MODEL`): Gemini for data gathering (must support search)
 3. **Primary** (`AI_PRIMARY_MODEL`): All 11 analysis frameworks
-4. **Synthesis** (`AI_SYNTHESIS_MODEL`): Executive summary (premium model)
+4. **Synthesis** (`AI_SYNTHESIS_MODEL`): Premium model for executive summary
 
-Each has a fallback model for automatic retry on rate limits.
+Each has a fallback model (`_FALLBACK` suffix) for automatic retry on rate limits.
 
 ## Analysis Frameworks (11 Total)
 

@@ -20,6 +20,33 @@ type LLMClient interface {
 	GenerateStructuredWithOptions(ctx context.Context, opts llm.GenerationOptions, prompt string, data interface{}, targetSchema interface{}) error
 }
 
+// MacroServiceInterface defines the contract for fetching macroeconomic data
+// This interface is implemented by macroeconomics.Service (via adapter in main.go)
+// Using an interface avoids import cycles between analysis and macroeconomics domains
+type MacroServiceInterface interface {
+	// GetLatestSnapshot retrieves the most recent values for ALL active indicators
+	// Returns nil error if DB is empty (graceful degradation)
+	GetLatestSnapshot(ctx context.Context) (*MacroSnapshot, error)
+}
+
+// MacroSnapshot represents latest economic indicators from DB
+type MacroSnapshot struct {
+	Indicators map[string]*MacroIndicator `json:"indicators"`
+}
+
+// MacroIndicator represents a single indicator with full metadata
+type MacroIndicator struct {
+	Code  string  `json:"code"`
+	Name  string  `json:"name"`
+	Value float64 `json:"value"`
+	Unit  string  `json:"unit"`
+}
+
+// HasData returns true if at least one indicator has data
+func (s *MacroSnapshot) HasData() bool {
+	return s != nil && len(s.Indicators) > 0
+}
+
 // SubmissionRepository defines the interface for accessing submission data
 // We only need GetByID for fetching submission context
 type SubmissionRepository interface {
@@ -58,8 +85,9 @@ type Service struct {
 	logger         zerolog.Logger
 	queueClient    *asynq.Client // For job orchestration
 	reportLookup   ReportLookup  // Optional: used to verify PDF before Send
+	macroService   MacroServiceInterface // Optional: used to fetch macro data directly from DB
 
-	// Framework-specific configurations for heterogeneous model routing
+	// Framework configurations (4-model approach: presearch, enrichment, primary, synthesis)
 	frameworks map[string]config.FrameworkConfig
 }
 
@@ -89,6 +117,12 @@ func (s *Service) SetFrameworks(frameworks map[string]config.FrameworkConfig) {
 // SetReportLookup wires a report lookup dependency (used for PDF existence checks)
 func (s *Service) SetReportLookup(lookup ReportLookup) {
 	s.reportLookup = lookup
+}
+
+// SetMacroService wires a macro service dependency (used for fetching macro data directly from DB)
+// This is preferred over extracting macro data from enrichment output
+func (s *Service) SetMacroService(svc MacroServiceInterface) {
+	s.macroService = svc
 }
 
 // GetByID retrieves an analysis by ID
@@ -322,6 +356,31 @@ func (s *Service) SetBlurStatus(ctx context.Context, analysisID string, blurred 
 		Str("analysis_id", analysisID).
 		Bool("blurred", blurred).
 		Msg("Analysis blur status updated")
+
+	return nil
+}
+
+// SetPublicStatus toggles whether the analysis is accessible without login
+// When true, anyone with the access code can view the report
+// When false, the access code requires authentication
+func (s *Service) SetPublicStatus(ctx context.Context, analysisID string, public bool) error {
+	// Get analysis first to validate it exists
+	_, err := s.repo.GetByID(ctx, analysisID)
+	if err != nil {
+		return err
+	}
+
+	// No status restriction - public flag can be toggled at any time
+	// (it's an access control, not a workflow state)
+
+	if err := s.repo.SetPublicStatus(ctx, analysisID, public); err != nil {
+		return err
+	}
+
+	s.logger.Info().
+		Str("analysis_id", analysisID).
+		Bool("public", public).
+		Msg("Analysis public status updated")
 
 	return nil
 }
