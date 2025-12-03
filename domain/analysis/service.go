@@ -20,6 +20,35 @@ type LLMClient interface {
 	GenerateStructuredWithOptions(ctx context.Context, opts llm.GenerationOptions, prompt string, data interface{}, targetSchema interface{}) error
 }
 
+// FrameworkService interface for dynamic framework loading
+type FrameworkService interface {
+	GetExecutionPlan(ctx context.Context, codes []string) ([]*Framework, error)
+	GetByCode(ctx context.Context, code string) (*Framework, error)
+	ListActive(ctx context.Context) ([]*Framework, error)
+}
+
+// Framework represents the framework model from domain/framework
+type Framework struct {
+	ID                 interface{}
+	Code               string
+	Name               string
+	NamePT             string
+	Description        *string
+	DescriptionPT      *string
+	Category           string
+	LayerOrder         int
+	IsActive           bool
+	RequiresEnrichment bool
+	TimeoutSeconds     int
+	PromptTemplate     string
+	OutputSchema       interface{}
+	PreferredModel     *string
+	Temperature        float64
+	DependsOn          []string
+	CreatedAt          interface{}
+	UpdatedAt          interface{}
+}
+
 // MacroServiceInterface defines the contract for fetching macroeconomic data
 // This interface is implemented by macroeconomics.Service (via adapter in main.go)
 // Using an interface avoids import cycles between analysis and macroeconomics domains
@@ -79,13 +108,14 @@ type ReportSummary interface {
 
 // Service handles all business analysis operations
 type Service struct {
-	repo           Repository
-	submissionRepo SubmissionRepository
-	llm            LLMClient
-	logger         zerolog.Logger
-	queueClient    *asynq.Client // For job orchestration
-	reportLookup   ReportLookup  // Optional: used to verify PDF before Send
-	macroService   MacroServiceInterface // Optional: used to fetch macro data directly from DB
+	repo             Repository
+	submissionRepo   SubmissionRepository
+	llm              LLMClient
+	logger           zerolog.Logger
+	queueClient      *asynq.Client // For job orchestration
+	reportLookup     ReportLookup  // Optional: used to verify PDF before Send
+	macroService     MacroServiceInterface // Optional: used to fetch macro data directly from DB
+	frameworkService FrameworkService // Optional: used for dynamic framework execution
 
 	// Framework configurations (4-model approach: presearch, enrichment, primary, synthesis)
 	frameworks map[string]config.FrameworkConfig
@@ -123,6 +153,12 @@ func (s *Service) SetReportLookup(lookup ReportLookup) {
 // This is preferred over extracting macro data from enrichment output
 func (s *Service) SetMacroService(svc MacroServiceInterface) {
 	s.macroService = svc
+}
+
+// SetFrameworkService wires a framework service dependency (used for dynamic framework execution)
+// This enables RunAnalysisDynamic to load frameworks from database
+func (s *Service) SetFrameworkService(fs FrameworkService) {
+	s.frameworkService = fs
 }
 
 // GetByID retrieves an analysis by ID

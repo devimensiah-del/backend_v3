@@ -69,5 +69,5 @@ None - Implementation follows plan exactly.
 
 ## Commit
 
-**Hash**: bf99565
+**Hash**: 078c291
 **Message**: feat(02-01): Add framework_results JSONB column

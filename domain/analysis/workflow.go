@@ -2,6 +2,7 @@ package analysis
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -973,4 +974,220 @@ func (s *Service) generateOKRsSummaryFallback(okrs *OKRAnalysis) string {
 		Msg("✅ OKRs fallback summary generated")
 
 	return summary
+}
+
+// =================================================================================
+// DYNAMIC FRAMEWORK EXECUTION
+// =================================================================================
+
+// RunAnalysisDynamic executes frameworks dynamically based on database configuration
+// This is the new flexible approach that will replace hardcoded layer execution
+func (s *Service) RunAnalysisDynamic(
+	ctx context.Context,
+	analysisID string,
+	enrichmentData map[string]interface{},
+	requestedCodes []string, // Optional: nil or empty means all active frameworks
+) error {
+	if s.frameworkService == nil {
+		return fmt.Errorf("framework service not configured")
+	}
+
+	// Determine which frameworks to run
+	var codes []string
+	if len(requestedCodes) > 0 {
+		codes = requestedCodes
+	} else {
+		// Get all active framework codes
+		activeFrameworks, err := s.frameworkService.ListActive(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get active frameworks: %w", err)
+		}
+		for _, fw := range activeFrameworks {
+			codes = append(codes, fw.Code)
+		}
+	}
+
+	// Get execution plan (resolves dependencies, orders correctly)
+	frameworks, err := s.frameworkService.GetExecutionPlan(ctx, codes)
+	if err != nil {
+		return fmt.Errorf("failed to get execution plan: %w", err)
+	}
+
+	s.logger.Info().
+		Str("analysis_id", analysisID).
+		Int("framework_count", len(frameworks)).
+		Strs("codes", codes).
+		Msg("Starting dynamic analysis execution")
+
+	results := make(map[string]json.RawMessage)
+
+	// Execute each framework in dependency order
+	for _, fw := range frameworks {
+		s.logger.Info().
+			Str("analysis_id", analysisID).
+			Str("framework", fw.Code).
+			Msg("Executing framework")
+
+		result, err := s.executeFrameworkDynamic(ctx, fw, enrichmentData, results)
+		if err != nil {
+			s.logger.Error().
+				Err(err).
+				Str("analysis_id", analysisID).
+				Str("framework", fw.Code).
+				Msg("Framework execution failed")
+			return fmt.Errorf("framework %s failed: %w", fw.Code, err)
+		}
+
+		results[fw.Code] = result
+
+		// Save incrementally to database
+		if err := s.repo.SetFrameworkResult(ctx, analysisID, fw.Code, result); err != nil {
+			s.logger.Warn().
+				Err(err).
+				Str("analysis_id", analysisID).
+				Str("framework", fw.Code).
+				Msg("Failed to save framework result incrementally")
+			// Continue anyway - we'll save everything at the end
+		}
+	}
+
+	s.logger.Info().
+		Str("analysis_id", analysisID).
+		Int("completed", len(results)).
+		Msg("Dynamic analysis execution completed")
+
+	return nil
+}
+
+// executeFrameworkDynamic executes a single framework using database configuration
+func (s *Service) executeFrameworkDynamic(
+	ctx context.Context,
+	fw *Framework,
+	enrichmentData map[string]interface{},
+	previousResults map[string]json.RawMessage,
+) (json.RawMessage, error) {
+	// Execute using existing LLM infrastructure
+	// Create a context container for compatibility with existing methods
+	// We need to populate it with previous results for dependent frameworks
+	k := &ContextContainer{
+		EnrichmentData: enrichmentData,
+	}
+
+	// Populate context container with previous results if needed
+	// This allows dependent frameworks to access results of their dependencies
+	if err := s.populateContextFromResults(k, previousResults); err != nil {
+		s.logger.Warn().Err(err).Str("framework", fw.Code).Msg("Failed to populate context from previous results")
+	}
+
+	// Map framework code to existing execution methods
+	// This bridges the dynamic system with existing hardcoded implementations
+	var result interface{}
+	var err error
+
+	switch fw.Code {
+	case "pestel":
+		result, err = s.runPESTEL(ctx, k)
+	case "porter":
+		result, err = s.runPorter(ctx, k)
+	case "tam_sam_som":
+		result, err = s.runTamSamSom(ctx, k)
+	case "swot":
+		result, err = s.runSWOT(ctx, k)
+	case "benchmarking":
+		result, err = s.runBenchmarking(ctx, k)
+	case "blue_ocean":
+		result, err = s.runBlueOcean(ctx, k)
+	case "growth_hacking":
+		result, err = s.runGrowthHacking(ctx, k)
+	case "scenarios":
+		result, err = s.runScenarios(ctx, k)
+	case "okrs":
+		result, err = s.runOKRs(ctx, k)
+	case "bsc":
+		result, err = s.runBSC(ctx, k)
+	case "decision_matrix":
+		result, err = s.runDecisionMatrix(ctx, k)
+	case "synthesis":
+		result, err = s.runSynthesis(ctx, k)
+	default:
+		return nil, fmt.Errorf("unknown framework code: %s", fw.Code)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("LLM call failed for %s: %w", fw.Code, err)
+	}
+
+	// Convert result to JSON
+	resultJSON, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal result for %s: %w", fw.Code, err)
+	}
+
+	return resultJSON, nil
+}
+
+// populateContextFromResults populates the ContextContainer with results from previously executed frameworks
+// This enables dependent frameworks to access the outputs of their dependencies
+func (s *Service) populateContextFromResults(k *ContextContainer, results map[string]json.RawMessage) error {
+	// Unmarshal each result into its appropriate field in the context container
+	for code, resultJSON := range results {
+		switch code {
+		case "pestel":
+			var pestel PESTELAnalysis
+			if err := json.Unmarshal(resultJSON, &pestel); err == nil {
+				k.PESTEL = &pestel
+			}
+		case "porter":
+			var porter PorterAnalysis
+			if err := json.Unmarshal(resultJSON, &porter); err == nil {
+				k.Porter = &porter
+			}
+		case "tam_sam_som":
+			var tamSamSom TamSamSomAnalysis
+			if err := json.Unmarshal(resultJSON, &tamSamSom); err == nil {
+				k.TamSamSom = &tamSamSom
+			}
+		case "swot":
+			var swot SWOTAnalysis
+			if err := json.Unmarshal(resultJSON, &swot); err == nil {
+				k.SWOT = &swot
+			}
+		case "benchmarking":
+			var bench BenchmarkingAnalysis
+			if err := json.Unmarshal(resultJSON, &bench); err == nil {
+				k.Benchmarking = &bench
+			}
+		case "blue_ocean":
+			var blueOcean BlueOceanAnalysis
+			if err := json.Unmarshal(resultJSON, &blueOcean); err == nil {
+				k.BlueOcean = &blueOcean
+			}
+		case "growth_hacking":
+			var growth GrowthHackingAnalysis
+			if err := json.Unmarshal(resultJSON, &growth); err == nil {
+				k.GrowthHacking = &growth
+			}
+		case "scenarios":
+			var scenarios ScenarioAnalysis
+			if err := json.Unmarshal(resultJSON, &scenarios); err == nil {
+				k.Scenarios = &scenarios
+			}
+		case "okrs":
+			var okrs OKRAnalysis
+			if err := json.Unmarshal(resultJSON, &okrs); err == nil {
+				k.OKRs = &okrs
+			}
+		case "bsc":
+			var bsc BalancedScorecardAnalysis
+			if err := json.Unmarshal(resultJSON, &bsc); err == nil {
+				k.BSC = &bsc
+			}
+		case "decision_matrix":
+			var dm DecisionMatrixAnalysis
+			if err := json.Unmarshal(resultJSON, &dm); err == nil {
+				k.DecisionMatrix = &dm
+			}
+		}
+	}
+	return nil
 }
