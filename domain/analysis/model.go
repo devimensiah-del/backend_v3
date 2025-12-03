@@ -59,26 +59,10 @@ type Analysis struct {
 	// Soft delete support
 	DeletedAt *time.Time `db:"deleted_at" json:"deleted_at,omitempty"`
 
-	// The 11 Frameworks (JSONB in Postgres)
-	PESTEL         PESTELAnalysis            `db:"pestel" json:"pestel"`
-	Porter         PorterAnalysis            `db:"porter" json:"porter"`
-	TamSamSom      TamSamSomAnalysis         `db:"tam_sam_som" json:"tam_sam_som"`
-	SWOT           SWOTAnalysis              `db:"swot" json:"swot"`
-	Benchmarking   BenchmarkingAnalysis      `db:"benchmarking" json:"benchmarking"`
-	BlueOcean      BlueOceanAnalysis         `db:"blue_ocean" json:"blue_ocean"`
-	GrowthHacking  GrowthHackingAnalysis     `db:"growth_hacking" json:"growth_hacking"`
-	Scenarios      ScenarioAnalysis          `db:"scenarios" json:"scenarios"`
-	OKRs           OKRAnalysis               `db:"okrs" json:"okrs"`
-	BSC            BalancedScorecardAnalysis `db:"bsc" json:"bsc"`
-	DecisionMatrix DecisionMatrixAnalysis    `db:"decision_matrix" json:"decision_matrix"`
-
-	// Generic framework results (new dynamic approach - migration 034)
-	// Stores all framework outputs in a single JSONB column
-	// Enables dual-write during transition period before deprecating individual columns
+	// Framework Results - All framework outputs stored in single JSONB column (migration 034-036)
+	// Replaces 11 individual JSONB columns for better flexibility and maintainability
+	// Use GetFramework/SetFramework helpers for typed access to framework data
 	FrameworkResults map[string]json.RawMessage `db:"framework_results" json:"framework_results,omitempty"`
-
-	// Final Output
-	Synthesis AnalysisSynthesis `db:"synthesis" json:"synthesis"`
 }
 
 // --- Framework Structs ---
@@ -732,113 +716,48 @@ func (a *AnalysisSynthesis) Scan(value interface{}) error {
 }
 
 // ============================================
-// Dual-Write Support (Migration 034)
+// Framework Access Helpers (Post-Migration 036)
 // ============================================
 
-// syncFrameworkResults populates the framework_results map from individual framework fields
-// This enables dual-write during the transition period before deprecating individual columns
-// Call this method before Create() or Update() operations to keep both storage formats in sync
-func (a *Analysis) syncFrameworkResults() error {
+// GetFramework returns a specific framework result as typed struct
+// Example: analysis.GetFramework("pestel", &pestelResult)
+func (a *Analysis) GetFramework(code string, target interface{}) error {
+	if a.FrameworkResults == nil {
+		return fmt.Errorf("no framework results")
+	}
+	data, ok := a.FrameworkResults[code]
+	if !ok {
+		return fmt.Errorf("framework %s not found", code)
+	}
+	return json.Unmarshal(data, target)
+}
+
+// SetFramework stores a typed framework result
+func (a *Analysis) SetFramework(code string, value interface{}) error {
 	if a.FrameworkResults == nil {
 		a.FrameworkResults = make(map[string]json.RawMessage)
 	}
-
-	// Helper function to marshal and store a framework
-	storeFramework := func(name string, framework interface{}) error {
-		// Check if the framework has meaningful data (not a zero value)
-		data, err := json.Marshal(framework)
-		if err != nil {
-			return fmt.Errorf("failed to marshal %s: %w", name, err)
-		}
-		// Only store non-empty frameworks
-		if string(data) != "{}" && string(data) != "null" {
-			a.FrameworkResults[name] = data
-		}
-		return nil
+	data, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("failed to marshal %s: %w", code, err)
 	}
-
-	// Sync all 11 frameworks + synthesis
-	if err := storeFramework("pestel", a.PESTEL); err != nil {
-		return err
-	}
-	if err := storeFramework("porter", a.Porter); err != nil {
-		return err
-	}
-	if err := storeFramework("tam_sam_som", a.TamSamSom); err != nil {
-		return err
-	}
-	if err := storeFramework("swot", a.SWOT); err != nil {
-		return err
-	}
-	if err := storeFramework("benchmarking", a.Benchmarking); err != nil {
-		return err
-	}
-	if err := storeFramework("blue_ocean", a.BlueOcean); err != nil {
-		return err
-	}
-	if err := storeFramework("growth_hacking", a.GrowthHacking); err != nil {
-		return err
-	}
-	if err := storeFramework("scenarios", a.Scenarios); err != nil {
-		return err
-	}
-	if err := storeFramework("okrs", a.OKRs); err != nil {
-		return err
-	}
-	if err := storeFramework("bsc", a.BSC); err != nil {
-		return err
-	}
-	if err := storeFramework("decision_matrix", a.DecisionMatrix); err != nil {
-		return err
-	}
-	if err := storeFramework("synthesis", a.Synthesis); err != nil {
-		return err
-	}
-
+	a.FrameworkResults[code] = data
 	return nil
 }
 
-// populateFromFrameworkResults fills legacy framework fields from the generic map
-// This ensures API responses remain unchanged during the transition period
-func (a *Analysis) populateFromFrameworkResults() {
+// GetAllFrameworks returns a map of all framework results with their codes
+func (a *Analysis) GetAllFrameworks() map[string]json.RawMessage {
 	if a.FrameworkResults == nil {
-		return
+		return make(map[string]json.RawMessage)
 	}
+	return a.FrameworkResults
+}
 
-	if data, ok := a.FrameworkResults["pestel"]; ok && a.PESTEL.Summary == "" {
-		json.Unmarshal(data, &a.PESTEL)
+// HasFramework checks if a specific framework exists
+func (a *Analysis) HasFramework(code string) bool {
+	if a.FrameworkResults == nil {
+		return false
 	}
-	if data, ok := a.FrameworkResults["porter"]; ok && a.Porter.Summary == "" {
-		json.Unmarshal(data, &a.Porter)
-	}
-	if data, ok := a.FrameworkResults["swot"]; ok && a.SWOT.Summary == "" {
-		json.Unmarshal(data, &a.SWOT)
-	}
-	if data, ok := a.FrameworkResults["tam_sam_som"]; ok && a.TamSamSom.Summary == "" {
-		json.Unmarshal(data, &a.TamSamSom)
-	}
-	if data, ok := a.FrameworkResults["benchmarking"]; ok && a.Benchmarking.Summary == "" {
-		json.Unmarshal(data, &a.Benchmarking)
-	}
-	if data, ok := a.FrameworkResults["blue_ocean"]; ok && a.BlueOcean.Summary == "" {
-		json.Unmarshal(data, &a.BlueOcean)
-	}
-	if data, ok := a.FrameworkResults["growth_hacking"]; ok && a.GrowthHacking.Summary == "" {
-		json.Unmarshal(data, &a.GrowthHacking)
-	}
-	if data, ok := a.FrameworkResults["scenarios"]; ok && a.Scenarios.Summary == "" {
-		json.Unmarshal(data, &a.Scenarios)
-	}
-	if data, ok := a.FrameworkResults["okrs"]; ok && a.OKRs.Summary == "" {
-		json.Unmarshal(data, &a.OKRs)
-	}
-	if data, ok := a.FrameworkResults["bsc"]; ok && a.BSC.Summary == "" {
-		json.Unmarshal(data, &a.BSC)
-	}
-	if data, ok := a.FrameworkResults["decision_matrix"]; ok && a.DecisionMatrix.Summary == "" {
-		json.Unmarshal(data, &a.DecisionMatrix)
-	}
-	if data, ok := a.FrameworkResults["synthesis"]; ok && a.Synthesis.ExecutiveSummary == "" {
-		json.Unmarshal(data, &a.Synthesis)
-	}
+	_, ok := a.FrameworkResults[code]
+	return ok
 }

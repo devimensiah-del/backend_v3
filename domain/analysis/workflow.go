@@ -162,7 +162,10 @@ func (s *Service) RunAnalysis(ctx context.Context, submissionID, enrichmentID st
 	// FINAL SYNTHESIS (The Senior Partner)
 	// ========================================================================
 	// Uses the Premium Model (s.synthesisModel)
-	analysis.Synthesis, _ = s.runSynthesis(ctx, knowledge)
+	synthesis, _ := s.runSynthesis(ctx, knowledge)
+	if err := analysis.SetFramework("synthesis", synthesis); err != nil {
+		s.logger.Error().Err(err).Msg("Failed to set synthesis framework")
+	}
 
 	// ========================================================================
 	// FINAL VALIDATION BEFORE MARKING COMPLETE
@@ -236,18 +239,7 @@ func (s *Service) startAnalysisRecord(ctx context.Context, subID, enrichID strin
 			existing.ProcessingTimeMs = 0
 
 			// Clear previous analysis results for fresh run
-			existing.PESTEL = PESTELAnalysis{}
-			existing.Porter = PorterAnalysis{}
-			existing.TamSamSom = TamSamSomAnalysis{}
-			existing.SWOT = SWOTAnalysis{}
-			existing.Benchmarking = BenchmarkingAnalysis{}
-			existing.BlueOcean = BlueOceanAnalysis{}
-			existing.GrowthHacking = GrowthHackingAnalysis{}
-			existing.Scenarios = ScenarioAnalysis{}
-			existing.OKRs = OKRAnalysis{}
-			existing.BSC = BalancedScorecardAnalysis{}
-			existing.DecisionMatrix = DecisionMatrixAnalysis{}
-			existing.Synthesis = AnalysisSynthesis{}
+			existing.FrameworkResults = make(map[string]json.RawMessage)
 
 			if err := s.repo.Update(ctx, existing); err != nil {
 				s.logger.Error().Err(err).Str("analysis_id", existing.ID).Msg("Failed to reset analysis for re-run")
@@ -304,38 +296,39 @@ func (s *Service) saveCheckpoint(ctx context.Context, a *Analysis, k *ContextCon
 	}
 	defer tx.Rollback() // Rollback if commit not called
 
+	// Store frameworks using SetFramework helper
 	if k.PESTEL != nil {
-		a.PESTEL = *k.PESTEL
+		a.SetFramework("pestel", *k.PESTEL)
 	}
 	if k.Porter != nil {
-		a.Porter = *k.Porter
+		a.SetFramework("porter", *k.Porter)
 	}
 	if k.TamSamSom != nil {
-		a.TamSamSom = *k.TamSamSom
+		a.SetFramework("tam_sam_som", *k.TamSamSom)
 	}
 	if k.SWOT != nil {
-		a.SWOT = *k.SWOT
+		a.SetFramework("swot", *k.SWOT)
 	}
 	if k.Benchmarking != nil {
-		a.Benchmarking = *k.Benchmarking
+		a.SetFramework("benchmarking", *k.Benchmarking)
 	}
 	if k.BlueOcean != nil {
-		a.BlueOcean = *k.BlueOcean
+		a.SetFramework("blue_ocean", *k.BlueOcean)
 	}
 	if k.GrowthHacking != nil {
-		a.GrowthHacking = *k.GrowthHacking
+		a.SetFramework("growth_hacking", *k.GrowthHacking)
 	}
 	if k.Scenarios != nil {
-		a.Scenarios = *k.Scenarios
+		a.SetFramework("scenarios", *k.Scenarios)
 	}
 	if k.OKRs != nil {
-		a.OKRs = *k.OKRs
+		a.SetFramework("okrs", *k.OKRs)
 	}
 	if k.BSC != nil {
-		a.BSC = *k.BSC
+		a.SetFramework("bsc", *k.BSC)
 	}
 	if k.DecisionMatrix != nil {
-		a.DecisionMatrix = *k.DecisionMatrix
+		a.SetFramework("decision_matrix", *k.DecisionMatrix)
 	}
 
 	a.Status = nextStatus
@@ -917,27 +910,43 @@ func (s *Service) validateCriticalFrameworks(a *Analysis) []string {
 
 	// CRITICAL: These must have data for a valid report
 	// Layer 1 - Environment (at least PESTEL or Porter must work)
-	if a.PESTEL.Summary == "" && a.Porter.Summary == "" {
+	var pestel PESTELAnalysis
+	var porter PorterAnalysis
+	pestelEmpty := a.GetFramework("pestel", &pestel) != nil || pestel.Summary == ""
+	porterEmpty := a.GetFramework("porter", &porter) != nil || porter.Summary == ""
+	if pestelEmpty && porterEmpty {
 		missing = append(missing, "environment_layer (pestel+porter both empty)")
 	}
 
 	// Layer 2 - Positioning (SWOT is critical)
-	if a.SWOT.Summary == "" && len(a.SWOT.Strengths) == 0 && len(a.SWOT.Weaknesses) == 0 {
+	var swot SWOTAnalysis
+	if a.GetFramework("swot", &swot) != nil || (swot.Summary == "" && len(swot.Strengths) == 0 && len(swot.Weaknesses) == 0) {
 		missing = append(missing, "swot")
 	}
 
 	// Layer 3 - Strategy (at least one strategy framework)
-	if a.BlueOcean.Summary == "" && a.GrowthHacking.Summary == "" && a.Scenarios.Summary == "" {
+	var blueOcean BlueOceanAnalysis
+	var growthHacking GrowthHackingAnalysis
+	var scenarios ScenarioAnalysis
+	blueOceanEmpty := a.GetFramework("blue_ocean", &blueOcean) != nil || blueOcean.Summary == ""
+	growthHackingEmpty := a.GetFramework("growth_hacking", &growthHacking) != nil || growthHacking.Summary == ""
+	scenariosEmpty := a.GetFramework("scenarios", &scenarios) != nil || scenarios.Summary == ""
+	if blueOceanEmpty && growthHackingEmpty && scenariosEmpty {
 		missing = append(missing, "strategy_layer (blue_ocean+growth_hacking+scenarios all empty)")
 	}
 
 	// Layer 4 - Execution (OKRs or BSC)
-	if a.OKRs.Summary == "" && a.BSC.Summary == "" {
+	var okrs OKRAnalysis
+	var bsc BalancedScorecardAnalysis
+	okrsEmpty := a.GetFramework("okrs", &okrs) != nil || okrs.Summary == ""
+	bscEmpty := a.GetFramework("bsc", &bsc) != nil || bsc.Summary == ""
+	if okrsEmpty && bscEmpty {
 		missing = append(missing, "execution_layer (okrs+bsc both empty)")
 	}
 
 	// Synthesis must exist
-	if a.Synthesis.ExecutiveSummary == "" && a.Synthesis.CentralChallenge == "" {
+	var synthesis AnalysisSynthesis
+	if a.GetFramework("synthesis", &synthesis) != nil || (synthesis.ExecutiveSummary == "" && synthesis.CentralChallenge == "") {
 		missing = append(missing, "synthesis")
 	}
 

@@ -188,84 +188,98 @@ func (s *Service) applyEditsToAnalysis(analysis *Analysis, edits map[string]inte
 		Interface("edits_keys", getMapKeys(edits)).
 		Msg("applyEditsToAnalysis received")
 
-	if pestelEdits, ok := edits["pestel"].(map[string]interface{}); ok {
-		s.logger.Debug().Msg("Applying PESTEL edits")
-		s.applyPESTELEdits(&analysis.PESTEL, pestelEdits)
+	// Helper to get framework from map and apply edits
+	applyFrameworkEdits := func(code string, applyFunc func(interface{}, map[string]interface{})) {
+		if frameworkEdits, ok := edits[code].(map[string]interface{}); ok {
+			s.logger.Debug().Str("framework", code).Msg("Applying framework edits")
+
+			// Get existing framework data
+			var framework interface{}
+			switch code {
+			case "pestel":
+				framework = new(PESTELAnalysis)
+			case "porter":
+				framework = new(PorterAnalysis)
+			case "swot":
+				framework = new(SWOTAnalysis)
+			case "okrs":
+				framework = new(OKRAnalysis)
+			case "tam_sam_som":
+				framework = new(TamSamSomAnalysis)
+			case "benchmarking":
+				framework = new(BenchmarkingAnalysis)
+			case "blue_ocean":
+				framework = new(BlueOceanAnalysis)
+			case "growth_hacking":
+				framework = new(GrowthHackingAnalysis)
+			case "scenarios":
+				framework = new(ScenarioAnalysis)
+			case "bsc":
+				framework = new(BalancedScorecardAnalysis)
+			case "decision_matrix":
+				framework = new(DecisionMatrixAnalysis)
+			case "synthesis":
+				framework = new(AnalysisSynthesis)
+			default:
+				s.logger.Warn().Str("framework", code).Msg("Unknown framework type")
+				return
+			}
+
+			// Load existing data (ignore errors if not found)
+			_ = analysis.GetFramework(code, framework)
+
+			// Apply edits
+			applyFunc(framework, frameworkEdits)
+
+			// Store back
+			if err := analysis.SetFramework(code, framework); err != nil {
+				s.logger.Error().Err(err).Str("framework", code).Msg("Failed to set framework")
+			}
+		} else if _, exists := edits[code]; exists {
+			s.logger.Warn().
+				Str("framework", code).
+				Str("actual_type", fmt.Sprintf("%T", edits[code])).
+				Msg("Framework edits type assertion failed")
+		}
 	}
 
-	if porterEdits, ok := edits["porter"].(map[string]interface{}); ok {
-		s.logger.Debug().Msg("Applying Porter edits")
-		s.applyPorterEdits(&analysis.Porter, porterEdits)
-	}
-
-	if swotEdits, ok := edits["swot"].(map[string]interface{}); ok {
-		s.logger.Debug().
-			Interface("swot_edits_keys", getMapKeys(swotEdits)).
-			Msg("Applying SWOT edits")
-		s.applySWOTEdits(&analysis.SWOT, swotEdits)
-	} else if _, exists := edits["swot"]; exists {
-		// SWOT key exists but type assertion failed - log what type we got
-		s.logger.Warn().
-			Str("actual_type", fmt.Sprintf("%T", edits["swot"])).
-			Msg("SWOT edits type assertion failed")
-	}
-
-	if okrsEdits, ok := edits["okrs"].(map[string]interface{}); ok {
-		s.logger.Debug().Msg("Applying OKRs edits")
-		s.applyOKRsEdits(&analysis.OKRs, okrsEdits)
-	} else if _, exists := edits["okrs"]; exists {
-		s.logger.Warn().
-			Str("actual_type", fmt.Sprintf("%T", edits["okrs"])).
-			Msg("OKRs edits type assertion failed")
-	}
-
-	if tamEdits, ok := edits["tam_sam_som"].(map[string]interface{}); ok {
-		s.logger.Debug().Msg("Applying TAM-SAM-SOM edits")
-		s.applyTamSamSomEdits(&analysis.TamSamSom, tamEdits)
-	} else if _, exists := edits["tam_sam_som"]; exists {
-		s.logger.Warn().
-			Str("actual_type", fmt.Sprintf("%T", edits["tam_sam_som"])).
-			Msg("TAM-SAM-SOM edits type assertion failed")
-	}
-
-	if benchEdits, ok := edits["benchmarking"].(map[string]interface{}); ok {
-		s.logger.Debug().Msg("Applying Benchmarking edits")
-		s.applyBenchmarkingEdits(&analysis.Benchmarking, benchEdits)
-	}
-
-	if blueOceanEdits, ok := edits["blue_ocean"].(map[string]interface{}); ok {
-		s.logger.Debug().Msg("Applying Blue Ocean edits")
-		s.applyBlueOceanEdits(&analysis.BlueOcean, blueOceanEdits)
-	}
-
-	if growthEdits, ok := edits["growth_hacking"].(map[string]interface{}); ok {
-		s.logger.Debug().Msg("Applying Growth Hacking edits")
-		s.applyGrowthHackingEdits(&analysis.GrowthHacking, growthEdits)
-	}
-
-	if scenarioEdits, ok := edits["scenarios"].(map[string]interface{}); ok {
-		s.logger.Debug().Msg("Applying Scenarios edits")
-		s.applyScenariosEdits(&analysis.Scenarios, scenarioEdits)
-	}
-
-	if bscEdits, ok := edits["bsc"].(map[string]interface{}); ok {
-		s.logger.Debug().Msg("Applying BSC edits")
-		s.applyBSCEdits(&analysis.BSC, bscEdits)
-	}
-
-	if decisionEdits, ok := edits["decision_matrix"].(map[string]interface{}); ok {
-		s.logger.Debug().Msg("Applying Decision Matrix edits")
-		s.applyDecisionMatrixEdits(&analysis.DecisionMatrix, decisionEdits)
-	} else if _, exists := edits["decision_matrix"]; exists {
-		s.logger.Warn().
-			Str("actual_type", fmt.Sprintf("%T", edits["decision_matrix"])).
-			Msg("Decision Matrix edits type assertion failed")
-	}
-
-	if synthesisEdits, ok := edits["synthesis"].(map[string]interface{}); ok {
-		s.logger.Debug().Msg("Applying Synthesis edits")
-		s.applySynthesisEdits(&analysis.Synthesis, synthesisEdits)
-	}
+	// Apply edits to each framework
+	applyFrameworkEdits("pestel", func(fw interface{}, edits map[string]interface{}) {
+		s.applyPESTELEdits(fw.(*PESTELAnalysis), edits)
+	})
+	applyFrameworkEdits("porter", func(fw interface{}, edits map[string]interface{}) {
+		s.applyPorterEdits(fw.(*PorterAnalysis), edits)
+	})
+	applyFrameworkEdits("swot", func(fw interface{}, edits map[string]interface{}) {
+		s.applySWOTEdits(fw.(*SWOTAnalysis), edits)
+	})
+	applyFrameworkEdits("okrs", func(fw interface{}, edits map[string]interface{}) {
+		s.applyOKRsEdits(fw.(*OKRAnalysis), edits)
+	})
+	applyFrameworkEdits("tam_sam_som", func(fw interface{}, edits map[string]interface{}) {
+		s.applyTamSamSomEdits(fw.(*TamSamSomAnalysis), edits)
+	})
+	applyFrameworkEdits("benchmarking", func(fw interface{}, edits map[string]interface{}) {
+		s.applyBenchmarkingEdits(fw.(*BenchmarkingAnalysis), edits)
+	})
+	applyFrameworkEdits("blue_ocean", func(fw interface{}, edits map[string]interface{}) {
+		s.applyBlueOceanEdits(fw.(*BlueOceanAnalysis), edits)
+	})
+	applyFrameworkEdits("growth_hacking", func(fw interface{}, edits map[string]interface{}) {
+		s.applyGrowthHackingEdits(fw.(*GrowthHackingAnalysis), edits)
+	})
+	applyFrameworkEdits("scenarios", func(fw interface{}, edits map[string]interface{}) {
+		s.applyScenariosEdits(fw.(*ScenarioAnalysis), edits)
+	})
+	applyFrameworkEdits("bsc", func(fw interface{}, edits map[string]interface{}) {
+		s.applyBSCEdits(fw.(*BalancedScorecardAnalysis), edits)
+	})
+	applyFrameworkEdits("decision_matrix", func(fw interface{}, edits map[string]interface{}) {
+		s.applyDecisionMatrixEdits(fw.(*DecisionMatrixAnalysis), edits)
+	})
+	applyFrameworkEdits("synthesis", func(fw interface{}, edits map[string]interface{}) {
+		s.applySynthesisEdits(fw.(*AnalysisSynthesis), edits)
+	})
 }
 
 // Helper to get map keys for debugging
