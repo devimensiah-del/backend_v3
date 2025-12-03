@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IMENSIAH - Análise</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    @page {
+      size: A4 landscape;
+      margin: 0;
+    }
+
+    :root {
+      --navy-900: #0A101D;
+      --navy-800: #162032;
+      --gold-500: #B89E68;
+      --surface-paper: #F7F6F4;
+      --line-color: #E5E0D6;
+      --text-primary: #111827;
+      --text-secondary: #52525B;
+      --font-heading: 'Manrope', sans-serif;
+      --font-body: 'Inter', sans-serif;
+    }
+
+    body {
+      font-family: var(--font-body);
+      background: white;
+      color: var(--text-primary);
+      width: 297mm;
+      height: 210mm;
+      margin: 0 auto;
+      overflow: hidden;
+    }
+
+    .slide {
+      width: 297mm;
+      height: 210mm;
+      padding: 20mm 35mm;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      background: white;
+    }
+
+    .gold-bar {
+      position: absolute;
+      top: 0;
+      left: 35mm;
+      right: 35mm;
+      height: 4px;
+      background: var(--gold-500);
+    }
+
+    .header {
+      margin-bottom: 8mm;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+
+    .header-left {
+      flex: 1;
+    }
+
+    .eyebrow {
+      font-family: var(--font-heading);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--gold-500);
+      margin-bottom: 8px;
+    }
+
+    .page-title {
+      font-family: var(--font-heading);
+      font-size: 28px;
+      font-weight: 500;
+      letter-spacing: -0.025em;
+      color: var(--navy-900);
+    }
+
+    .model-badges {
+      display: flex;
+      gap: 10px;
+    }
+
+    .model-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--navy-900);
+      padding: 8px 12px;
+    }
+
+    .model-name {
+      font-family: var(--font-heading);
+      font-size: 11px;
+      font-weight: 600;
+      color: white;
+    }
+
+    .model-role {
+      font-family: var(--font-heading);
+      font-size: 7px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--gold-500);
+      border: 1px solid var(--gold-500);
+      padding: 2px 5px;
+    }
+
+    .content {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 15px;
+    }
+
+    .left-column {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .frameworks-section {
+      background: var(--surface-paper);
+      padding: 12px;
+      flex: 1;
+    }
+
+    .section-title {
+      font-family: var(--font-heading);
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--gold-500);
+      margin-bottom: 10px;
+    }
+
+    .frameworks-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+    }
+
+    .framework-item {
+      background: white;
+      border: 1px solid var(--line-color);
+      padding: 8px;
+      text-align: center;
+    }
+
+    .framework-item.synthesis {
+      background: var(--navy-900);
+      border-color: var(--navy-900);
+    }
+
+    .framework-number {
+      font-family: var(--font-heading);
+      font-size: 9px;
+      font-weight: 700;
+      color: var(--gold-500);
+      margin-bottom: 3px;
+    }
+
+    .framework-name {
+      font-family: var(--font-heading);
+      font-size: 9px;
+      font-weight: 600;
+      color: var(--navy-900);
+      margin-bottom: 2px;
+    }
+
+    .framework-item.synthesis .framework-name {
+      color: white;
+    }
+
+    .framework-desc {
+      font-family: var(--font-body);
+      font-size: 7px;
+      color: var(--text-secondary);
+      line-height: 1.2;
+    }
+
+    .framework-item.synthesis .framework-desc {
+      color: rgba(255, 255, 255, 0.6);
+    }
+
+    .right-column {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .synthesis-box {
+      background: var(--navy-900);
+      padding: 12px;
+    }
+
+    .synthesis-title {
+      font-family: var(--font-heading);
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--gold-500);
+      margin-bottom: 10px;
+    }
+
+    .synthesis-flow {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .synthesis-step {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .step-number {
+      width: 22px;
+      height: 22px;
+      background: var(--gold-500);
+      color: var(--navy-900);
+      font-family: var(--font-heading);
+      font-size: 10px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .step-content {
+      flex: 1;
+    }
+
+    .step-title {
+      font-family: var(--font-heading);
+      font-size: 10px;
+      font-weight: 600;
+      color: white;
+    }
+
+    .step-desc {
+      font-family: var(--font-body);
+      font-size: 8px;
+      color: rgba(255, 255, 255, 0.6);
+    }
+
+    .prompt-note {
+      padding: 12px;
+      background: var(--surface-paper);
+      border-left: 3px solid var(--gold-500);
+      flex: 1;
+    }
+
+    .prompt-note-title {
+      font-family: var(--font-heading);
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--navy-900);
+      margin-bottom: 6px;
+    }
+
+    .prompt-note-text {
+      font-family: var(--font-body);
+      font-size: 9px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 8mm;
+      border-top: 1px solid var(--line-color);
+    }
+
+    .logo-small {
+      font-family: var(--font-heading);
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--navy-900);
+      letter-spacing: -0.025em;
+    }
+
+    .logo-small span {
+      color: var(--gold-500);
+    }
+
+    .page-number {
+      font-family: var(--font-heading);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      color: var(--text-secondary);
+    }
+  </style>
+</head>
+<body>
+  <div class="slide">
+    <div class="gold-bar"></div>
+
+    <div class="header">
+      <div class="header-left">
+        <div class="eyebrow">05 — Fase de Análise</div>
+        <h1 class="page-title">11 Frameworks + Síntese</h1>
+      </div>
+      <div class="model-badges">
+        <div class="model-badge">
+          <span class="model-name">Claude Opus 4.5</span>
+          <span class="model-role">Todos os Frameworks</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="left-column">
+        <div class="frameworks-section">
+          <div class="section-title">11 Frameworks Estratégicos</div>
+          <div class="frameworks-grid">
+            <div class="framework-item">
+              <div class="framework-number">01</div>
+              <div class="framework-name">PESTEL</div>
+              <div class="framework-desc">Político, Econômico, Social, Tech, Ambiental, Legal</div>
+            </div>
+            <div class="framework-item">
+              <div class="framework-number">02</div>
+              <div class="framework-name">Porter 7 Forças</div>
+              <div class="framework-desc">Forças competitivas + disrupção digital</div>
+            </div>
+            <div class="framework-item">
+              <div class="framework-number">03</div>
+              <div class="framework-name">TAM-SAM-SOM</div>
+              <div class="framework-desc">Total, Disponível, Alcançável do mercado</div>
+            </div>
+            <div class="framework-item">
+              <div class="framework-number">04</div>
+              <div class="framework-name">SWOT</div>
+              <div class="framework-desc">Forças, Fraquezas, Oportunidades, Ameaças</div>
+            </div>
+            <div class="framework-item">
+              <div class="framework-number">05</div>
+              <div class="framework-name">Benchmarking</div>
+              <div class="framework-desc">3 concorrentes + líder de categoria</div>
+            </div>
+            <div class="framework-item">
+              <div class="framework-number">06</div>
+              <div class="framework-name">Blue Ocean</div>
+              <div class="framework-desc">Eliminar-Reduzir-Elevar-Criar</div>
+            </div>
+            <div class="framework-item">
+              <div class="framework-number">07</div>
+              <div class="framework-name">Growth Hacking</div>
+              <div class="framework-desc">Funil AARRR + loops virais</div>
+            </div>
+            <div class="framework-item">
+              <div class="framework-number">08</div>
+              <div class="framework-name">Cenários</div>
+              <div class="framework-desc">3 futuros: otimista, base, pessimista</div>
+            </div>
+            <div class="framework-item">
+              <div class="framework-number">09</div>
+              <div class="framework-name">OKRs</div>
+              <div class="framework-desc">Foco 90 dias + marcos mensais</div>
+            </div>
+            <div class="framework-item">
+              <div class="framework-number">10</div>
+              <div class="framework-name">BSC</div>
+              <div class="framework-desc">4 perspectivas: financeira, cliente, processo, aprendizado</div>
+            </div>
+            <div class="framework-item">
+              <div class="framework-number">11</div>
+              <div class="framework-name">Matriz Decisão</div>
+              <div class="framework-desc">Grid Impacto × Esforço</div>
+            </div>
+            <div class="framework-item synthesis">
+              <div class="framework-number">12</div>
+              <div class="framework-name">Síntese</div>
+              <div class="framework-desc">Insights cruzados + plano de ação</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="right-column">
+        <div class="synthesis-box">
+          <div class="synthesis-title">Fluxo Sequencial de Análise</div>
+          <div class="synthesis-flow">
+            <div class="synthesis-step">
+              <div class="step-number">1</div>
+              <div class="step-content">
+                <div class="step-title">Injeção de Contexto</div>
+                <div class="step-desc">Enriquecimento + análises anteriores em cada prompt</div>
+              </div>
+            </div>
+            <div class="synthesis-step">
+              <div class="step-number">2</div>
+              <div class="step-content">
+                <div class="step-title">Matriz Decisão Primeiro</div>
+                <div class="step-desc">Iniciativas priorizadas informam construção dos OKRs</div>
+              </div>
+            </div>
+            <div class="synthesis-step">
+              <div class="step-number">3</div>
+              <div class="step-content">
+                <div class="step-title">OKRs Alinhados</div>
+                <div class="step-desc">Objetivos 90 dias + marcos mensais da matriz</div>
+              </div>
+            </div>
+            <div class="synthesis-step">
+              <div class="step-number">4</div>
+              <div class="step-content">
+                <div class="step-title">Síntese Cross-Framework</div>
+                <div class="step-desc">11 análises consolidadas em plano de ação executivo</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="prompt-note">
+          <div class="prompt-note-title">Engenharia de Prompts</div>
+          <div class="prompt-note-text">
+            Cada framework usa prompts especializados com: contexto enriquecido da empresa, metodologia específica
+            do framework, formatação para componentes web, schema JSON estruturado, e referência cruzada às análises anteriores.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <div class="logo-small">IMENS<span>IAH</span></div>
+      <div class="page-number">07 / 10</div>
+    </div>
+  </div>
+</body>
+</html>

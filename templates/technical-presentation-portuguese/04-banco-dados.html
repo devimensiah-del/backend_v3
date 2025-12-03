@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IMENSIAH - Arquitetura de Dados</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    @page {
+      size: A4 portrait;
+      margin: 0;
+    }
+
+    :root {
+      --navy-900: #0A101D;
+      --navy-800: #162032;
+      --gold-500: #B89E68;
+      --surface-paper: #F7F6F4;
+      --line-color: #E5E0D6;
+      --text-primary: #111827;
+      --text-secondary: #52525B;
+      --font-heading: 'Manrope', sans-serif;
+      --font-body: 'Inter', sans-serif;
+    }
+
+    body {
+      font-family: var(--font-body);
+      background: white;
+      color: var(--text-primary);
+      width: 210mm;
+      height: 297mm;
+      margin: 0 auto;
+      overflow: hidden;
+    }
+
+    .slide {
+      width: 210mm;
+      height: 297mm;
+      padding: 30mm 30mm 25mm 30mm;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      background: white;
+    }
+
+    .gold-bar {
+      position: absolute;
+      top: 0;
+      left: 30mm;
+      right: 30mm;
+      height: 4px;
+      background: var(--gold-500);
+    }
+
+    .header {
+      margin-bottom: 12mm;
+    }
+
+    .eyebrow {
+      font-family: var(--font-heading);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--gold-500);
+      margin-bottom: 12px;
+    }
+
+    .page-title {
+      font-family: var(--font-heading);
+      font-size: 32px;
+      font-weight: 500;
+      letter-spacing: -0.025em;
+      color: var(--navy-900);
+      margin-bottom: 8px;
+    }
+
+    .page-subtitle {
+      font-family: var(--font-body);
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    .content {
+      flex: 1;
+    }
+
+    .provider-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--surface-paper);
+      padding: 10px 16px;
+      margin-bottom: 15px;
+      border-left: 3px solid var(--gold-500);
+    }
+
+    .provider-name {
+      font-family: var(--font-heading);
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--navy-900);
+    }
+
+    .provider-type {
+      font-family: var(--font-body);
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .schema-diagram {
+      background: var(--navy-900);
+      padding: 20px;
+      margin: 15px 0;
+    }
+
+    .schema-title {
+      font-family: var(--font-heading);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--gold-500);
+      margin-bottom: 15px;
+    }
+
+    .tables-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .table-box {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 12px;
+    }
+
+    .table-name {
+      font-family: var(--font-heading);
+      font-size: 12px;
+      font-weight: 600;
+      color: white;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .table-name::before {
+      content: '';
+      width: 8px;
+      height: 8px;
+      background: var(--gold-500);
+    }
+
+    .table-desc {
+      font-family: var(--font-body);
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.7);
+      line-height: 1.4;
+    }
+
+    .relationship-arrow {
+      text-align: center;
+      color: var(--gold-500);
+      font-size: 20px;
+      padding: 8px 0;
+      grid-column: 1 / -1;
+    }
+
+    .features-section {
+      margin-top: 15px;
+    }
+
+    .section-label {
+      font-family: var(--font-heading);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--gold-500);
+      margin-bottom: 12px;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .feature-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px;
+      background: var(--surface-paper);
+    }
+
+    .feature-icon {
+      width: 24px;
+      height: 24px;
+      background: var(--navy-900);
+      color: var(--gold-500);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+
+    .feature-content {
+      flex: 1;
+    }
+
+    .feature-title {
+      font-family: var(--font-heading);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--navy-900);
+      margin-bottom: 2px;
+    }
+
+    .feature-desc {
+      font-family: var(--font-body);
+      font-size: 10px;
+      color: var(--text-secondary);
+      line-height: 1.4;
+    }
+
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 12mm;
+      border-top: 1px solid var(--line-color);
+    }
+
+    .logo-small {
+      font-family: var(--font-heading);
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--navy-900);
+      letter-spacing: -0.025em;
+    }
+
+    .logo-small span {
+      color: var(--gold-500);
+    }
+
+    .page-number {
+      font-family: var(--font-heading);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      color: var(--text-secondary);
+    }
+  </style>
+</head>
+<body>
+  <div class="slide">
+    <div class="gold-bar"></div>
+
+    <div class="header">
+      <div class="eyebrow">02 — Arquitetura de Dados</div>
+      <h1 class="page-title">Banco de Dados</h1>
+      <p class="page-subtitle">PostgreSQL gerenciado via Supabase com autenticação integrada</p>
+    </div>
+
+    <div class="content">
+      <div class="provider-badge">
+        <span class="provider-name">Supabase</span>
+        <span class="provider-type">PostgreSQL Gerenciado + Auth + Storage</span>
+      </div>
+
+      <div class="schema-diagram">
+        <div class="schema-title">Estrutura de Tabelas</div>
+        <div class="tables-grid">
+          <div class="table-box">
+            <div class="table-name">submissions</div>
+            <div class="table-desc">
+              Ponto de entrada. Contém dados do formulário: nome da empresa, contato, desafio de negócio, CNPJ, setor, etc.
+            </div>
+          </div>
+          <div class="table-box">
+            <div class="table-name">users</div>
+            <div class="table-desc">
+              Gerenciado pelo Supabase Auth. Contém perfil do usuário, role (admin/user), e credenciais.
+            </div>
+          </div>
+          <div class="relationship-arrow">↓ 1:1 ↓</div>
+          <div class="table-box">
+            <div class="table-name">enrichments</div>
+            <div class="table-desc">
+              Dados enriquecidos pela IA: perfil corporativo, contexto macro, tendências do setor. Armazenado como JSONB.
+            </div>
+          </div>
+          <div class="table-box">
+            <div class="table-name">analyses</div>
+            <div class="table-desc">
+              Resultados dos 11 frameworks estratégicos + síntese executiva. Cada framework em campo JSONB separado.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="features-section">
+        <div class="section-label">Características Técnicas</div>
+        <div class="features-grid">
+          <div class="feature-item">
+            <div class="feature-icon">🔒</div>
+            <div class="feature-content">
+              <div class="feature-title">Row Level Security</div>
+              <div class="feature-desc">Políticas RLS garantem que usuários só acessam seus próprios dados</div>
+            </div>
+          </div>
+          <div class="feature-item">
+            <div class="feature-icon">📦</div>
+            <div class="feature-content">
+              <div class="feature-title">JSONB Flexível</div>
+              <div class="feature-desc">Dados de enriquecimento e análise armazenados como JSON estruturado</div>
+            </div>
+          </div>
+          <div class="feature-item">
+            <div class="feature-icon">🔗</div>
+            <div class="feature-content">
+              <div class="feature-title">Connection Pooling</div>
+              <div class="feature-desc">PgBouncer integrado para otimizar conexões em produção</div>
+            </div>
+          </div>
+          <div class="feature-item">
+            <div class="feature-icon">🔗</div>
+            <div class="feature-content">
+              <div class="feature-title">Códigos de Acesso</div>
+              <div class="feature-desc">Códigos de 6 caracteres para compartilhamento público sem login</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <div class="logo-small">IMENS<span>IAH</span></div>
+      <div class="page-number">04 / 10</div>
+    </div>
+  </div>
+</body>
+</html>

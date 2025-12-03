@@ -128,4 +128,12 @@ Phase 01-04 will integrate this logging package throughout the codebase:
 - Update all workers to use contextual loggers
 
 ## Commit
-Will be committed as part of phase completion.
+`0cb5a73f21413606c798b954c900fa15d42a73d0`
+
+```
+feat(01-03): Add centralized logging package
+
+- Create Logger wrapper with contextual field methods
+- Add Gin middleware for request logging
+- Add context helpers for logger propagation
+```

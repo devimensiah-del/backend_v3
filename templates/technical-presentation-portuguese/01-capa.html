@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IMENSIAH - Arquitetura Técnica</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    @page {
+      size: A4 portrait;
+      margin: 0;
+    }
+
+    :root {
+      --navy-900: #0A101D;
+      --navy-800: #162032;
+      --navy-700: #1F2937;
+      --gold-500: #B89E68;
+      --gold-600: #A18852;
+      --surface-paper: #F7F6F4;
+      --line-color: #E5E0D6;
+      --text-primary: #111827;
+      --text-secondary: #52525B;
+      --font-heading: 'Manrope', sans-serif;
+      --font-body: 'Inter', sans-serif;
+    }
+
+    body {
+      font-family: var(--font-body);
+      background: var(--navy-900);
+      color: white;
+      width: 210mm;
+      height: 297mm;
+      margin: 0 auto;
+      overflow: hidden;
+    }
+
+    .slide {
+      width: 210mm;
+      height: 297mm;
+      padding: 40mm 30mm;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+      background: linear-gradient(135deg, var(--navy-900) 0%, var(--navy-800) 100%);
+    }
+
+    .slide::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+      opacity: 0.03;
+      pointer-events: none;
+    }
+
+    .gold-bar {
+      position: absolute;
+      top: 0;
+      left: 30mm;
+      right: 30mm;
+      height: 4px;
+      background: var(--gold-500);
+    }
+
+    .header {
+      position: relative;
+      z-index: 1;
+    }
+
+    .eyebrow {
+      font-family: var(--font-heading);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--gold-500);
+      margin-bottom: 16px;
+    }
+
+    .main-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      position: relative;
+      z-index: 1;
+    }
+
+    .logo {
+      font-family: var(--font-heading);
+      font-size: 72px;
+      font-weight: 300;
+      letter-spacing: -0.025em;
+      margin-bottom: 24px;
+      line-height: 1.1;
+    }
+
+    .logo span {
+      color: var(--gold-500);
+    }
+
+    .title {
+      font-family: var(--font-heading);
+      font-size: 36px;
+      font-weight: 500;
+      letter-spacing: -0.025em;
+      line-height: 1.2;
+      margin-bottom: 32px;
+      color: white;
+    }
+
+    .subtitle {
+      font-family: var(--font-body);
+      font-size: 18px;
+      font-weight: 300;
+      line-height: 1.6;
+      color: rgba(255, 255, 255, 0.7);
+      max-width: 400px;
+    }
+
+    .footer {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+
+    .version {
+      font-family: var(--font-heading);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.5);
+    }
+
+    .date {
+      font-family: var(--font-body);
+      font-size: 14px;
+      color: rgba(255, 255, 255, 0.5);
+    }
+
+    .decorative-line {
+      position: absolute;
+      bottom: 80mm;
+      right: 30mm;
+      width: 100px;
+      height: 1px;
+      background: var(--gold-500);
+    }
+
+    .grid-pattern {
+      position: absolute;
+      bottom: 0;
+      right: 0;
+      width: 150mm;
+      height: 150mm;
+      opacity: 0.05;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.3) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.3) 1px, transparent 1px);
+      background-size: 20mm 20mm;
+    }
+  </style>
+</head>
+<body>
+  <div class="slide">
+    <div class="gold-bar"></div>
+    <div class="grid-pattern"></div>
+    <div class="decorative-line"></div>
+
+    <div class="header">
+      <div class="eyebrow">Documentação Técnica</div>
+    </div>
+
+    <div class="main-content">
+      <div class="logo">IMENS<span>IAH</span></div>
+      <h1 class="title">Arquitetura Técnica<br>da Plataforma</h1>
+      <p class="subtitle">
+        Inteligência Estratégica de Negócios potencializada por IA.
+        Uma visão completa da arquitetura, fluxos de dados e componentes do sistema.
+      </p>
+    </div>
+
+    <div class="footer">
+      <div class="version">Versão 3.0</div>
+      <div class="date">Novembro 2025</div>
+    </div>
+  </div>
+</body>
+</html>

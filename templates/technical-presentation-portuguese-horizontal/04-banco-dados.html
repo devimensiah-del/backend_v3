@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IMENSIAH - Banco de Dados</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    @page {
+      size: A4 landscape;
+      margin: 0;
+    }
+
+    :root {
+      --navy-900: #0A101D;
+      --navy-800: #162032;
+      --gold-500: #B89E68;
+      --surface-paper: #F7F6F4;
+      --line-color: #E5E0D6;
+      --text-primary: #111827;
+      --text-secondary: #52525B;
+      --font-heading: 'Manrope', sans-serif;
+      --font-body: 'Inter', sans-serif;
+    }
+
+    body {
+      font-family: var(--font-body);
+      background: white;
+      color: var(--text-primary);
+      width: 297mm;
+      height: 210mm;
+      margin: 0 auto;
+      overflow: hidden;
+    }
+
+    .slide {
+      width: 297mm;
+      height: 210mm;
+      padding: 20mm 35mm;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      background: white;
+    }
+
+    .gold-bar {
+      position: absolute;
+      top: 0;
+      left: 35mm;
+      right: 35mm;
+      height: 4px;
+      background: var(--gold-500);
+    }
+
+    .header {
+      margin-bottom: 8mm;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+
+    .header-left {
+      flex: 1;
+    }
+
+    .eyebrow {
+      font-family: var(--font-heading);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--gold-500);
+      margin-bottom: 8px;
+    }
+
+    .page-title {
+      font-family: var(--font-heading);
+      font-size: 28px;
+      font-weight: 500;
+      letter-spacing: -0.025em;
+      color: var(--navy-900);
+    }
+
+    .tech-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--navy-900);
+      padding: 10px 16px;
+    }
+
+    .badge-icon {
+      font-size: 18px;
+    }
+
+    .badge-text {
+      font-family: var(--font-heading);
+      font-size: 12px;
+      font-weight: 600;
+      color: white;
+    }
+
+    .content {
+      flex: 1;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+
+    .table-card {
+      background: var(--surface-paper);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .table-card.primary {
+      background: var(--navy-900);
+    }
+
+    .table-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--line-color);
+    }
+
+    .table-card.primary .table-header {
+      border-bottom-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .table-icon {
+      width: 32px;
+      height: 32px;
+      background: var(--navy-900);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+    }
+
+    .table-card.primary .table-icon {
+      background: var(--gold-500);
+    }
+
+    .table-name {
+      font-family: var(--font-heading);
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--navy-900);
+    }
+
+    .table-card.primary .table-name {
+      color: white;
+    }
+
+    .columns-list {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .column-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--font-body);
+      font-size: 9px;
+    }
+
+    .column-name {
+      color: var(--text-primary);
+      font-weight: 500;
+      flex: 1;
+    }
+
+    .table-card.primary .column-name {
+      color: rgba(255, 255, 255, 0.9);
+    }
+
+    .column-type {
+      color: var(--gold-500);
+      font-family: monospace;
+      font-size: 8px;
+    }
+
+    .table-card.primary .column-type {
+      color: var(--gold-500);
+    }
+
+    .relation-badge {
+      font-size: 9px;
+      padding: 2px 6px;
+      background: var(--gold-500);
+      color: var(--navy-900);
+      font-weight: 600;
+    }
+
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 8mm;
+      border-top: 1px solid var(--line-color);
+    }
+
+    .logo-small {
+      font-family: var(--font-heading);
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--navy-900);
+      letter-spacing: -0.025em;
+    }
+
+    .logo-small span {
+      color: var(--gold-500);
+    }
+
+    .page-number {
+      font-family: var(--font-heading);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      color: var(--text-secondary);
+    }
+  </style>
+</head>
+<body>
+  <div class="slide">
+    <div class="gold-bar"></div>
+
+    <div class="header">
+      <div class="header-left">
+        <div class="eyebrow">02 — Banco de Dados</div>
+        <h1 class="page-title">Arquitetura PostgreSQL</h1>
+      </div>
+      <div class="tech-badge">
+        <span class="badge-icon">🐘</span>
+        <span class="badge-text">Supabase PostgreSQL</span>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="table-card primary">
+        <div class="table-header">
+          <div class="table-icon">📋</div>
+          <span class="table-name">submissions</span>
+        </div>
+        <div class="columns-list">
+          <div class="column-item">
+            <span class="column-name">id</span>
+            <span class="column-type">UUID PK</span>
+          </div>
+          <div class="column-item">
+            <span class="column-name">user_id</span>
+            <span class="column-type">UUID FK</span>
+          </div>
+          <div class="column-item">
+            <span class="column-name">company_name</span>
+            <span class="column-type">VARCHAR</span>
+          </div>
+          <div class="column-item">
+            <span class="column-name">cnpj</span>
+            <span class="column-type">VARCHAR</span>
+          </div>
+          <div class="column-item">
+            <span class="column-name">industry</span>
+            <span class="column-type">VARCHAR</span>
+          </div>
+          <div class="column-item">
+            <span class="column-name">business_challenge</span>
+            <span class="column-type">TEXT</span>
+          </div>
+          <div class="column-item">
+            <span class="column-name">status</span>
+            <span class="column-type">ENUM</span>
+          </div>
+          <div class="column-item">
+            <span class="column-name">access_code</span>
+            <span class="column-type">VARCHAR(6)</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="table-card">
+        <div class="table-header">
+          <div class="table-icon">🔍</div>
+          <span class="table-name">enrichments</span>
+        </div>
+        <div class="columns-list">
+          <div class="column-item">
+            <span class="column-name">id</span>
+            <span class="column-type">UUID PK</span>
+          </div>
+          <div class="column-item">
+            <span class="column-name">submission_id</span>
+            <span class="relation-badge">1:1</span>
+          </div>
+          <div class="column-item">
+            <span class="column-name">company_context</span>
+            <span class="column-type">JSONB</span>
+          </div>
+          <div class="column-item">
+            <span class="column-name">market_data</span>
+            <span class="column-type">JSONB</span>
+          </div>
+          <div class="column-item">
+            <span class="column-name">macro_indicators</span>
+            <span class="column-type">JSONB</span>
+          </div>
+          <div class="column-item">
+            <span class="column-name">status</span>
+            <span class="column-type">ENUM</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="table-card">
+        <div class="table-header">
+          <div class="table-icon">🧠</div>
+          <span class="table-name">analyses</span>
+        </div>
+        <div class="columns-list">
+          <div class="column-item">
+            <span class="column-name">id</span>
+            <span class="column-type">UUID PK</span>
+          </div>
+          <div class="column-item">
+            <span class="column-name">submission_id</span>
+            <span class="relation-badge">1:1</span>
+          </div>
+          <div class="column-item">
+            <span class="column-name">pestel</span>
+            <span class="column-type">JSONB</span>
+          </div>
+          <div class="column-item">
+            <span class="column-name">porter</span>
+            <span class="column-type">JSONB</span>
+          </div>
+          <div class="column-item">
+            <span class="column-name">swot</span>
+            <span class="column-type">JSONB</span>
+          </div>
+          <div class="column-item">
+            <span class="column-name">... +8 frameworks</span>
+            <span class="column-type">JSONB</span>
+          </div>
+          <div class="column-item">
+            <span class="column-name">synthesis</span>
+            <span class="column-type">JSONB</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="table-card">
+        <div class="table-header">
+          <div class="table-icon">👤</div>
+          <span class="table-name">users</span>
+        </div>
+        <div class="columns-list">
+          <div class="column-item">
+            <span class="column-name">id</span>
+            <span class="column-type">UUID PK</span>
+          </div>
+          <div class="column-item">
+            <span class="column-name">email</span>
+            <span class="column-type">VARCHAR</span>
+          </div>
+          <div class="column-item">
+            <span class="column-name">role</span>
+            <span class="column-type">ENUM</span>
+          </div>
+          <div class="column-item">
+            <span class="column-name">created_at</span>
+            <span class="column-type">TIMESTAMP</span>
+          </div>
+          <div class="column-item">
+            <span class="column-name">updated_at</span>
+            <span class="column-type">TIMESTAMP</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <div class="logo-small">IMENS<span>IAH</span></div>
+      <div class="page-number">04 / 10</div>
+    </div>
+  </div>
+</body>
+</html>

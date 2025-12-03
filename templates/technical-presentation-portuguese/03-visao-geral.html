@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IMENSIAH - Visão Geral</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    @page {
+      size: A4 portrait;
+      margin: 0;
+    }
+
+    :root {
+      --navy-900: #0A101D;
+      --navy-800: #162032;
+      --gold-500: #B89E68;
+      --surface-paper: #F7F6F4;
+      --line-color: #E5E0D6;
+      --text-primary: #111827;
+      --text-secondary: #52525B;
+      --font-heading: 'Manrope', sans-serif;
+      --font-body: 'Inter', sans-serif;
+    }
+
+    body {
+      font-family: var(--font-body);
+      background: white;
+      color: var(--text-primary);
+      width: 210mm;
+      height: 297mm;
+      margin: 0 auto;
+      overflow: hidden;
+    }
+
+    .slide {
+      width: 210mm;
+      height: 297mm;
+      padding: 30mm 30mm 25mm 30mm;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      background: white;
+    }
+
+    .gold-bar {
+      position: absolute;
+      top: 0;
+      left: 30mm;
+      right: 30mm;
+      height: 4px;
+      background: var(--gold-500);
+    }
+
+    .header {
+      margin-bottom: 15mm;
+    }
+
+    .eyebrow {
+      font-family: var(--font-heading);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--gold-500);
+      margin-bottom: 12px;
+    }
+
+    .page-title {
+      font-family: var(--font-heading);
+      font-size: 32px;
+      font-weight: 500;
+      letter-spacing: -0.025em;
+      color: var(--navy-900);
+      margin-bottom: 8px;
+    }
+
+    .page-subtitle {
+      font-family: var(--font-body);
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    .content {
+      flex: 1;
+    }
+
+    .intro-text {
+      font-family: var(--font-body);
+      font-size: 14px;
+      line-height: 1.7;
+      color: var(--text-primary);
+      margin-bottom: 20px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid var(--line-color);
+    }
+
+    .flow-diagram {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .flow-step {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+
+    .flow-number {
+      width: 36px;
+      height: 36px;
+      background: var(--navy-900);
+      color: white;
+      font-family: var(--font-heading);
+      font-size: 14px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .flow-content {
+      flex: 1;
+      padding: 12px 16px;
+      background: var(--surface-paper);
+      border-left: 3px solid var(--gold-500);
+    }
+
+    .flow-title {
+      font-family: var(--font-heading);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--navy-900);
+      margin-bottom: 4px;
+    }
+
+    .flow-desc {
+      font-family: var(--font-body);
+      font-size: 11px;
+      color: var(--text-secondary);
+      line-height: 1.4;
+    }
+
+    .flow-arrow {
+      width: 36px;
+      display: flex;
+      justify-content: center;
+      color: var(--gold-500);
+      font-size: 18px;
+    }
+
+    .highlight-box {
+      background: var(--navy-900);
+      color: white;
+      padding: 20px;
+      margin-top: 15px;
+    }
+
+    .highlight-title {
+      font-family: var(--font-heading);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--gold-500);
+      margin-bottom: 12px;
+    }
+
+    .highlight-text {
+      font-family: var(--font-body);
+      font-size: 13px;
+      line-height: 1.6;
+      color: rgba(255, 255, 255, 0.9);
+    }
+
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 15mm;
+      border-top: 1px solid var(--line-color);
+    }
+
+    .logo-small {
+      font-family: var(--font-heading);
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--navy-900);
+      letter-spacing: -0.025em;
+    }
+
+    .logo-small span {
+      color: var(--gold-500);
+    }
+
+    .page-number {
+      font-family: var(--font-heading);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      color: var(--text-secondary);
+    }
+  </style>
+</head>
+<body>
+  <div class="slide">
+    <div class="gold-bar"></div>
+
+    <div class="header">
+      <div class="eyebrow">01 — Visão Geral</div>
+      <h1 class="page-title">O que é o IMENSIAH?</h1>
+      <p class="page-subtitle">Plataforma de Inteligência Estratégica potencializada por IA</p>
+    </div>
+
+    <div class="content">
+      <p class="intro-text">
+        O IMENSIAH transforma informações básicas de empresas em relatórios estratégicos completos
+        utilizando múltiplos modelos de Inteligência Artificial. O sistema coleta dados públicos,
+        enriquece com contexto macroeconômico em tempo real, e aplica 11 frameworks de análise
+        estratégica reconhecidos globalmente.
+      </p>
+
+      <div class="flow-diagram">
+        <div class="flow-step">
+          <div class="flow-number">1</div>
+          <div class="flow-content">
+            <div class="flow-title">Submissão</div>
+            <div class="flow-desc">Usuário preenche formulário com dados da empresa e desafio de negócio</div>
+          </div>
+        </div>
+        <div class="flow-arrow">↓</div>
+        <div class="flow-step">
+          <div class="flow-number">2</div>
+          <div class="flow-content">
+            <div class="flow-title">Enriquecimento</div>
+            <div class="flow-desc">IA coleta dados públicos via Google Search + dados econômicos</div>
+          </div>
+        </div>
+        <div class="flow-arrow">↓</div>
+        <div class="flow-step">
+          <div class="flow-number">3</div>
+          <div class="flow-content">
+            <div class="flow-title">Análise</div>
+            <div class="flow-desc">11 frameworks: PESTEL, Porter, SWOT, TAM-SAM-SOM, Benchmarking, Blue Ocean, Growth, Cenários, OKRs, BSC, Matriz de Decisão</div>
+          </div>
+        </div>
+        <div class="flow-arrow">↓</div>
+        <div class="flow-step">
+          <div class="flow-number">4</div>
+          <div class="flow-content">
+            <div class="flow-title">Síntese</div>
+            <div class="flow-desc">Claude Opus 4.5 consolida insights em recomendações executivas</div>
+          </div>
+        </div>
+        <div class="flow-arrow">↓</div>
+        <div class="flow-step">
+          <div class="flow-number">5</div>
+          <div class="flow-content">
+            <div class="flow-title">Relatório</div>
+            <div class="flow-desc">Relatório web interativo em imensiah.com.br com código de 6 caracteres</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="highlight-box">
+        <div class="highlight-title">Por que é impressionante?</div>
+        <div class="highlight-text">
+          Um processo que tradicionalmente levaria semanas de trabalho de consultores é executado
+          em minutos, combinando a capacidade de pesquisa em tempo real do Google Gemini com a
+          profundidade analítica do Claude Opus — os modelos mais avançados disponíveis em 2025.
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <div class="logo-small">IMENS<span>IAH</span></div>
+      <div class="page-number">03 / 10</div>
+    </div>
+  </div>
+</body>
+</html>

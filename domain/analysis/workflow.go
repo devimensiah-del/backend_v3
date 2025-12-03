@@ -579,6 +579,12 @@ func (s *Service) runOKRs(ctx context.Context, k *ContextContainer) (*OKRAnalysi
 		Str("summary", res.Summary).
 		Msg("🔍 DEBUG OKRs Output Data")
 
+	// FALLBACK: Generate summary from plan_90_days if LLM returned empty summary
+	if res.Summary == "" && len(res.Plan90Days) > 0 {
+		s.logger.Warn().Msg("⚠️ OKRs summary empty - generating fallback from plan_90_days")
+		res.Summary = s.generateOKRsSummaryFallback(&res)
+	}
+
 	return &res, err
 }
 
@@ -935,4 +941,36 @@ func (s *Service) validateCriticalFrameworks(a *Analysis) []string {
 	}
 
 	return missing
+}
+
+// generateOKRsSummaryFallback creates a summary from plan_90_days when LLM returns empty summary
+func (s *Service) generateOKRsSummaryFallback(okrs *OKRAnalysis) string {
+	if len(okrs.Plan90Days) == 0 {
+		return ""
+	}
+
+	// Build summary from monthly objectives
+	var objectives []string
+	for _, month := range okrs.Plan90Days {
+		if month.Objective != "" {
+			objectives = append(objectives, month.Objective)
+		}
+	}
+
+	if len(objectives) == 0 {
+		return "Plano de 90 dias com marcos mensais para execução estratégica."
+	}
+
+	// Create a concise summary (max ~200 chars as per prompt)
+	summary := fmt.Sprintf("90 dias: %s", objectives[0])
+	if len(summary) > 180 {
+		summary = summary[:177] + "..."
+	}
+
+	s.logger.Info().
+		Str("fallback_summary", summary).
+		Int("objectives_used", len(objectives)).
+		Msg("✅ OKRs fallback summary generated")
+
+	return summary
 }

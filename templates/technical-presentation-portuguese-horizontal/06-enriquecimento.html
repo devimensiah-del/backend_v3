@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IMENSIAH - Enriquecimento</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    @page {
+      size: A4 landscape;
+      margin: 0;
+    }
+
+    :root {
+      --navy-900: #0A101D;
+      --navy-800: #162032;
+      --gold-500: #B89E68;
+      --surface-paper: #F7F6F4;
+      --line-color: #E5E0D6;
+      --text-primary: #111827;
+      --text-secondary: #52525B;
+      --font-heading: 'Manrope', sans-serif;
+      --font-body: 'Inter', sans-serif;
+    }
+
+    body {
+      font-family: var(--font-body);
+      background: white;
+      color: var(--text-primary);
+      width: 297mm;
+      height: 210mm;
+      margin: 0 auto;
+      overflow: hidden;
+    }
+
+    .slide {
+      width: 297mm;
+      height: 210mm;
+      padding: 20mm 35mm;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      background: white;
+    }
+
+    .gold-bar {
+      position: absolute;
+      top: 0;
+      left: 35mm;
+      right: 35mm;
+      height: 4px;
+      background: var(--gold-500);
+    }
+
+    .header {
+      margin-bottom: 8mm;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+
+    .header-left {
+      flex: 1;
+    }
+
+    .eyebrow {
+      font-family: var(--font-heading);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--gold-500);
+      margin-bottom: 8px;
+    }
+
+    .page-title {
+      font-family: var(--font-heading);
+      font-size: 28px;
+      font-weight: 500;
+      letter-spacing: -0.025em;
+      color: var(--navy-900);
+    }
+
+    .model-badge {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--navy-900);
+      padding: 10px 16px;
+    }
+
+    .model-icon {
+      font-size: 20px;
+    }
+
+    .model-info {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .model-name {
+      font-family: var(--font-heading);
+      font-size: 12px;
+      font-weight: 600;
+      color: white;
+    }
+
+    .model-feature {
+      font-family: var(--font-heading);
+      font-size: 9px;
+      color: var(--gold-500);
+    }
+
+    .content {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1.3fr;
+      gap: 15px;
+    }
+
+    .left-column {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .data-sources {
+      background: var(--navy-900);
+      padding: 16px;
+    }
+
+    .section-title {
+      font-family: var(--font-heading);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--gold-500);
+      margin-bottom: 14px;
+    }
+
+    .sources-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .source-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .source-icon {
+      width: 36px;
+      height: 36px;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid var(--gold-500);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+
+    .source-content {
+      flex: 1;
+    }
+
+    .source-name {
+      font-family: var(--font-heading);
+      font-size: 11px;
+      font-weight: 600;
+      color: white;
+    }
+
+    .source-desc {
+      font-family: var(--font-body);
+      font-size: 9px;
+      color: rgba(255, 255, 255, 0.6);
+    }
+
+    .flow-section {
+      background: var(--surface-paper);
+      padding: 16px;
+      flex: 1;
+    }
+
+    .flow-diagram {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .flow-step {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px;
+      background: white;
+      border: 1px solid var(--line-color);
+    }
+
+    .flow-number {
+      width: 24px;
+      height: 24px;
+      background: var(--gold-500);
+      color: var(--navy-900);
+      font-family: var(--font-heading);
+      font-size: 11px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .flow-text {
+      font-family: var(--font-body);
+      font-size: 10px;
+      color: var(--text-primary);
+    }
+
+    .right-column {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .output-section {
+      background: var(--surface-paper);
+      padding: 16px;
+      flex: 1;
+    }
+
+    .output-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .output-item {
+      background: white;
+      border: 1px solid var(--line-color);
+      padding: 12px;
+    }
+
+    .output-title {
+      font-family: var(--font-heading);
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--navy-900);
+      margin-bottom: 6px;
+    }
+
+    .output-fields {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .output-field {
+      font-family: var(--font-body);
+      font-size: 9px;
+      color: var(--text-secondary);
+    }
+
+    .output-field::before {
+      content: "• ";
+      color: var(--gold-500);
+    }
+
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 8mm;
+      border-top: 1px solid var(--line-color);
+    }
+
+    .logo-small {
+      font-family: var(--font-heading);
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--navy-900);
+      letter-spacing: -0.025em;
+    }
+
+    .logo-small span {
+      color: var(--gold-500);
+    }
+
+    .page-number {
+      font-family: var(--font-heading);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      color: var(--text-secondary);
+    }
+  </style>
+</head>
+<body>
+  <div class="slide">
+    <div class="gold-bar"></div>
+
+    <div class="header">
+      <div class="header-left">
+        <div class="eyebrow">04 — Enriquecimento</div>
+        <h1 class="page-title">Coleta de Contexto com IA</h1>
+      </div>
+      <div class="model-badge">
+        <span class="model-icon">🔍</span>
+        <div class="model-info">
+          <span class="model-name">Gemini 3.0 Pro</span>
+          <span class="model-feature">+ Google Search Tool</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="left-column">
+        <div class="data-sources">
+          <div class="section-title">Fontes de Dados</div>
+          <div class="sources-list">
+            <div class="source-item">
+              <div class="source-icon">🌐</div>
+              <div class="source-content">
+                <div class="source-name">Google Search</div>
+                <div class="source-desc">Notícias, artigos, dados públicos em tempo real</div>
+              </div>
+            </div>
+            <div class="source-item">
+              <div class="source-icon">🏦</div>
+              <div class="source-content">
+                <div class="source-name">APIs Econômicas</div>
+                <div class="source-desc">BACEN, IBGE, dados macroeconômicos</div>
+              </div>
+            </div>
+            <div class="source-item">
+              <div class="source-icon">📊</div>
+              <div class="source-content">
+                <div class="source-name">Bases Setoriais</div>
+                <div class="source-desc">Dados específicos por indústria</div>
+              </div>
+            </div>
+            <div class="source-item">
+              <div class="source-icon">🏢</div>
+              <div class="source-content">
+                <div class="source-name">Dados Empresariais</div>
+                <div class="source-desc">Informações públicas da empresa</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="flow-section">
+          <div class="section-title">Fluxo de Enriquecimento</div>
+          <div class="flow-diagram">
+            <div class="flow-step">
+              <div class="flow-number">1</div>
+              <div class="flow-text">Recebe dados básicos da submissão</div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-number">2</div>
+              <div class="flow-text">Gemini busca contexto via Google Search</div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-number">3</div>
+              <div class="flow-text">Coleta indicadores macroeconômicos</div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-number">4</div>
+              <div class="flow-text">Estrutura JSON para análise</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="right-column">
+        <div class="output-section">
+          <div class="section-title">Dados Coletados (JSONB)</div>
+          <div class="output-grid">
+            <div class="output-item">
+              <div class="output-title">Contexto Empresarial</div>
+              <div class="output-fields">
+                <div class="output-field">Histórico e fundação</div>
+                <div class="output-field">Produtos e serviços</div>
+                <div class="output-field">Modelo de negócio</div>
+                <div class="output-field">Posicionamento</div>
+              </div>
+            </div>
+            <div class="output-item">
+              <div class="output-title">Dados de Mercado</div>
+              <div class="output-fields">
+                <div class="output-field">Tamanho do mercado</div>
+                <div class="output-field">Principais players</div>
+                <div class="output-field">Tendências recentes</div>
+                <div class="output-field">Barreiras de entrada</div>
+              </div>
+            </div>
+            <div class="output-item">
+              <div class="output-title">Indicadores Macro</div>
+              <div class="output-fields">
+                <div class="output-field">PIB e crescimento</div>
+                <div class="output-field">Taxa SELIC</div>
+                <div class="output-field">Inflação (IPCA)</div>
+                <div class="output-field">Câmbio USD/BRL</div>
+              </div>
+            </div>
+            <div class="output-item">
+              <div class="output-title">Análise Competitiva</div>
+              <div class="output-fields">
+                <div class="output-field">Concorrentes diretos</div>
+                <div class="output-field">Diferenciadores</div>
+                <div class="output-field">Market share</div>
+                <div class="output-field">Estratégias observadas</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <div class="logo-small">IMENS<span>IAH</span></div>
+      <div class="page-number">06 / 10</div>
+    </div>
+  </div>
+</body>
+</html>

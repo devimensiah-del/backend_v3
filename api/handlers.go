@@ -22,6 +22,7 @@ type Handler struct {
 	AuthHandlers       *AuthHandlers
 	CompanyHandlers    *CompanyHandlers
 	EnrichmentHandlers *EnrichmentHandlers
+	FrameworkHandlers  *FrameworkHandlers
 	ReportHandlers     *ReportHandlers
 	SubmissionHandlers *SubmissionHandlers
 	UserHandlers       *UserHandlers
@@ -37,6 +38,7 @@ func NewHandler(
 	authHandlers *AuthHandlers,
 	companyHandlers *CompanyHandlers,
 	enrichmentHandlers *EnrichmentHandlers,
+	frameworkHandlers *FrameworkHandlers,
 	reportHandlers *ReportHandlers,
 	submissionHandlers *SubmissionHandlers,
 	userHandlers *UserHandlers,
@@ -61,6 +63,7 @@ func NewHandler(
 		AuthHandlers:              authHandlers,
 		CompanyHandlers:           companyHandlers,
 		EnrichmentHandlers:        enrichmentHandlers,
+		FrameworkHandlers:         frameworkHandlers,
 		ReportHandlers:            reportHandlers,
 		SubmissionHandlers:        submissionHandlers,
 		UserHandlers:              userHandlers,

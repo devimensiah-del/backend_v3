@@ -16,6 +16,7 @@ import (
 	"backend_v3/domain/analysis"
 	"backend_v3/domain/company"
 	"backend_v3/domain/enrichment"
+	"backend_v3/domain/framework"
 	"backend_v3/domain/macroeconomics"
 	"backend_v3/domain/report"
 	"backend_v3/domain/submission"
@@ -467,6 +468,7 @@ func main() {
 	analysisRepo := analysis.NewPostgresRepository(db)
 	reportRepo := report.NewPostgresRepository(db)
 	companyRepo := company.NewRepository(db)
+	frameworkRepo := framework.NewRepository(db)
 	log.Info().Msg("All repositories initialized")
 
 	// 6. SERVICES
@@ -475,6 +477,10 @@ func main() {
 	// Company Service (Data persistence for company records)
 	companySvc := company.NewService(companyRepo, log.Logger)
 	log.Info().Msg("Company service initialized (company data persistence enabled)")
+
+	// Framework Service (Strategic framework management)
+	frameworkSvc := framework.NewService(frameworkRepo, log.Logger)
+	log.Info().Msg("Framework service initialized (strategic framework management enabled)")
 
 	// Submission (Needs Asynq Client to enqueue jobs)
 	asynqClient := asynq.NewClient(redisOpt)
@@ -640,8 +646,9 @@ func main() {
 		enrichSvc,
 		analysisSvc,
 		reportSvc,
-		macroSvc,   // Macroeconomics service for admin endpoints
-		companySvc, // Company service for re-enrich/re-analyze workflows
+		macroSvc,      // Macroeconomics service for admin endpoints
+		companySvc,    // Company service for re-enrich/re-analyze workflows
+		frameworkSvc,  // Framework service for framework management
 	)
 
 	srv := &http.Server{

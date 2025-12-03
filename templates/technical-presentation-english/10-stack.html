@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IMENSIAH - Technology Stack</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    @page {
+      size: A4 landscape;
+      margin: 0;
+    }
+
+    :root {
+      --navy-900: #0A101D;
+      --navy-800: #162032;
+      --gold-500: #B89E68;
+      --surface-paper: #F7F6F4;
+      --line-color: #E5E0D6;
+      --text-primary: #111827;
+      --text-secondary: #52525B;
+      --font-heading: 'Manrope', sans-serif;
+      --font-body: 'Inter', sans-serif;
+    }
+
+    body {
+      font-family: var(--font-body);
+      background: white;
+      color: var(--text-primary);
+      width: 297mm;
+      height: 210mm;
+      margin: 0 auto;
+      overflow: hidden;
+    }
+
+    .slide {
+      width: 297mm;
+      height: 210mm;
+      padding: 20mm 35mm;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      background: white;
+    }
+
+    .gold-bar {
+      position: absolute;
+      top: 0;
+      left: 35mm;
+      right: 35mm;
+      height: 4px;
+      background: var(--gold-500);
+    }
+
+    .header {
+      margin-bottom: 8mm;
+    }
+
+    .eyebrow {
+      font-family: var(--font-heading);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--gold-500);
+      margin-bottom: 8px;
+    }
+
+    .page-title {
+      font-family: var(--font-heading);
+      font-size: 28px;
+      font-weight: 500;
+      letter-spacing: -0.025em;
+      color: var(--navy-900);
+    }
+
+    .content {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1.5fr 1fr;
+      gap: 15px;
+    }
+
+    .left-column {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .stack-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      flex: 1;
+    }
+
+    .stack-category {
+      background: var(--surface-paper);
+      padding: 12px;
+    }
+
+    .stack-category.highlight {
+      background: var(--navy-900);
+    }
+
+    .category-title {
+      font-family: var(--font-heading);
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--gold-500);
+      margin-bottom: 10px;
+    }
+
+    .tech-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .tech-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .tech-icon {
+      width: 24px;
+      height: 24px;
+      background: var(--navy-900);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      flex-shrink: 0;
+    }
+
+    .stack-category.highlight .tech-icon {
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid var(--gold-500);
+    }
+
+    .tech-content {
+      flex: 1;
+    }
+
+    .tech-name {
+      font-family: var(--font-heading);
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--navy-900);
+    }
+
+    .stack-category.highlight .tech-name {
+      color: white;
+    }
+
+    .tech-desc {
+      font-family: var(--font-body);
+      font-size: 8px;
+      color: var(--text-secondary);
+    }
+
+    .stack-category.highlight .tech-desc {
+      color: rgba(255, 255, 255, 0.6);
+    }
+
+    .right-column {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .metrics-section {
+      background: var(--navy-900);
+      padding: 14px;
+    }
+
+    .metrics-title {
+      font-family: var(--font-heading);
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--gold-500);
+      margin-bottom: 12px;
+    }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+
+    .metric-item {
+      text-align: center;
+    }
+
+    .metric-value {
+      font-family: var(--font-heading);
+      font-size: 28px;
+      font-weight: 300;
+      color: white;
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+
+    .metric-label {
+      font-family: var(--font-heading);
+      font-size: 8px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--gold-500);
+    }
+
+    .closing-note {
+      padding: 14px;
+      background: var(--surface-paper);
+      border-left: 3px solid var(--gold-500);
+      flex: 1;
+    }
+
+    .closing-title {
+      font-family: var(--font-heading);
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--navy-900);
+      margin-bottom: 8px;
+    }
+
+    .closing-text {
+      font-family: var(--font-body);
+      font-size: 10px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    .contact-section {
+      background: var(--navy-900);
+      padding: 14px;
+      text-align: center;
+    }
+
+    .contact-title {
+      font-family: var(--font-heading);
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--gold-500);
+      margin-bottom: 8px;
+    }
+
+    .contact-url {
+      font-family: var(--font-heading);
+      font-size: 14px;
+      font-weight: 500;
+      color: white;
+    }
+
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 8mm;
+      border-top: 1px solid var(--line-color);
+    }
+
+    .logo-small {
+      font-family: var(--font-heading);
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--navy-900);
+      letter-spacing: -0.025em;
+    }
+
+    .logo-small span {
+      color: var(--gold-500);
+    }
+
+    .page-number {
+      font-family: var(--font-heading);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      color: var(--text-secondary);
+    }
+  </style>
+</head>
+<body>
+  <div class="slide">
+    <div class="gold-bar"></div>
+
+    <div class="header">
+      <div class="eyebrow">08 — Technology Stack</div>
+      <h1 class="page-title">Technologies & Metrics</h1>
+    </div>
+
+    <div class="content">
+      <div class="left-column">
+        <div class="stack-grid">
+          <div class="stack-category">
+            <div class="category-title">Backend & API</div>
+            <div class="tech-list">
+              <div class="tech-item">
+                <div class="tech-icon">🔷</div>
+                <div class="tech-content">
+                  <div class="tech-name">Go + Gin</div>
+                  <div class="tech-desc">High-performance REST API</div>
+                </div>
+              </div>
+              <div class="tech-item">
+                <div class="tech-icon">🗃️</div>
+                <div class="tech-content">
+                  <div class="tech-name">PostgreSQL</div>
+                  <div class="tech-desc">Supabase managed database</div>
+                </div>
+              </div>
+              <div class="tech-item">
+                <div class="tech-icon">⚡</div>
+                <div class="tech-content">
+                  <div class="tech-name">Redis + Asynq</div>
+                  <div class="tech-desc">Distributed job queue</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="stack-category highlight">
+            <div class="category-title">AI Models</div>
+            <div class="tech-list">
+              <div class="tech-item">
+                <div class="tech-icon">🔍</div>
+                <div class="tech-content">
+                  <div class="tech-name">Gemini 3.0 Pro</div>
+                  <div class="tech-desc">Enrichment + Google Search</div>
+                </div>
+              </div>
+              <div class="tech-item">
+                <div class="tech-icon">🧠</div>
+                <div class="tech-content">
+                  <div class="tech-name">Claude Opus 4.5</div>
+                  <div class="tech-desc">Deep analysis + Synthesis</div>
+                </div>
+              </div>
+              <div class="tech-item">
+                <div class="tech-icon">🔄</div>
+                <div class="tech-content">
+                  <div class="tech-name">OpenRouter</div>
+                  <div class="tech-desc">Unified gateway + Fallback</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="stack-category">
+            <div class="category-title">Frontend & UX</div>
+            <div class="tech-list">
+              <div class="tech-item">
+                <div class="tech-icon">⚛️</div>
+                <div class="tech-content">
+                  <div class="tech-name">Next.js 15</div>
+                  <div class="tech-desc">App Router + React 18</div>
+                </div>
+              </div>
+              <div class="tech-item">
+                <div class="tech-icon">🎨</div>
+                <div class="tech-content">
+                  <div class="tech-name">Tailwind + Radix</div>
+                  <div class="tech-desc">Modern design system</div>
+                </div>
+              </div>
+              <div class="tech-item">
+                <div class="tech-icon">🔐</div>
+                <div class="tech-content">
+                  <div class="tech-name">Supabase Auth</div>
+                  <div class="tech-desc">JWT authentication</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="stack-category">
+            <div class="category-title">Infrastructure</div>
+            <div class="tech-list">
+              <div class="tech-item">
+                <div class="tech-icon">🚂</div>
+                <div class="tech-content">
+                  <div class="tech-name">Railway</div>
+                  <div class="tech-desc">Containerized deployment</div>
+                </div>
+              </div>
+              <div class="tech-item">
+                <div class="tech-icon">🔐</div>
+                <div class="tech-content">
+                  <div class="tech-name">Access Codes</div>
+                  <div class="tech-desc">6-char public sharing</div>
+                </div>
+              </div>
+              <div class="tech-item">
+                <div class="tech-icon">☁️</div>
+                <div class="tech-content">
+                  <div class="tech-name">Supabase Storage</div>
+                  <div class="tech-desc">CDN + Signed URLs</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="right-column">
+        <div class="metrics-section">
+          <div class="metrics-title">Performance Metrics</div>
+          <div class="metrics-grid">
+            <div class="metric-item">
+              <div class="metric-value">11</div>
+              <div class="metric-label">Frameworks</div>
+            </div>
+            <div class="metric-item">
+              <div class="metric-value">12</div>
+              <div class="metric-label">Web Sections</div>
+            </div>
+            <div class="metric-item">
+              <div class="metric-value">~3min</div>
+              <div class="metric-label">Total Time</div>
+            </div>
+            <div class="metric-item">
+              <div class="metric-value">99.9%</div>
+              <div class="metric-label">Uptime</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="closing-note">
+          <div class="closing-title">Production Ready</div>
+          <div class="closing-text">
+            Complete strategic intelligence pipeline: from web form to interactive web report
+            in minutes, with deep analysis of 11 strategic frameworks consolidated into
+            actionable recommendations. Scalable architecture with automatic retry,
+            circuit breaker, and model fallback.
+          </div>
+        </div>
+
+        <div class="contact-section">
+          <div class="contact-title">Learn More</div>
+          <div class="contact-url">imensiah.com</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <div class="logo-small">IMENS<span>IAH</span></div>
+      <div class="page-number">10 / 10</div>
+    </div>
+  </div>
+</body>
+</html>

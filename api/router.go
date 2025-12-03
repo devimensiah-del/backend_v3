@@ -4,6 +4,7 @@ import (
 	domainanalysis "backend_v3/domain/analysis"
 	domaincompany "backend_v3/domain/company"
 	domainenrichment "backend_v3/domain/enrichment"
+	domainframework "backend_v3/domain/framework"
 	domainmacro "backend_v3/domain/macroeconomics"
 	domainreport "backend_v3/domain/report"
 	domainsubmission "backend_v3/domain/submission"
@@ -33,8 +34,9 @@ func SetupRouter(
 	enrichmentSvc *domainenrichment.Service,
 	analysisSvc *domainanalysis.Service,
 	reportSvc *domainreport.Service,
-	macroSvc *domainmacro.Service, // Macroeconomics service for DB-backed indicators
-	companySvc *domaincompany.Service, // Company service for re-enrich/re-analyze workflows
+	macroSvc *domainmacro.Service,         // Macroeconomics service for DB-backed indicators
+	companySvc *domaincompany.Service,     // Company service for re-enrich/re-analyze workflows
+	frameworkSvc *domainframework.Service, // Framework service for framework management
 ) *gin.Engine {
 	if isProd {
 		gin.SetMode(gin.ReleaseMode)
@@ -115,6 +117,10 @@ func SetupRouter(
 		asynqClient,
 		logger,
 	)
+	frameworkHandlers := NewFrameworkHandlers(
+		frameworkSvc,
+		logger,
+	)
 
 	// Create the main API Handler instance
 	// This Handler now composes all specialized handlers
@@ -124,6 +130,7 @@ func SetupRouter(
 		authHandlers,
 		companyHandlers,
 		enrichmentHandlers,
+		frameworkHandlers,
 		reportHandlers,
 		submissionHandlers,
 		userHandlers,
@@ -148,6 +155,10 @@ func SetupRouter(
 		// Public report access via access code
 		// Uses OptionalAuthMiddleware to allow admin preview (bypasses visibility check)
 		publicAPI.GET("/public/report/:code", OptionalAuthMiddleware(jwtSecret, db), mainHandler.AnalysisHandlers.GetPublicReport)
+
+		// Framework routes (public - active frameworks only)
+		publicAPI.GET("/frameworks", mainHandler.FrameworkHandlers.List)
+		publicAPI.GET("/frameworks/:code", mainHandler.FrameworkHandlers.GetByCode)
 	}
 
 	// Public Auth routes (no auth required)
@@ -266,6 +277,12 @@ func SetupRouter(
 		adminAPI.POST("/companies/:id/verifications/bulk", mainHandler.CompanyHandlers.VerifyFields)
 		adminAPI.POST("/companies/:id/verifications/all", mainHandler.CompanyHandlers.VerifyAllFields)
 		adminAPI.DELETE("/companies/:id/verifications/all", mainHandler.CompanyHandlers.UnverifyAllFields)
+
+		// Framework management (admin)
+		adminAPI.GET("/frameworks", mainHandler.FrameworkHandlers.AdminList)
+		adminAPI.POST("/frameworks", mainHandler.FrameworkHandlers.AdminCreate)
+		adminAPI.PUT("/frameworks/:id", mainHandler.FrameworkHandlers.AdminUpdate)
+		adminAPI.DELETE("/frameworks/:id", mainHandler.FrameworkHandlers.AdminDeactivate)
 	}
 
 	return router
