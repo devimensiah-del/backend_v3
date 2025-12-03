@@ -182,40 +182,47 @@ func createTestAnalysis() *Analysis {
 	submissionID := uuid.New().String()
 	enrichmentID := uuid.New().String()
 
-	return &Analysis{
-		ID:           analysisID,
-		SubmissionID: submissionID,
-		EnrichmentID: enrichmentID,
-		Status:       string(StatusCompleted),
-		CreatedAt:    now,
-		UpdatedAt:    now,
-		CompletedAt:  &now,
-		PESTEL: PESTELAnalysis{
-			Political:     []string{"Regulatory stability"},
-			Economic:      []string{"GDP growth 2%"},
-			Social:        []string{"Urbanization trend"},
-			Technological: []string{"AI adoption"},
-			Environmental: []string{"Sustainability pressure"},
-			Legal:         []string{"LGPD compliance"},
-			Summary:       "PESTEL summary",
-		},
-		Porter: PorterAnalysis{
-			CompetitiveRivalry:    "High",
-			SupplierPower:         "Medium",
-			BuyerPower:            "High",
-			ThreatNewEntrants:     "Low",
-			ThreatSubstitutes:     "Medium",
-			OverallAttractiveness: "Medium",
-			Summary:               "Porter summary",
-		},
-		SWOT: SWOTAnalysis{
-			Strengths:     []SWOTItem{{Content: "Strong brand", Confidence: "Alta", Source: "fato"}},
-			Weaknesses:    []SWOTItem{{Content: "Low tech", Confidence: "Média", Source: "análise de mercado"}},
-			Opportunities: []SWOTItem{{Content: "Market expansion", Confidence: "Alta", Source: "fato"}},
-			Threats:       []SWOTItem{{Content: "New competitors", Confidence: "Média", Source: "estimativa"}},
-			Summary:       "SWOT summary",
-		},
+	analysis := &Analysis{
+		ID:              analysisID,
+		SubmissionID:    submissionID,
+		EnrichmentID:    enrichmentID,
+		Status:          string(StatusCompleted),
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		CompletedAt:     &now,
+		FrameworkResults: make(map[string]json.RawMessage),
 	}
+
+	// Use SetFramework to populate framework data
+	analysis.SetFramework("pestel", &PESTELAnalysis{
+		Political:     []string{"Regulatory stability"},
+		Economic:      []string{"GDP growth 2%"},
+		Social:        []string{"Urbanization trend"},
+		Technological: []string{"AI adoption"},
+		Environmental: []string{"Sustainability pressure"},
+		Legal:         []string{"LGPD compliance"},
+		Summary:       "PESTEL summary",
+	})
+
+	analysis.SetFramework("porter", &PorterAnalysis{
+		CompetitiveRivalry:    "High",
+		SupplierPower:         "Medium",
+		BuyerPower:            "High",
+		ThreatNewEntrants:     "Low",
+		ThreatSubstitutes:     "Medium",
+		OverallAttractiveness: "Medium",
+		Summary:               "Porter summary",
+	})
+
+	analysis.SetFramework("swot", &SWOTAnalysis{
+		Strengths:     []SWOTItem{{Content: "Strong brand", Confidence: "Alta", Source: "fato"}},
+		Weaknesses:    []SWOTItem{{Content: "Low tech", Confidence: "Média", Source: "análise de mercado"}},
+		Opportunities: []SWOTItem{{Content: "Market expansion", Confidence: "Alta", Source: "fato"}},
+		Threats:       []SWOTItem{{Content: "New competitors", Confidence: "Média", Source: "estimativa"}},
+		Summary:       "SWOT summary",
+	})
+
+	return analysis
 }
 
 // =============================================================================
@@ -340,14 +347,23 @@ func TestService_UpdateFields_Success(t *testing.T) {
 
 	mockRepo.On("GetByID", mock.Anything, testAnalysis.ID).Return(testAnalysis, nil)
 	mockRepo.On("Update", mock.Anything, mock.MatchedBy(func(a *Analysis) bool {
-		return a.PESTEL.Summary == "Updated PESTEL summary"
+		// Check via GetFramework
+		var pestelResult PESTELAnalysis
+		err := a.GetFramework("pestel", &pestelResult)
+		return err == nil && pestelResult.Summary == "Updated PESTEL summary"
 	})).Return(nil)
 
 	result, err := service.UpdateFields(context.Background(), testAnalysis.ID, updateData)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
-	assert.Equal(t, "Updated PESTEL summary", result.PESTEL.Summary)
+
+	// Verify via GetFramework
+	var pestelResult PESTELAnalysis
+	err = result.GetFramework("pestel", &pestelResult)
+	assert.NoError(t, err)
+	assert.Equal(t, "Updated PESTEL summary", pestelResult.Summary)
+
 	mockRepo.AssertExpectations(t)
 }
 

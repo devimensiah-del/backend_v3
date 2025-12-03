@@ -49,7 +49,7 @@ Create the foundational components needed for analysis flexibility.
 ---
 
 ## Phase 2: Analysis Flexibility
-**Status:** Blocked (needs Phase 1)
+**Status:** Complete ✅
 **Risk:** Medium
 **Dependency:** Phase 1 complete
 
@@ -57,16 +57,16 @@ Transform analysis from 11 hardcoded columns to dynamic framework execution.
 
 | Plan | Scope | Tasks | Status |
 |------|-------|-------|--------|
-| 02-01 | Schema evolution | Add framework_results JSONB column | ⬜ |
-| 02-02 | Repository refactor | Generic storage, dual-write period | ⬜ |
-| 02-03 | Workflow refactor | Data-driven execution from DB | ⬜ |
-| 02-04 | Migration completion | Migrate data, drop old columns | ⬜ |
+| 02-01 | Schema evolution | Add framework_results JSONB column | ✅ |
+| 02-02 | Repository refactor | Generic storage, dual-write period | ✅ |
+| 02-03 | Workflow refactor | Data-driven execution from DB | ✅ |
+| 02-04 | Migration completion | Migrate data, drop old columns | ✅ |
 
 **Exit Criteria:**
-- Analysis uses `framework_results` JSONB map
-- Workflow loads frameworks from database
-- Old 11 JSONB columns removed
-- All existing analyses migrated
+- ✅ Analysis uses `framework_results` JSONB map
+- ✅ Workflow loads frameworks from database
+- ✅ Old 11 JSONB columns removed (migration ready)
+- ✅ All existing analyses migrated (migration ready)
 
 ---
 

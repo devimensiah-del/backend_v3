@@ -82,19 +82,19 @@ func (r *txRepository) Create(ctx context.Context, a *analysis.Analysis) error {
 		)
 	`
 
-	// Convert JSONB fields
-	swot, _ := a.SWOT.Value()
-	pestel, _ := a.PESTEL.Value()
-	porter, _ := a.Porter.Value()
-	okrs, _ := a.OKRs.Value()
-	tamSamSom, _ := a.TamSamSom.Value()
-	benchmarking, _ := a.Benchmarking.Value()
-	blueOcean, _ := a.BlueOcean.Value()
-	growthHacking, _ := a.GrowthHacking.Value()
-	scenarios, _ := a.Scenarios.Value()
-	bsc, _ := a.BSC.Value()
-	decisionMatrix, _ := a.DecisionMatrix.Value()
-	synthesis, _ := a.Synthesis.Value()
+	// Get JSONB data from FrameworkResults
+	swot := a.FrameworkResults["swot"]
+	pestel := a.FrameworkResults["pestel"]
+	porter := a.FrameworkResults["porter"]
+	okrs := a.FrameworkResults["okrs"]
+	tamSamSom := a.FrameworkResults["tam_sam_som"]
+	benchmarking := a.FrameworkResults["benchmarking"]
+	blueOcean := a.FrameworkResults["blue_ocean"]
+	growthHacking := a.FrameworkResults["growth_hacking"]
+	scenarios := a.FrameworkResults["scenarios"]
+	bsc := a.FrameworkResults["bsc"]
+	decisionMatrix := a.FrameworkResults["decision_matrix"]
+	synthesis := a.FrameworkResults["synthesis"]
 
 	_, err := r.tx.ExecContext(ctx, query,
 		a.ID, a.SubmissionID, a.EnrichmentID,
@@ -136,19 +136,19 @@ func (r *txRepository) GetBySubmissionID(ctx context.Context, submissionID strin
 }
 
 func (r *txRepository) Update(ctx context.Context, a *analysis.Analysis) error {
-	// Convert JSONB fields
-	swot, _ := a.SWOT.Value()
-	pestel, _ := a.PESTEL.Value()
-	porter, _ := a.Porter.Value()
-	okrs, _ := a.OKRs.Value()
-	tamSamSom, _ := a.TamSamSom.Value()
-	benchmarking, _ := a.Benchmarking.Value()
-	blueOcean, _ := a.BlueOcean.Value()
-	growthHacking, _ := a.GrowthHacking.Value()
-	scenarios, _ := a.Scenarios.Value()
-	bsc, _ := a.BSC.Value()
-	decisionMatrix, _ := a.DecisionMatrix.Value()
-	synthesis, _ := a.Synthesis.Value()
+	// Get JSONB data from FrameworkResults
+	swot := a.FrameworkResults["swot"]
+	pestel := a.FrameworkResults["pestel"]
+	porter := a.FrameworkResults["porter"]
+	okrs := a.FrameworkResults["okrs"]
+	tamSamSom := a.FrameworkResults["tam_sam_som"]
+	benchmarking := a.FrameworkResults["benchmarking"]
+	blueOcean := a.FrameworkResults["blue_ocean"]
+	growthHacking := a.FrameworkResults["growth_hacking"]
+	scenarios := a.FrameworkResults["scenarios"]
+	bsc := a.FrameworkResults["bsc"]
+	decisionMatrix := a.FrameworkResults["decision_matrix"]
+	synthesis := a.FrameworkResults["synthesis"]
 
 	result, err := r.tx.ExecContext(ctx, `
 		UPDATE analyses SET
@@ -313,40 +313,49 @@ func TestIntegration_JSONB_SWOTSavesAndLoads(t *testing.T) {
 
 		now := time.Now()
 		a := &analysis.Analysis{
-			ID:           uuid.New().String(),
-			SubmissionID: subID,
-			EnrichmentID: enrichID,
-			Status:       string(analysis.StatusPending),
-			SWOT: analysis.SWOTAnalysis{
-				Strengths: []analysis.SWOTItem{
-					{Content: "Strong brand", Confidence: "Alta", Source: "fato"},
-					{Content: "Good team", Confidence: "Média", Source: "análise de mercado"},
-				},
-				Weaknesses: []analysis.SWOTItem{
-					{Content: "Limited resources", Confidence: "Alta", Source: "fato"},
-				},
-				Opportunities: []analysis.SWOTItem{
-					{Content: "Market growth", Confidence: "Média", Source: "estimativa"},
-				},
-				Threats: []analysis.SWOTItem{
-					{Content: "Competition", Confidence: "Alta", Source: "análise de mercado"},
-				},
-				Summary: "Test SWOT summary",
-			},
-			CreatedAt: now,
-			UpdatedAt: now,
+			ID:              uuid.New().String(),
+			SubmissionID:    subID,
+			EnrichmentID:    enrichID,
+			Status:          string(analysis.StatusPending),
+			FrameworkResults: make(map[string]json.RawMessage),
+			CreatedAt:       now,
+			UpdatedAt:       now,
 		}
+
+		// Use SetFramework to add SWOT data
+		a.SetFramework("swot", &analysis.SWOTAnalysis{
+			Strengths: []analysis.SWOTItem{
+				{Content: "Strong brand", Confidence: "Alta", Source: "fato"},
+				{Content: "Good team", Confidence: "Média", Source: "análise de mercado"},
+			},
+			Weaknesses: []analysis.SWOTItem{
+				{Content: "Limited resources", Confidence: "Alta", Source: "fato"},
+			},
+			Opportunities: []analysis.SWOTItem{
+				{Content: "Market growth", Confidence: "Média", Source: "estimativa"},
+			},
+			Threats: []analysis.SWOTItem{
+				{Content: "Competition", Confidence: "Alta", Source: "análise de mercado"},
+			},
+			Summary: "Test SWOT summary",
+		})
+
 		require.NoError(t, repo.Create(ctx, a))
 
 		// Retrieve and verify JSONB deserialization
 		saved, err := repo.GetByID(ctx, a.ID)
 		require.NoError(t, err)
 
-		assert.Len(t, saved.SWOT.Strengths, 2)
-		assert.Equal(t, "Strong brand", saved.SWOT.Strengths[0].Content)
-		assert.Equal(t, "Alta", saved.SWOT.Strengths[0].Confidence)
-		assert.Equal(t, "fato", saved.SWOT.Strengths[0].Source)
-		assert.Equal(t, "Test SWOT summary", saved.SWOT.Summary)
+		// Get SWOT data via GetFramework
+		var swotResult analysis.SWOTAnalysis
+		err = saved.GetFramework("swot", &swotResult)
+		require.NoError(t, err)
+
+		assert.Len(t, swotResult.Strengths, 2)
+		assert.Equal(t, "Strong brand", swotResult.Strengths[0].Content)
+		assert.Equal(t, "Alta", swotResult.Strengths[0].Confidence)
+		assert.Equal(t, "fato", swotResult.Strengths[0].Source)
+		assert.Equal(t, "Test SWOT summary", swotResult.Summary)
 	})
 }
 
@@ -363,42 +372,51 @@ func TestIntegration_JSONB_PorterSavesAndLoads(t *testing.T) {
 
 		now := time.Now()
 		a := &analysis.Analysis{
-			ID:           uuid.New().String(),
-			SubmissionID: subID,
-			EnrichmentID: enrichID,
-			Status:       string(analysis.StatusPending),
-			Porter: analysis.PorterAnalysis{
-				CompetitiveRivalry:                   "High competition in the market",
-				SupplierPower:                        "Low supplier power",
-				BuyerPower:                           "Moderate buyer power",
-				ThreatNewEntrants:                    "High barriers to entry",
-				ThreatSubstitutes:                    "Low substitute threat",
-				PowerPartnershipsEcosystems:          "Strong ecosystem presence",
-				DisruptionAIData:                     "High AI disruption potential",
-				CompetitiveRivalryIntensity:          "Alta",
-				SupplierPowerIntensity:               "Baixa",
-				BuyerPowerIntensity:                  "Média",
-				ThreatNewEntrantsIntensity:           "Baixa",
-				ThreatSubstitutesIntensity:           "Baixa",
-				PowerPartnershipsEcosystemsIntensity: "Alta",
-				DisruptionAIDataIntensity:            "Alta",
-				StrategicImplications:                []string{"Focus on AI", "Build partnerships"},
-				OverallAttractiveness:                "Moderately attractive",
-				Summary:                              "Porter 7 Forces analysis summary",
-			},
-			CreatedAt: now,
-			UpdatedAt: now,
+			ID:              uuid.New().String(),
+			SubmissionID:    subID,
+			EnrichmentID:    enrichID,
+			Status:          string(analysis.StatusPending),
+			FrameworkResults: make(map[string]json.RawMessage),
+			CreatedAt:       now,
+			UpdatedAt:       now,
 		}
+
+		// Use SetFramework to add Porter data
+		a.SetFramework("porter", &analysis.PorterAnalysis{
+			CompetitiveRivalry:                   "High competition in the market",
+			SupplierPower:                        "Low supplier power",
+			BuyerPower:                           "Moderate buyer power",
+			ThreatNewEntrants:                    "High barriers to entry",
+			ThreatSubstitutes:                    "Low substitute threat",
+			PowerPartnershipsEcosystems:          "Strong ecosystem presence",
+			DisruptionAIData:                     "High AI disruption potential",
+			CompetitiveRivalryIntensity:          "Alta",
+			SupplierPowerIntensity:               "Baixa",
+			BuyerPowerIntensity:                  "Média",
+			ThreatNewEntrantsIntensity:           "Baixa",
+			ThreatSubstitutesIntensity:           "Baixa",
+			PowerPartnershipsEcosystemsIntensity: "Alta",
+			DisruptionAIDataIntensity:            "Alta",
+			StrategicImplications:                []string{"Focus on AI", "Build partnerships"},
+			OverallAttractiveness:                "Moderately attractive",
+			Summary:                              "Porter 7 Forces analysis summary",
+		})
+
 		require.NoError(t, repo.Create(ctx, a))
 
 		// Retrieve and verify
 		saved, err := repo.GetByID(ctx, a.ID)
 		require.NoError(t, err)
 
-		assert.Equal(t, "High competition in the market", saved.Porter.CompetitiveRivalry)
-		assert.Equal(t, "Alta", saved.Porter.CompetitiveRivalryIntensity)
-		assert.Len(t, saved.Porter.StrategicImplications, 2)
-		assert.Equal(t, "Porter 7 Forces analysis summary", saved.Porter.Summary)
+		// Get Porter data via GetFramework
+		var porterResult analysis.PorterAnalysis
+		err = saved.GetFramework("porter", &porterResult)
+		require.NoError(t, err)
+
+		assert.Equal(t, "High competition in the market", porterResult.CompetitiveRivalry)
+		assert.Equal(t, "Alta", porterResult.CompetitiveRivalryIntensity)
+		assert.Len(t, porterResult.StrategicImplications, 2)
+		assert.Equal(t, "Porter 7 Forces analysis summary", porterResult.Summary)
 	})
 }
 
@@ -415,43 +433,52 @@ func TestIntegration_JSONB_OKRsSavesAndLoads(t *testing.T) {
 
 		now := time.Now()
 		a := &analysis.Analysis{
-			ID:           uuid.New().String(),
-			SubmissionID: subID,
-			EnrichmentID: enrichID,
-			Status:       string(analysis.StatusPending),
-			OKRs: analysis.OKRAnalysis{
-				Quarters: []analysis.QuarterlyOKR{
-					{
-						Quarter:    "Q1 2025",
-						Objective:  "Launch MVP",
-						KeyResults: []string{"KR1: 100 users", "KR2: 90% uptime", "KR3: NPS > 50"},
-						Investment: "R$ 25 mil",
-						Timeline:   "3-4 meses",
-					},
-					{
-						Quarter:    "Q2 2025",
-						Objective:  "Scale operations",
-						KeyResults: []string{"KR1: 1000 users", "KR2: Revenue R$50k", "KR3: Team of 10"},
-						Investment: "R$ 50 mil",
-						Timeline:   "3 meses",
-					},
-				},
-				Summary: "Quarterly OKRs aligned with strategic goals",
-			},
-			CreatedAt: now,
-			UpdatedAt: now,
+			ID:              uuid.New().String(),
+			SubmissionID:    subID,
+			EnrichmentID:    enrichID,
+			Status:          string(analysis.StatusPending),
+			FrameworkResults: make(map[string]json.RawMessage),
+			CreatedAt:       now,
+			UpdatedAt:       now,
 		}
+
+		// Use SetFramework to add OKRs data
+		a.SetFramework("okrs", &analysis.OKRAnalysis{
+			Quarters: []analysis.QuarterlyOKR{
+				{
+					Quarter:    "Q1 2025",
+					Objective:  "Launch MVP",
+					KeyResults: []string{"KR1: 100 users", "KR2: 90% uptime", "KR3: NPS > 50"},
+					Investment: "R$ 25 mil",
+					Timeline:   "3-4 meses",
+				},
+				{
+					Quarter:    "Q2 2025",
+					Objective:  "Scale operations",
+					KeyResults: []string{"KR1: 1000 users", "KR2: Revenue R$50k", "KR3: Team of 10"},
+					Investment: "R$ 50 mil",
+					Timeline:   "3 meses",
+				},
+			},
+			Summary: "Quarterly OKRs aligned with strategic goals",
+		})
+
 		require.NoError(t, repo.Create(ctx, a))
 
 		// Retrieve and verify
 		saved, err := repo.GetByID(ctx, a.ID)
 		require.NoError(t, err)
 
-		assert.Len(t, saved.OKRs.Quarters, 2)
-		assert.Equal(t, "Q1 2025", saved.OKRs.Quarters[0].Quarter)
-		assert.Equal(t, "Launch MVP", saved.OKRs.Quarters[0].Objective)
-		assert.Len(t, saved.OKRs.Quarters[0].KeyResults, 3)
-		assert.Equal(t, "R$ 25 mil", saved.OKRs.Quarters[0].Investment)
+		// Get OKRs data via GetFramework
+		var okrsResult analysis.OKRAnalysis
+		err = saved.GetFramework("okrs", &okrsResult)
+		require.NoError(t, err)
+
+		assert.Len(t, okrsResult.Quarters, 2)
+		assert.Equal(t, "Q1 2025", okrsResult.Quarters[0].Quarter)
+		assert.Equal(t, "Launch MVP", okrsResult.Quarters[0].Objective)
+		assert.Len(t, okrsResult.Quarters[0].KeyResults, 3)
+		assert.Equal(t, "R$ 25 mil", okrsResult.Quarters[0].Investment)
 	})
 }
 
@@ -468,62 +495,71 @@ func TestIntegration_JSONB_Plan90DaysSavesAndLoads(t *testing.T) {
 
 		now := time.Now()
 		a := &analysis.Analysis{
-			ID:           uuid.New().String(),
-			SubmissionID: subID,
-			EnrichmentID: enrichID,
-			Status:       string(analysis.StatusPending),
-			OKRs: analysis.OKRAnalysis{
-				Plan90Days: []analysis.MonthlyOKR{
-					{
-						Month:                 "Mês 1",
-						Focus:                 "Fundação",
-						Objective:             "Validar produto com early adopters",
-						KeyResults:            []string{"KR1: 50 usuarios ativos", "KR2: NPS > 40", "KR3: Retenção > 60%"},
-						Investment:            "R$ 15 mil",
-						AlignedRecommendation: "Foco em validação de mercado",
-					},
-					{
-						Month:                 "Mês 2",
-						Focus:                 "Crescimento",
-						Objective:             "Escalar base de usuarios",
-						KeyResults:            []string{"KR1: 200 usuarios", "KR2: CAC < R$50", "KR3: Receita R$10k"},
-						Investment:            "R$ 25 mil",
-						AlignedRecommendation: "Implementar growth loops",
-					},
-					{
-						Month:                 "Mês 3",
-						Focus:                 "Consolidação",
-						Objective:             "Otimizar unit economics",
-						KeyResults:            []string{"KR1: LTV/CAC > 3", "KR2: Churn < 5%", "KR3: MRR R$30k"},
-						Investment:            "R$ 35 mil",
-						AlignedRecommendation: "Foco em retenção e monetização",
-					},
-				},
-				TotalInvestment: "R$ 75 mil",
-				SuccessMetrics:  []string{"MRR > R$30k", "500+ usuarios ativos", "NPS > 50"},
-				Summary:         "Plano 90 dias alinhado com matriz de decisão",
-			},
-			CreatedAt: now,
-			UpdatedAt: now,
+			ID:              uuid.New().String(),
+			SubmissionID:    subID,
+			EnrichmentID:    enrichID,
+			Status:          string(analysis.StatusPending),
+			FrameworkResults: make(map[string]json.RawMessage),
+			CreatedAt:       now,
+			UpdatedAt:       now,
 		}
+
+		// Use SetFramework to add Plan90Days data
+		a.SetFramework("okrs", &analysis.OKRAnalysis{
+			Plan90Days: []analysis.MonthlyOKR{
+				{
+					Month:                 "Mês 1",
+					Focus:                 "Fundação",
+					Objective:             "Validar produto com early adopters",
+					KeyResults:            []string{"KR1: 50 usuarios ativos", "KR2: NPS > 40", "KR3: Retenção > 60%"},
+					Investment:            "R$ 15 mil",
+					AlignedRecommendation: "Foco em validação de mercado",
+				},
+				{
+					Month:                 "Mês 2",
+					Focus:                 "Crescimento",
+					Objective:             "Escalar base de usuarios",
+					KeyResults:            []string{"KR1: 200 usuarios", "KR2: CAC < R$50", "KR3: Receita R$10k"},
+					Investment:            "R$ 25 mil",
+					AlignedRecommendation: "Implementar growth loops",
+				},
+				{
+					Month:                 "Mês 3",
+					Focus:                 "Consolidação",
+					Objective:             "Otimizar unit economics",
+					KeyResults:            []string{"KR1: LTV/CAC > 3", "KR2: Churn < 5%", "KR3: MRR R$30k"},
+					Investment:            "R$ 35 mil",
+					AlignedRecommendation: "Foco em retenção e monetização",
+				},
+			},
+			TotalInvestment: "R$ 75 mil",
+			SuccessMetrics:  []string{"MRR > R$30k", "500+ usuarios ativos", "NPS > 50"},
+			Summary:         "Plano 90 dias alinhado com matriz de decisão",
+		})
+
 		require.NoError(t, repo.Create(ctx, a))
 
 		// Retrieve and verify V2 Plan90Days format
 		saved, err := repo.GetByID(ctx, a.ID)
 		require.NoError(t, err)
 
-		assert.Len(t, saved.OKRs.Plan90Days, 3)
-		assert.Equal(t, "Mês 1", saved.OKRs.Plan90Days[0].Month)
-		assert.Equal(t, "Fundação", saved.OKRs.Plan90Days[0].Focus)
-		assert.Equal(t, "Validar produto com early adopters", saved.OKRs.Plan90Days[0].Objective)
-		assert.Len(t, saved.OKRs.Plan90Days[0].KeyResults, 3)
-		assert.Equal(t, "R$ 15 mil", saved.OKRs.Plan90Days[0].Investment)
-		assert.Equal(t, "Foco em validação de mercado", saved.OKRs.Plan90Days[0].AlignedRecommendation)
-		assert.Equal(t, "R$ 75 mil", saved.OKRs.TotalInvestment)
-		assert.Len(t, saved.OKRs.SuccessMetrics, 3)
+		// Get OKRs data via GetFramework
+		var okrsResult analysis.OKRAnalysis
+		err = saved.GetFramework("okrs", &okrsResult)
+		require.NoError(t, err)
+
+		assert.Len(t, okrsResult.Plan90Days, 3)
+		assert.Equal(t, "Mês 1", okrsResult.Plan90Days[0].Month)
+		assert.Equal(t, "Fundação", okrsResult.Plan90Days[0].Focus)
+		assert.Equal(t, "Validar produto com early adopters", okrsResult.Plan90Days[0].Objective)
+		assert.Len(t, okrsResult.Plan90Days[0].KeyResults, 3)
+		assert.Equal(t, "R$ 15 mil", okrsResult.Plan90Days[0].Investment)
+		assert.Equal(t, "Foco em validação de mercado", okrsResult.Plan90Days[0].AlignedRecommendation)
+		assert.Equal(t, "R$ 75 mil", okrsResult.TotalInvestment)
+		assert.Len(t, okrsResult.SuccessMetrics, 3)
 
 		// Verify legacy Quarters is empty (new format doesn't populate it)
-		assert.Len(t, saved.OKRs.Quarters, 0)
+		assert.Len(t, okrsResult.Quarters, 0)
 	})
 }
 
