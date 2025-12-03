@@ -3,6 +3,7 @@ package analysis
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 
 	"github.com/jmoiron/sqlx"
@@ -40,26 +41,37 @@ func NewPostgresRepository(db *sqlx.DB) *PostgresRepository {
 // Uses positional parameters ($1, $2, ...) instead of named parameters
 // to avoid lib/pq driver issues with custom JSONB types implementing driver.Valuer
 func (r *PostgresRepository) Create(ctx context.Context, analysis *Analysis) error {
+	// Sync individual framework fields to framework_results (dual-write)
+	if err := analysis.syncFrameworkResults(); err != nil {
+		return fmt.Errorf("failed to sync framework results: %w", err)
+	}
+
 	query := `
 		INSERT INTO analyses (
 			id, submission_id, enrichment_id,
 			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
-			synthesis, status, error_message, processing_time_ms,
+			framework_results, synthesis, status, error_message, processing_time_ms,
 			is_visible_to_user, is_blurred, is_public, access_code, access_code_created_at, deleted_at,
 			created_at, updated_at, completed_at
 		) VALUES (
 			$1, $2, $3,
 			$4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-			$15, $16, $17, $18,
-			$19, $20, $21, $22, $23, $24,
-			$25, $26, $27
+			$15, $16, $17, $18, $19,
+			$20, $21, $22, $23, $24, $25,
+			$26, $27, $28
 		)
 	`
 
-	_, err := r.db.ExecContext(ctx, query,
+	// Serialize framework_results to JSON
+	frameworkResultsJSON, err := json.Marshal(analysis.FrameworkResults)
+	if err != nil {
+		return fmt.Errorf("failed to marshal framework_results: %w", err)
+	}
+
+	_, err = r.db.ExecContext(ctx, query,
 		analysis.ID, analysis.SubmissionID, analysis.EnrichmentID,
 		analysis.SWOT, analysis.PESTEL, analysis.Porter, analysis.OKRs, analysis.TamSamSom, analysis.Benchmarking, analysis.BlueOcean, analysis.GrowthHacking, analysis.Scenarios, analysis.BSC, analysis.DecisionMatrix,
-		analysis.Synthesis, analysis.Status, analysis.ErrorMessage, analysis.ProcessingTimeMs,
+		string(frameworkResultsJSON), analysis.Synthesis, analysis.Status, analysis.ErrorMessage, analysis.ProcessingTimeMs,
 		analysis.IsVisibleToUser, analysis.IsBlurred, analysis.IsPublic, analysis.AccessCode, analysis.AccessCodeCreatedAt, analysis.DeletedAt,
 		analysis.CreatedAt, analysis.UpdatedAt, analysis.CompletedAt,
 	)
@@ -73,6 +85,11 @@ func (r *PostgresRepository) Create(ctx context.Context, analysis *Analysis) err
 // Update modifies an existing analysis record
 // Uses positional parameters to avoid lib/pq driver issues with JSONB types
 func (r *PostgresRepository) Update(ctx context.Context, analysis *Analysis) error {
+	// Sync individual framework fields to framework_results (dual-write)
+	if err := analysis.syncFrameworkResults(); err != nil {
+		return fmt.Errorf("failed to sync framework results: %w", err)
+	}
+
 	query := `
 		UPDATE analyses SET
 			swot = $1,
@@ -86,25 +103,32 @@ func (r *PostgresRepository) Update(ctx context.Context, analysis *Analysis) err
 			scenarios = $9,
 			bsc = $10,
 			decision_matrix = $11,
-			synthesis = $12,
-			status = $13,
-			error_message = $14,
-			processing_time_ms = $15,
-			is_visible_to_user = $16,
-			is_blurred = $17,
-			is_public = $18,
-			access_code = $19,
-			access_code_created_at = $20,
-			deleted_at = $21,
-			updated_at = $22,
-			completed_at = $23
-		WHERE id = $24
+			framework_results = $12,
+			synthesis = $13,
+			status = $14,
+			error_message = $15,
+			processing_time_ms = $16,
+			is_visible_to_user = $17,
+			is_blurred = $18,
+			is_public = $19,
+			access_code = $20,
+			access_code_created_at = $21,
+			deleted_at = $22,
+			updated_at = $23,
+			completed_at = $24
+		WHERE id = $25
 	`
+
+	// Serialize framework_results to JSON
+	frameworkResultsJSON, err := json.Marshal(analysis.FrameworkResults)
+	if err != nil {
+		return fmt.Errorf("failed to marshal framework_results: %w", err)
+	}
 
 	result, err := r.db.ExecContext(ctx, query,
 		analysis.SWOT, analysis.PESTEL, analysis.Porter, analysis.OKRs, analysis.TamSamSom,
 		analysis.Benchmarking, analysis.BlueOcean, analysis.GrowthHacking, analysis.Scenarios, analysis.BSC,
-		analysis.DecisionMatrix, analysis.Synthesis, analysis.Status, analysis.ErrorMessage, analysis.ProcessingTimeMs,
+		analysis.DecisionMatrix, string(frameworkResultsJSON), analysis.Synthesis, analysis.Status, analysis.ErrorMessage, analysis.ProcessingTimeMs,
 		analysis.IsVisibleToUser, analysis.IsBlurred, analysis.IsPublic, analysis.AccessCode, analysis.AccessCodeCreatedAt,
 		analysis.DeletedAt, analysis.UpdatedAt, analysis.CompletedAt, analysis.ID,
 	)
@@ -127,6 +151,11 @@ func (r *PostgresRepository) Update(ctx context.Context, analysis *Analysis) err
 // UpdateWithTx modifies an existing analysis record within a transaction
 // Uses positional parameters to avoid lib/pq driver issues with JSONB types
 func (r *PostgresRepository) UpdateWithTx(ctx context.Context, tx *sqlx.Tx, analysis *Analysis) error {
+	// Sync individual framework fields to framework_results (dual-write)
+	if err := analysis.syncFrameworkResults(); err != nil {
+		return fmt.Errorf("failed to sync framework results: %w", err)
+	}
+
 	query := `
 		UPDATE analyses SET
 			swot = $1,
@@ -140,25 +169,32 @@ func (r *PostgresRepository) UpdateWithTx(ctx context.Context, tx *sqlx.Tx, anal
 			scenarios = $9,
 			bsc = $10,
 			decision_matrix = $11,
-			synthesis = $12,
-			status = $13,
-			error_message = $14,
-			processing_time_ms = $15,
-			is_visible_to_user = $16,
-			is_blurred = $17,
-			is_public = $18,
-			access_code = $19,
-			access_code_created_at = $20,
-			deleted_at = $21,
-			updated_at = $22,
-			completed_at = $23
-		WHERE id = $24
+			framework_results = $12,
+			synthesis = $13,
+			status = $14,
+			error_message = $15,
+			processing_time_ms = $16,
+			is_visible_to_user = $17,
+			is_blurred = $18,
+			is_public = $19,
+			access_code = $20,
+			access_code_created_at = $21,
+			deleted_at = $22,
+			updated_at = $23,
+			completed_at = $24
+		WHERE id = $25
 	`
+
+	// Serialize framework_results to JSON
+	frameworkResultsJSON, err := json.Marshal(analysis.FrameworkResults)
+	if err != nil {
+		return fmt.Errorf("failed to marshal framework_results: %w", err)
+	}
 
 	result, err := tx.ExecContext(ctx, query,
 		analysis.SWOT, analysis.PESTEL, analysis.Porter, analysis.OKRs, analysis.TamSamSom,
 		analysis.Benchmarking, analysis.BlueOcean, analysis.GrowthHacking, analysis.Scenarios, analysis.BSC,
-		analysis.DecisionMatrix, analysis.Synthesis, analysis.Status, analysis.ErrorMessage, analysis.ProcessingTimeMs,
+		analysis.DecisionMatrix, string(frameworkResultsJSON), analysis.Synthesis, analysis.Status, analysis.ErrorMessage, analysis.ProcessingTimeMs,
 		analysis.IsVisibleToUser, analysis.IsBlurred, analysis.IsPublic, analysis.AccessCode, analysis.AccessCodeCreatedAt,
 		analysis.DeletedAt, analysis.UpdatedAt, analysis.CompletedAt, analysis.ID,
 	)
@@ -193,7 +229,7 @@ func (r *PostgresRepository) GetByID(ctx context.Context, id string) (*Analysis,
 		SELECT
 			id, submission_id, enrichment_id,
 			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
-			synthesis, status, error_message, processing_time_ms,
+			framework_results, synthesis, status, error_message, processing_time_ms,
 			is_visible_to_user, is_blurred, is_public, access_code, access_code_created_at, deleted_at,
 			created_at, updated_at, completed_at
 		FROM analyses
@@ -218,7 +254,7 @@ func (r *PostgresRepository) GetBySubmissionID(ctx context.Context, submissionID
 		SELECT
 			id, submission_id, enrichment_id,
 			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
-			synthesis, status, error_message, processing_time_ms,
+			framework_results, synthesis, status, error_message, processing_time_ms,
 			is_visible_to_user, is_blurred, is_public, access_code, access_code_created_at, deleted_at,
 			created_at, updated_at, completed_at
 		FROM analyses
@@ -244,7 +280,7 @@ func (r *PostgresRepository) List(ctx context.Context, limit, offset int) ([]*An
 		SELECT
 			id, submission_id, enrichment_id,
 			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
-			synthesis, status, error_message, processing_time_ms,
+			framework_results, synthesis, status, error_message, processing_time_ms,
 			is_visible_to_user, is_blurred, is_public, access_code, access_code_created_at, deleted_at,
 			created_at, updated_at, completed_at
 		FROM analyses
@@ -359,7 +395,7 @@ func (r *PostgresRepository) GetByAccessCode(ctx context.Context, code string) (
 		SELECT
 			id, submission_id, enrichment_id,
 			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
-			synthesis, status, error_message, processing_time_ms,
+			framework_results, synthesis, status, error_message, processing_time_ms,
 			is_visible_to_user, is_blurred, is_public, access_code, access_code_created_at, deleted_at,
 			created_at, updated_at, completed_at
 		FROM analyses

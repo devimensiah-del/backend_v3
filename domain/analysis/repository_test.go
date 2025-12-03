@@ -211,12 +211,14 @@ func TestRepository_Create_WithAll11Frameworks(t *testing.T) {
 			sqlmock.AnyArg(), // scenarios (JSONB)
 			sqlmock.AnyArg(), // bsc (JSONB)
 			sqlmock.AnyArg(), // decision_matrix (JSONB)
+			sqlmock.AnyArg(), // framework_results (JSONB) - migration 034
 			sqlmock.AnyArg(), // synthesis (JSONB)
 			testAnalysis.Status,
 			testAnalysis.ErrorMessage,
 			testAnalysis.ProcessingTimeMs,
 			testAnalysis.IsVisibleToUser,
 			testAnalysis.IsBlurred,
+			testAnalysis.IsPublic,        // Added in migration 029
 			testAnalysis.AccessCode,
 			testAnalysis.AccessCodeCreatedAt,
 			testAnalysis.DeletedAt,
@@ -292,12 +294,14 @@ func TestRepository_Update_Success(t *testing.T) {
 			sqlmock.AnyArg(), // scenarios
 			sqlmock.AnyArg(), // bsc
 			sqlmock.AnyArg(), // decision_matrix
+			sqlmock.AnyArg(), // framework_results (JSONB) - migration 034
 			sqlmock.AnyArg(), // synthesis
 			testAnalysis.Status,
 			testAnalysis.ErrorMessage,
 			testAnalysis.ProcessingTimeMs,
 			testAnalysis.IsVisibleToUser,
 			testAnalysis.IsBlurred,
+			testAnalysis.IsPublic,        // Added in migration 029
 			testAnalysis.AccessCode,
 			testAnalysis.AccessCodeCreatedAt,
 			testAnalysis.DeletedAt,

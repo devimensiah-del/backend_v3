@@ -4,6 +4,7 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -70,6 +71,11 @@ type Analysis struct {
 	OKRs           OKRAnalysis               `db:"okrs" json:"okrs"`
 	BSC            BalancedScorecardAnalysis `db:"bsc" json:"bsc"`
 	DecisionMatrix DecisionMatrixAnalysis    `db:"decision_matrix" json:"decision_matrix"`
+
+	// Generic framework results (new dynamic approach - migration 034)
+	// Stores all framework outputs in a single JSONB column
+	// Enables dual-write during transition period before deprecating individual columns
+	FrameworkResults map[string]json.RawMessage `db:"framework_results" json:"framework_results,omitempty"`
 
 	// Final Output
 	Synthesis AnalysisSynthesis `db:"synthesis" json:"synthesis"`
@@ -723,4 +729,71 @@ func (a *AnalysisSynthesis) Scan(value interface{}) error {
 		return errors.New("type assertion to []byte failed for AnalysisSynthesis")
 	}
 	return json.Unmarshal(b, a)
+}
+
+// ============================================
+// Dual-Write Support (Migration 034)
+// ============================================
+
+// syncFrameworkResults populates the framework_results map from individual framework fields
+// This enables dual-write during the transition period before deprecating individual columns
+// Call this method before Create() or Update() operations to keep both storage formats in sync
+func (a *Analysis) syncFrameworkResults() error {
+	if a.FrameworkResults == nil {
+		a.FrameworkResults = make(map[string]json.RawMessage)
+	}
+
+	// Helper function to marshal and store a framework
+	storeFramework := func(name string, framework interface{}) error {
+		// Check if the framework has meaningful data (not a zero value)
+		data, err := json.Marshal(framework)
+		if err != nil {
+			return fmt.Errorf("failed to marshal %s: %w", name, err)
+		}
+		// Only store non-empty frameworks
+		if string(data) != "{}" && string(data) != "null" {
+			a.FrameworkResults[name] = data
+		}
+		return nil
+	}
+
+	// Sync all 11 frameworks + synthesis
+	if err := storeFramework("pestel", a.PESTEL); err != nil {
+		return err
+	}
+	if err := storeFramework("porter", a.Porter); err != nil {
+		return err
+	}
+	if err := storeFramework("tam_sam_som", a.TamSamSom); err != nil {
+		return err
+	}
+	if err := storeFramework("swot", a.SWOT); err != nil {
+		return err
+	}
+	if err := storeFramework("benchmarking", a.Benchmarking); err != nil {
+		return err
+	}
+	if err := storeFramework("blue_ocean", a.BlueOcean); err != nil {
+		return err
+	}
+	if err := storeFramework("growth_hacking", a.GrowthHacking); err != nil {
+		return err
+	}
+	if err := storeFramework("scenarios", a.Scenarios); err != nil {
+		return err
+	}
+	if err := storeFramework("okrs", a.OKRs); err != nil {
+		return err
+	}
+	if err := storeFramework("bsc", a.BSC); err != nil {
+		return err
+	}
+	if err := storeFramework("decision_matrix", a.DecisionMatrix); err != nil {
+		return err
+	}
+	if err := storeFramework("synthesis", a.Synthesis); err != nil {
+		return err
+	}
+
+	return nil
 }
