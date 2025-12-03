@@ -25,6 +25,8 @@ type Repository interface {
 	GetByAccessCode(ctx context.Context, code string) (*Analysis, error) // Get by public access code
 	SetAccessCode(ctx context.Context, id string, code string) error     // Set access code
 	AccessCodeExists(ctx context.Context, code string) (bool, error)     // Check if code exists (for collision handling)
+	GetFrameworkResult(ctx context.Context, analysisID, frameworkCode string) (json.RawMessage, error)
+	SetFrameworkResult(ctx context.Context, analysisID, frameworkCode string, result json.RawMessage) error
 }
 
 // PostgresRepository implements Repository using PostgreSQL
@@ -245,6 +247,9 @@ func (r *PostgresRepository) GetByID(ctx context.Context, id string) (*Analysis,
 		return nil, fmt.Errorf("failed to get analysis: %w", err)
 	}
 
+	// Populate legacy fields from framework_results for backwards compatibility
+	analysis.populateFromFrameworkResults()
+
 	return &analysis, nil
 }
 
@@ -446,4 +451,38 @@ func (r *PostgresRepository) AccessCodeExists(ctx context.Context, code string) 
 	}
 
 	return exists, nil
+}
+
+// GetFrameworkResult retrieves a single framework's result from the generic column
+func (r *PostgresRepository) GetFrameworkResult(ctx context.Context, analysisID, frameworkCode string) (json.RawMessage, error) {
+	var result json.RawMessage
+	query := `
+		SELECT framework_results->$2
+		FROM analyses
+		WHERE id = $1 AND deleted_at IS NULL
+	`
+	err := r.db.GetContext(ctx, &result, query, analysisID, frameworkCode)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get framework result %s: %w", frameworkCode, err)
+	}
+	return result, nil
+}
+
+// SetFrameworkResult updates a single framework result in the generic column
+func (r *PostgresRepository) SetFrameworkResult(ctx context.Context, analysisID, frameworkCode string, result json.RawMessage) error {
+	query := `
+		UPDATE analyses
+		SET framework_results = jsonb_set(
+			COALESCE(framework_results, '{}'),
+			ARRAY[$2],
+			$3::jsonb
+		),
+		updated_at = NOW()
+		WHERE id = $1 AND deleted_at IS NULL
+	`
+	_, err := r.db.ExecContext(ctx, query, analysisID, frameworkCode, result)
+	if err != nil {
+		return fmt.Errorf("failed to set framework result %s: %w", frameworkCode, err)
+	}
+	return nil
 }

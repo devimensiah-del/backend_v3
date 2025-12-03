@@ -797,3 +797,48 @@ func (a *Analysis) syncFrameworkResults() error {
 
 	return nil
 }
+
+// populateFromFrameworkResults fills legacy framework fields from the generic map
+// This ensures API responses remain unchanged during the transition period
+func (a *Analysis) populateFromFrameworkResults() {
+	if a.FrameworkResults == nil {
+		return
+	}
+
+	if data, ok := a.FrameworkResults["pestel"]; ok && a.PESTEL.Summary == "" {
+		json.Unmarshal(data, &a.PESTEL)
+	}
+	if data, ok := a.FrameworkResults["porter"]; ok && a.Porter.Summary == "" {
+		json.Unmarshal(data, &a.Porter)
+	}
+	if data, ok := a.FrameworkResults["swot"]; ok && a.SWOT.Summary == "" {
+		json.Unmarshal(data, &a.SWOT)
+	}
+	if data, ok := a.FrameworkResults["tam_sam_som"]; ok && a.TamSamSom.Summary == "" {
+		json.Unmarshal(data, &a.TamSamSom)
+	}
+	if data, ok := a.FrameworkResults["benchmarking"]; ok && a.Benchmarking.Summary == "" {
+		json.Unmarshal(data, &a.Benchmarking)
+	}
+	if data, ok := a.FrameworkResults["blue_ocean"]; ok && a.BlueOcean.Summary == "" {
+		json.Unmarshal(data, &a.BlueOcean)
+	}
+	if data, ok := a.FrameworkResults["growth_hacking"]; ok && a.GrowthHacking.Summary == "" {
+		json.Unmarshal(data, &a.GrowthHacking)
+	}
+	if data, ok := a.FrameworkResults["scenarios"]; ok && a.Scenarios.Summary == "" {
+		json.Unmarshal(data, &a.Scenarios)
+	}
+	if data, ok := a.FrameworkResults["okrs"]; ok && a.OKRs.Summary == "" {
+		json.Unmarshal(data, &a.OKRs)
+	}
+	if data, ok := a.FrameworkResults["bsc"]; ok && a.BSC.Summary == "" {
+		json.Unmarshal(data, &a.BSC)
+	}
+	if data, ok := a.FrameworkResults["decision_matrix"]; ok && a.DecisionMatrix.Summary == "" {
+		json.Unmarshal(data, &a.DecisionMatrix)
+	}
+	if data, ok := a.FrameworkResults["synthesis"]; ok && a.Synthesis.ExecutiveSummary == "" {
+		json.Unmarshal(data, &a.Synthesis)
+	}
+}

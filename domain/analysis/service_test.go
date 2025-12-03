@@ -2,6 +2,7 @@ package analysis
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -106,6 +107,19 @@ func (m *MockRepository) AccessCodeExists(ctx context.Context, code string) (boo
 
 func (m *MockRepository) SetPublicStatus(ctx context.Context, id string, public bool) error {
 	args := m.Called(ctx, id, public)
+	return args.Error(0)
+}
+
+func (m *MockRepository) GetFrameworkResult(ctx context.Context, analysisID, frameworkCode string) (json.RawMessage, error) {
+	args := m.Called(ctx, analysisID, frameworkCode)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(json.RawMessage), args.Error(1)
+}
+
+func (m *MockRepository) SetFrameworkResult(ctx context.Context, analysisID, frameworkCode string, result json.RawMessage) error {
+	args := m.Called(ctx, analysisID, frameworkCode, result)
 	return args.Error(0)
 }
 
