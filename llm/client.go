@@ -108,11 +108,32 @@ func (c *Client) GenerateStructuredWithOptions(ctx context.Context, opts Generat
 		return err
 	}
 
-	// 4. Clean Markdown
+	// 4. Clean Markdown and Extract JSON
 	cleanJson := strings.TrimSpace(resp.Content)
-	cleanJson = strings.TrimPrefix(cleanJson, "```json")
-	cleanJson = strings.TrimPrefix(cleanJson, "```")
-	cleanJson = strings.TrimSuffix(cleanJson, "```")
+
+	// Find JSON boundaries (handles conversational text before/after JSON)
+	startObj := strings.Index(cleanJson, "{")
+	startArr := strings.Index(cleanJson, "[")
+	endObj := strings.LastIndex(cleanJson, "}")
+	endArr := strings.LastIndex(cleanJson, "]")
+
+	// Determine which structure we have (object vs array)
+	start := -1
+	end := -1
+	if startObj != -1 && endObj != -1 {
+		if startArr == -1 || startObj < startArr {
+			start, end = startObj, endObj
+		}
+	}
+	if startArr != -1 && endArr != -1 {
+		if start == -1 || startArr < start {
+			start, end = startArr, endArr
+		}
+	}
+
+	if start != -1 && end != -1 && end > start {
+		cleanJson = cleanJson[start : end+1]
+	}
 
 	// 5. Unmarshal into Target
 	if err := json.Unmarshal([]byte(cleanJson), targetSchema); err != nil {

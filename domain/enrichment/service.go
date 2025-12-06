@@ -2,255 +2,225 @@ package enrichment
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"time"
+	"strings"
 
-	"backend_v3/adapter/macrodata"
 	"backend_v3/config"
-	"backend_v3/domain/submission"
 	"backend_v3/llm"
 
 	"github.com/google/uuid"
-	"github.com/hibiken/asynq"
 	"github.com/rs/zerolog/log"
 )
 
-// Service handles business logic for enrichment
-// AI-Only Pipeline: Perplexity (pre-search) + Gemini (synthesis)
-// MacroDataProvider re-integrated to fetch authoritative SELIC/IPCA/USD data from BCB/IBGE APIs
-// MacroService provides DB-backed cached data from scheduled cron jobs
+// Service handles stateless enrichment operations
+// It calls Perplexity to gather company data and returns it to the caller
+// The caller is responsible for persisting the enriched data
 type Service struct {
-	repo           Repository
-	submissionRepo submission.Repository
-	llmClient      *llm.Client
-	queueClient    *asynq.Client                // For job orchestration
-	enrichmentCfg  config.FrameworkConfig       // Gemini config for synthesis
-	preSearchCfg   config.FrameworkConfig       // Perplexity config for pre-search
-	macroProvider  *macrodata.MacroDataProvider // BCB/IBGE APIs for real-time economic data (fallback)
-	macroService   MacroServiceInterface        // DB-backed macro data (primary, optional)
-	companyService CompanyServiceInterface      // Company data persistence (optional)
+	llmClient     *llm.Client
+	preSearchCfg  config.FrameworkConfig // Perplexity config
 }
 
-// NewService creates a new enrichment service
-// Two-phase pipeline: Perplexity pre-search + Gemini synthesis
-// MacroDataProvider provides authoritative SELIC/IPCA/USD data from BCB/IBGE APIs
-func NewService(repo Repository, submissionRepo submission.Repository, llmClient *llm.Client, queueClient *asynq.Client, enrichmentCfg config.FrameworkConfig, preSearchCfg config.FrameworkConfig, macroProvider *macrodata.MacroDataProvider) *Service {
+// NewService creates a new stateless enrichment service
+func NewService(llmClient *llm.Client, preSearchCfg config.FrameworkConfig) *Service {
 	return &Service{
-		repo:           repo,
-		submissionRepo: submissionRepo,
-		llmClient:      llmClient,
-		queueClient:    queueClient,
-		enrichmentCfg:  enrichmentCfg, // Gemini with Google Search for synthesis
-		preSearchCfg:   preSearchCfg,  // Perplexity for company ID + technical context
-		macroProvider:  macroProvider, // BCB/IBGE APIs for economic indicators (fallback)
-		macroService:   nil,           // Optional: set via SetMacroService for DB-first
+		llmClient:    llmClient,
+		preSearchCfg: preSearchCfg,
 	}
 }
 
-// SetMacroService sets the macroeconomics service for DB-first macro data fetching
-// This is optional - if not set, the service falls back to direct API calls via macroProvider
-func (s *Service) SetMacroService(svc MacroServiceInterface) {
-	s.macroService = svc
-	log.Info().Msg("MacroService injected into enrichment service (DB-first enabled)")
+// CompanyInput represents the input data for enrichment
+type CompanyInput struct {
+	ID       uuid.UUID
+	Name     string
+	CNPJ     *string
+	Website  *string
+	Industry *string
+	Location *string
 }
 
-// SetCompanyService sets the company service for data persistence
-// This is optional - if not set, enrichment continues without updating company records
-func (s *Service) SetCompanyService(svc CompanyServiceInterface) {
-	s.companyService = svc
-	log.Info().Msg("CompanyService injected into enrichment service (company updates enabled)")
-}
+// EnrichCompany calls Perplexity to fill missing company fields
+// Returns enriched data - caller is responsible for saving to company table
+func (s *Service) EnrichCompany(ctx context.Context, company *CompanyInput) (*EnrichedCompanyData, error) {
+	log.Info().
+		Str("company_id", company.ID.String()).
+		Str("company_name", company.Name).
+		Msg("Starting Perplexity enrichment")
 
-// GetByID retrieves enrichment by its own ID
-func (s *Service) GetByID(ctx context.Context, id uuid.UUID) (*Enrichment, error) {
-	return s.repo.GetByID(ctx, id)
-}
+	// 1. Identify missing fields
+	missingFields := s.identifyMissingFields(company)
+	log.Debug().
+		Str("missing_fields", missingFields).
+		Msg("Identified missing fields")
 
-// GetBySubmissionID retrieves enrichment linked to a submission
-func (s *Service) GetBySubmissionID(ctx context.Context, submissionID uuid.UUID) (*Enrichment, error) {
-	return s.repo.GetBySubmissionID(ctx, submissionID)
-}
+	// 2. Build Perplexity prompt
+	prompt := s.buildEnrichmentPrompt(company, missingFields)
 
-// Create creates a new enrichment record
-func (s *Service) Create(ctx context.Context, e *Enrichment) error {
-	return s.repo.Create(ctx, e)
-}
+	// 3. Call Perplexity (presearch model)
+	req := llm.Request{
+		Model:        s.preSearchCfg.Model,
+		SystemPrompt: "You are a JSON-only Company Data Enrichment Expert. Always return valid JSON. Only fill fields where you have high confidence (>70%).",
+		Messages:     []llm.Message{{Role: "user", Content: prompt}},
+		Temperature:  0.3, // Low temperature for more consistent results
+		MaxTokens:    2000,
+	}
 
-// UpdateEnrichmentData is called by the User Interface (API).
-func (s *Service) UpdateEnrichmentData(ctx context.Context, id uuid.UUID, data map[string]interface{}) error {
-	enrichment, err := s.repo.GetByID(ctx, id)
+	resp, err := s.llmClient.CallWithFallback(ctx, &req, s.preSearchCfg.FallbackModel)
 	if err != nil {
-		return err
+		log.Error().
+			Err(err).
+			Str("company_id", company.ID.String()).
+			Msg("Perplexity enrichment failed")
+		return nil, fmt.Errorf("perplexity enrichment failed: %w", err)
 	}
 
-	// Convert generic map to our special JSONMap type
-	enrichment.EnrichedData = JSONMap(data)
-
-	// Force the lock and update
-	return s.repo.UpdateUser(ctx, enrichment)
-}
-
-// UpdateProgress updates the progress and current step of an enrichment
-// Note: If the enrichment is locked by a user, this update will silently fail
-// (the user's edits take precedence over progress updates)
-// NOTE: This method accepts SUBMISSION ID (not enrichment ID) because that's what the worker has
-func (s *Service) UpdateProgress(ctx context.Context, submissionID uuid.UUID, progress int, step string) error {
-	enrichment, err := s.repo.GetBySubmissionID(ctx, submissionID)
+	// 4. Parse response
+	enrichedData, err := s.parseEnrichmentResponse(resp.Content)
 	if err != nil {
-		return fmt.Errorf("failed to get enrichment: %w", err)
+		log.Error().
+			Err(err).
+			Str("company_id", company.ID.String()).
+			Str("raw_response", resp.Content).
+			Msg("Failed to parse enrichment response")
+		return nil, fmt.Errorf("failed to parse enrichment response: %w", err)
 	}
 
-	enrichment.UpdateProgress(step, progress)
+	log.Info().
+		Str("company_id", company.ID.String()).
+		Float64("confidence_score", enrichedData.ConfidenceScore).
+		Int("sources_count", len(enrichedData.Sources)).
+		Msg("Enrichment completed successfully")
 
-	// UpdateSystem respects user locks - if locked, this update won't persist
-	// This is intentional: user edits take precedence over worker progress
-	return s.repo.UpdateSystem(ctx, enrichment)
+	return enrichedData, nil
 }
 
-// UpdateFields updates enrichment fields (admin edit)
-// Status remains unchanged (stays "completed")
-// Performs deep merge for nested objects to preserve existing fields
-// Can edit completed enrichments (no approval workflow anymore)
-func (s *Service) UpdateFields(ctx context.Context, id uuid.UUID, updateData map[string]interface{}) (*Enrichment, error) {
-	// Get current enrichment
-	enrichment, err := s.repo.GetByID(ctx, id)
-	if err != nil {
-		return nil, err
+// identifyMissingFields returns a description of fields that need enrichment
+func (s *Service) identifyMissingFields(company *CompanyInput) string {
+	var missing []string
+
+	if company.CNPJ == nil || *company.CNPJ == "" {
+		missing = append(missing, "- CNPJ (Cadastro Nacional da Pessoa Jurídica)")
+	}
+	if company.Website == nil || *company.Website == "" {
+		missing = append(missing, "- Website oficial")
+	}
+	if company.Industry == nil || *company.Industry == "" {
+		missing = append(missing, "- Setor/Indústria (CNAE)")
+	}
+	if company.Location == nil || *company.Location == "" {
+		missing = append(missing, "- Localização (Sede: cidade, estado)")
 	}
 
-	// Deep merge update data into existing enriched_data
-	enrichment.EnrichedData = deepMerge(enrichment.EnrichedData, updateData)
-
-	// Update via repository
-	if err := s.repo.UpdateUser(ctx, enrichment); err != nil {
-		return nil, err
+	if len(missing) == 0 {
+		return "Todos os campos principais estão preenchidos. Valide e aprofunde as informações existentes."
 	}
 
-	return enrichment, nil
+	return "Campos faltantes (preencha apenas se tiver confiança >70%):\n" + strings.Join(missing, "\n")
 }
 
-// UpdateUnlock manually unlocks an enrichment (recovery endpoint)
-// Used when an enrichment gets stuck due to locking issues
-func (s *Service) UpdateUnlock(ctx context.Context, e *Enrichment) error {
-	e.IsLocked = false
-	e.UpdatedAt = time.Now()
+// buildEnrichmentPrompt builds the prompt for Perplexity
+func (s *Service) buildEnrichmentPrompt(company *CompanyInput, missingFields string) string {
+	prompt := fmt.Sprintf(`Você é um Agente de Enriquecimento de Dados Corporativos.
 
-	// Use ForceUpdateAndUnlock to bypass any existing locks
-	if err := s.repo.ForceUpdateAndUnlock(ctx, e); err != nil {
-		return fmt.Errorf("failed to unlock enrichment: %w", err)
+EMPRESA:
+Nome: %s`, company.Name)
+
+	if company.CNPJ != nil && *company.CNPJ != "" {
+		prompt += fmt.Sprintf("\nCNPJ: %s", *company.CNPJ)
+	}
+	if company.Website != nil && *company.Website != "" {
+		prompt += fmt.Sprintf("\nWebsite: %s", *company.Website)
+	}
+	if company.Industry != nil && *company.Industry != "" {
+		prompt += fmt.Sprintf("\nSetor: %s", *company.Industry)
+	}
+	if company.Location != nil && *company.Location != "" {
+		prompt += fmt.Sprintf("\nLocalização: %s", *company.Location)
 	}
 
-	return nil
+	prompt += fmt.Sprintf(`
+
+%s
+
+INSTRUÇÕES:
+1. Busque dados públicos confiáveis sobre esta empresa
+2. Preencha APENAS os campos que faltam e onde você tem alta confiança (>70%%)
+3. NÃO sobrescreva dados já fornecidos
+4. Se não encontrar informação confiável, deixe o campo null
+5. Liste as URLs das fontes usadas
+
+Retorne JSON estrito (PT-BR):
+{
+  "cnpj": "XX.XXX.XXX/XXXX-XX ou null",
+  "website": "https://... ou null",
+  "industry": "Setor específico ou null",
+  "company_size": "Micro/Pequena/Média/Grande ou null",
+  "location": "Cidade, Estado ou null",
+  "target_market": "B2B/B2C/descrição ou null",
+  "funding_stage": "Estágio de funding ou null",
+  "annual_revenue_min": 0.0,
+  "annual_revenue_max": 0.0,
+  "foundation_year": "YYYY ou null",
+  "legal_name": "Razão Social ou null",
+  "headquarters": "Cidade, Estado, País ou null",
+  "sector": "Setor detalhado ou null",
+  "target_audience": "Público-alvo ou null",
+  "value_proposition": "Proposta de valor ou null",
+  "employees_range": "Ex: 10-50 ou null",
+  "revenue_estimate": "Ex: R$ 2M - 5M/ano ou null",
+  "business_model": "Ex: B2B SaaS ou null",
+  "market_share_status": "Líder/Desafiador/Nicho ou null",
+  "digital_maturity": 7,
+  "competitors": ["Concorrente 1", "Concorrente 2"],
+  "strengths": ["Força 1", "Força 2"],
+  "weaknesses": ["Fraqueza 1", "Fraqueza 2"],
+  "linkedin_url": "URL ou null",
+  "twitter_handle": "@handle ou null",
+  "confidence_score": 85,
+  "sources": ["URL1", "URL2"]
+}`, missingFields)
+
+	return prompt
 }
 
-// deepMerge recursively merges source into destination
-// For objects: merges keys (doesn't replace entire object)
-// For primitives/arrays: replaces value
-func deepMerge(dest map[string]interface{}, src map[string]interface{}) map[string]interface{} {
-	if dest == nil {
-		dest = make(map[string]interface{})
-	}
+// parseEnrichmentResponse parses the Perplexity response into EnrichedCompanyData
+func (s *Service) parseEnrichmentResponse(content string) (*EnrichedCompanyData, error) {
+	// Clean and extract JSON
+	cleanJSON := strings.TrimSpace(content)
 
-	for key, srcVal := range src {
-		if destVal, exists := dest[key]; exists {
-			// If both are maps, merge recursively
-			if destMap, destIsMap := destVal.(map[string]interface{}); destIsMap {
-				if srcMap, srcIsMap := srcVal.(map[string]interface{}); srcIsMap {
-					dest[key] = deepMerge(destMap, srcMap)
-					continue
-				}
-			}
+	// Find JSON boundaries (handles conversational text before/after JSON)
+	startObj := strings.Index(cleanJSON, "{")
+	startArr := strings.Index(cleanJSON, "[")
+	endObj := strings.LastIndex(cleanJSON, "}")
+	endArr := strings.LastIndex(cleanJSON, "]")
+
+	// Determine which structure we have (object vs array)
+	start := -1
+	end := -1
+	if startObj != -1 && endObj != -1 {
+		if startArr == -1 || startObj < startArr {
+			start, end = startObj, endObj
 		}
-		// Otherwise, replace with source value
-		dest[key] = srcVal
+	}
+	if startArr != -1 && endArr != -1 {
+		if start == -1 || startArr < start {
+			start, end = startArr, endArr
+		}
 	}
 
-	return dest
-}
-
-// MarkAsFailed updates enrichment with error message and sets status to "failed"
-// Called by worker ErrorHandler after Asynq exhausts max retries
-func (s *Service) MarkAsFailed(ctx context.Context, submissionID uuid.UUID, errorMsg string) error {
-	enrichment, err := s.repo.GetBySubmissionID(ctx, submissionID)
-	if err != nil {
-		return fmt.Errorf("failed to get enrichment: %w", err)
+	if start != -1 && end != -1 && end > start {
+		cleanJSON = cleanJSON[start : end+1]
 	}
 
-	// Fail() already sets ErrorMessage, but we set it explicitly for clarity
-	enrichment.Fail(fmt.Errorf(errorMsg))
-
-	if err := s.repo.UpdateSystem(ctx, enrichment); err != nil {
-		return fmt.Errorf("failed to update enrichment error message: %w", err)
+	var result EnrichedCompanyData
+	if err := json.Unmarshal([]byte(cleanJSON), &result); err != nil {
+		return nil, fmt.Errorf("failed to parse JSON: %w (content: %s)", err, cleanJSON)
 	}
 
-	return nil
-}
-
-// CopyEnrichment creates a new enrichment by copying data from an existing one
-// Sets status to "completed" since data is already validated (used for re-analyze workflow)
-// Returns the new enrichment ID
-func (s *Service) CopyEnrichment(ctx context.Context, sourceEnrichmentID, newSubmissionID uuid.UUID) (*Enrichment, error) {
-	// Get source enrichment
-	source, err := s.repo.GetByID(ctx, sourceEnrichmentID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get source enrichment: %w", err)
+	// Validate confidence score
+	if result.ConfidenceScore < 0 || result.ConfidenceScore > 100 {
+		result.ConfidenceScore = 50 // Default to medium confidence
 	}
 
-	// Validate source is completed
-	if source.Status != StatusCompleted {
-		return nil, fmt.Errorf("source enrichment must be completed, current status: %s", source.Status)
-	}
-
-	// Create new enrichment with copied data
-	now := time.Now()
-	newEnrichment := &Enrichment{
-		ID:                  uuid.New(),
-		SubmissionID:        newSubmissionID,
-		CompanyID:           source.CompanyID, // Preserve company link
-		Status:              StatusCompleted,  // Completed status (no more approved)
-		Progress:            100,
-		CurrentStep:         NullableString("Copied from previous enrichment"),
-		IsLocked:            false,
-		SourcesStatus:       source.SourcesStatus,
-		SourcesUsed:         source.SourcesUsed,
-		EnrichedData:        source.EnrichedData, // Copy the enriched data
-		StartedAt:           &now,
-		CompletedAt:         &now,
-		RetryCount:          0,
-		MaxRetries:          3,
-		AutoTriggerAnalysis: false,
-		CreatedAt:           now,
-		UpdatedAt:           now,
-	}
-
-	if err := s.repo.Create(ctx, newEnrichment); err != nil {
-		return nil, fmt.Errorf("failed to create copied enrichment: %w", err)
-	}
-
-	log.Info().
-		Str("source_enrichment_id", sourceEnrichmentID.String()).
-		Str("new_enrichment_id", newEnrichment.ID.String()).
-		Str("new_submission_id", newSubmissionID.String()).
-		Msg("Enrichment data copied successfully")
-
-	return newEnrichment, nil
-}
-
-// CreateWithAutoAnalyze creates a new enrichment with auto_trigger_analysis flag set
-// Used for "enrich and analyze" workflow
-func (s *Service) CreateWithAutoAnalyze(ctx context.Context, submissionID uuid.UUID) (*Enrichment, error) {
-	e := NewEnrichment(submissionID)
-	e.AutoTriggerAnalysis = true
-
-	if err := s.repo.Create(ctx, e); err != nil {
-		return nil, fmt.Errorf("failed to create enrichment with auto-analyze: %w", err)
-	}
-
-	log.Info().
-		Str("enrichment_id", e.ID.String()).
-		Str("submission_id", submissionID.String()).
-		Bool("auto_trigger_analysis", true).
-		Msg("Enrichment created with auto-analyze flag")
-
-	return e, nil
+	return &result, nil
 }

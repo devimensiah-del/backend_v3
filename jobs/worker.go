@@ -11,7 +11,6 @@ import (
 	"backend_v3/domain/analysis"
 	"backend_v3/domain/enrichment"
 	"backend_v3/domain/macroeconomics"
-	"backend_v3/domain/report"
 	"backend_v3/domain/submission"
 	jobtypes "backend_v3/jobs/types"
 
@@ -22,18 +21,10 @@ import (
 )
 
 // Job Payload Types
-type EnrichmentJobPayload struct {
-	SubmissionID string `json:"submission_id"`
-}
-
 type AnalysisJobPayload struct {
 	SubmissionID string `json:"submission_id"`
-	EnrichmentID string `json:"enrichment_id"`
-}
-
-type ReportJobPayload struct {
-	SubmissionID string `json:"submission_id"`
-	AnalysisID   string `json:"analysis_id"`
+	CompanyID    string `json:"company_id"`
+	ChallengeID  string `json:"challenge_id"` // REQUIRED: Links analysis to specific challenge
 }
 
 // MacroFetchPayload is the payload for macro indicator fetch jobs
@@ -45,9 +36,8 @@ type Worker struct {
 	server            *asynq.Server
 	mux               *asynq.ServeMux
 	submissionService *submission.Service
-	enrichmentService *enrichment.Service
+	enrichmentService *enrichment.Service // For reading enrichment data in analysis jobs
 	analysisService   *analysis.Service
-	reportService     *report.Service
 	macroService      *macroeconomics.Service // Optional: can be nil
 	logger            zerolog.Logger
 	redisOpt          asynq.RedisClientOpt
@@ -59,9 +49,8 @@ type Worker struct {
 func NewWorker(
 	cfg *config.Config,
 	submissionSvc *submission.Service,
-	enrichmentSvc *enrichment.Service,
+	enrichmentSvc *enrichment.Service, // DEPRECATED: Will be removed after cleanup
 	analysisSvc *analysis.Service,
-	reportSvc *report.Service,
 	logger zerolog.Logger,
 ) *Worker {
 	redisOpt := asynq.RedisClientOpt{
@@ -79,7 +68,6 @@ func NewWorker(
 		submissionService: submissionSvc,
 		enrichmentService: enrichmentSvc,
 		analysisService:   analysisSvc,
-		reportService:     reportSvc,
 		logger:            logger.With().Str("component", "worker").Logger(),
 		redisOpt:          redisOpt,
 		asynqClient:       asynq.NewClient(redisOpt),
@@ -125,9 +113,7 @@ func NewWorker(
 	w.mux = asynq.NewServeMux()
 
 	// Register handlers with retry configuration
-	w.mux.HandleFunc(jobtypes.TypeEnrichment, w.HandleEnrichmentJob)
 	w.mux.HandleFunc(jobtypes.TypeAnalysis, w.HandleAnalysisJob)
-	w.mux.HandleFunc(jobtypes.TypeReport, w.HandleReportJob)
 
 	// Macro handlers (service injected later via SetMacroService)
 	w.mux.HandleFunc(jobtypes.TypeMacroFetch, w.HandleMacroFetchJob)
@@ -177,112 +163,6 @@ func (w *Worker) Health() error {
 
 // --- Job Handlers ---
 
-func (w *Worker) HandleEnrichmentJob(ctx context.Context, task *asynq.Task) error {
-	startTime := time.Now()
-
-	// Get task metadata for logging
-	taskID := task.ResultWriter().TaskID()
-	retryCount, _ := asynq.GetRetryCount(ctx)
-	maxRetry, _ := asynq.GetMaxRetry(ctx)
-
-	// Add timeout to context
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(w.cfg.EnrichmentTimeout)*time.Second)
-	defer cancel()
-
-	// Structured logger with correlation ID
-	jobLogger := w.logger.With().
-		Str("job_type", jobtypes.TypeEnrichment).
-		Str("task_id", taskID).
-		Str("correlation_id", taskID).
-		Int("retry_count", retryCount).
-		Int("max_retries", maxRetry).
-		Logger()
-
-	// 1. Parse payload
-	// SAFETY: Wrap unmarshal errors with SkipRetry - malformed payloads can NEVER succeed
-	var payload EnrichmentJobPayload
-	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
-		jobLogger.Error().Err(err).Msg("Failed to unmarshal enrichment job payload - skipping retry (poison pill)")
-		return fmt.Errorf("%w: invalid payload format: %v", asynq.SkipRetry, err)
-	}
-
-	// 2. Validate UUID (fix panic risk)
-	submissionID, err := uuid.Parse(payload.SubmissionID)
-	if err != nil {
-		jobLogger.Error().
-			Err(err).
-			Str("sub_id", payload.SubmissionID).
-			Msg("Invalid UUID format in payload")
-		// Don't retry - this is a permanent error
-		return asynq.SkipRetry
-	}
-
-	jobLogger.Info().
-		Str("sub_id", submissionID.String()).
-		Msg("Enrichment job started")
-
-	// 3. Run enrichment agent
-	// Update progress: Started
-	if err := w.enrichmentService.UpdateProgress(ctx, submissionID, 10, "Scanning digital footprint (Transient)..."); err != nil {
-		jobLogger.Warn().Err(err).Msg("Failed to update progress")
-	}
-
-	enrichmentData, err := w.enrichmentService.EnrichSubmission(ctx, submissionID)
-	if err != nil {
-		jobLogger.Error().
-			Err(err).
-			Str("sub_id", submissionID.String()).
-			Dur("duration", time.Since(startTime)).
-			Msg("Enrichment job failed")
-
-		// Check if error is retryable
-		if isRetryableError(err) {
-			return fmt.Errorf("retryable error: %w", err)
-		}
-
-		// Permanent failure - skip retry
-		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
-	}
-
-	// Update progress: Completed
-	if err := w.enrichmentService.UpdateProgress(ctx, submissionID, 100, "Enrichment completed"); err != nil {
-		jobLogger.Warn().Err(err).Msg("Failed to update progress")
-	}
-
-	// 4. Check if auto_trigger_analysis is enabled (for "enrich and analyze" workflow)
-	if enrichmentData != nil && enrichmentData.AutoTriggerAnalysis {
-		jobLogger.Info().
-			Str("enrichment_id", enrichmentData.ID.String()).
-			Msg("Auto-triggering analysis job (auto_trigger_analysis=true)")
-
-		analysisPayload := AnalysisJobPayload{
-			SubmissionID: submissionID.String(),
-			EnrichmentID: enrichmentData.ID.String(),
-		}
-		payloadBytes, _ := json.Marshal(analysisPayload)
-		analysisTask := asynq.NewTask(jobtypes.TypeAnalysis, payloadBytes)
-
-		if _, err := w.asynqClient.Enqueue(analysisTask, asynq.MaxRetry(3)); err != nil {
-			jobLogger.Error().Err(err).Msg("Failed to enqueue auto-triggered analysis job")
-			// Don't fail the enrichment job - analysis can be manually triggered later
-		} else {
-			jobLogger.Info().
-				Str("enrichment_id", enrichmentData.ID.String()).
-				Msg("Analysis job auto-triggered successfully")
-		}
-	}
-
-	// 5. Success
-	jobLogger.Info().
-		Str("sub_id", submissionID.String()).
-		Str("enrichment_id", enrichmentData.ID.String()).
-		Dur("duration", time.Since(startTime)).
-		Int64("duration_ms", time.Since(startTime).Milliseconds()).
-		Msg("Enrichment job completed successfully")
-
-	return nil
-}
-
 func (w *Worker) HandleAnalysisJob(ctx context.Context, task *asynq.Task) error {
 	startTime := time.Now()
 
@@ -319,32 +199,43 @@ func (w *Worker) HandleAnalysisJob(ctx context.Context, task *asynq.Task) error 
 	}
 
 	// 2. Validate UUIDs
-	enrichmentID, err := uuid.Parse(payload.EnrichmentID)
+	_, err := uuid.Parse(payload.SubmissionID)
 	if err != nil {
 		jobLogger.Error().
 			Err(err).
-			Str("enrichment_id", payload.EnrichmentID).
-			Msg("Invalid enrichment UUID format")
+			Str("submission_id", payload.SubmissionID).
+			Msg("Invalid submission UUID format")
+		return asynq.SkipRetry
+	}
+
+	_, err = uuid.Parse(payload.CompanyID)
+	if err != nil {
+		jobLogger.Error().
+			Err(err).
+			Str("company_id", payload.CompanyID).
+			Msg("Invalid company UUID format")
+		return asynq.SkipRetry
+	}
+
+	// Validate challenge_id (REQUIRED for data integrity)
+	challengeUUID, err := uuid.Parse(payload.ChallengeID)
+	if err != nil {
+		jobLogger.Error().
+			Err(err).
+			Str("challenge_id", payload.ChallengeID).
+			Msg("Invalid challenge UUID format - challenge_id is REQUIRED")
 		return asynq.SkipRetry
 	}
 
 	jobLogger.Info().
 		Str("sub_id", payload.SubmissionID).
-		Str("enrichment_id", enrichmentID.String()).
+		Str("company_id", payload.CompanyID).
+		Str("challenge_id", payload.ChallengeID).
 		Msg("Analysis job started")
 
-	// 3. Get enrichment data
-	enrichmentRecord, err := w.enrichmentService.GetByID(ctx, enrichmentID)
-	if err != nil {
-		jobLogger.Error().
-			Err(err).
-			Str("enrichment_id", enrichmentID.String()).
-			Msg("Failed to get enrichment data")
-		return fmt.Errorf("failed to get enrichment: %w", err)
-	}
-
-	// 4. Run strategic cascade analysis
-	_, err = w.analysisService.RunAnalysis(ctx, payload.SubmissionID, payload.EnrichmentID, enrichmentRecord.EnrichedData)
+	// 3. Run strategic cascade analysis
+	// Note: Company data and submission data are fetched internally by analysisService
+	_, err = w.analysisService.RunAnalysis(ctx, payload.SubmissionID, payload.CompanyID, challengeUUID)
 	if err != nil {
 		jobLogger.Error().
 			Err(err).
@@ -367,70 +258,6 @@ func (w *Worker) HandleAnalysisJob(ctx context.Context, task *asynq.Task) error 
 		Dur("duration", time.Since(startTime)).
 		Int64("duration_ms", time.Since(startTime).Milliseconds()).
 		Msg("Analysis job completed successfully")
-
-	return nil
-}
-
-func (w *Worker) HandleReportJob(ctx context.Context, task *asynq.Task) error {
-	startTime := time.Now()
-
-	taskID := task.ResultWriter().TaskID()
-	retryCount, _ := asynq.GetRetryCount(ctx)
-	maxRetry, _ := asynq.GetMaxRetry(ctx)
-
-	jobLogger := w.logger.With().
-		Str("job_type", jobtypes.TypeReport).
-		Str("task_id", taskID).
-		Int("retry_count", retryCount).
-		Int("max_retries", maxRetry).
-		Logger()
-
-	// SAFETY: Wrap unmarshal errors with SkipRetry - malformed payloads can NEVER succeed
-	var payload ReportJobPayload
-	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
-		jobLogger.Error().Err(err).Msg("Failed to unmarshal report job payload - skipping retry (poison pill)")
-		return fmt.Errorf("%w: invalid payload format: %v", asynq.SkipRetry, err)
-	}
-
-	// Validate submission UUID (analysisID is string UUID but Publish expects string)
-	if _, err := uuid.Parse(payload.SubmissionID); err != nil {
-		jobLogger.Error().Err(err).Str("submission_id", payload.SubmissionID).Msg("Invalid submission UUID format")
-		return asynq.SkipRetry
-	}
-	if _, err := uuid.Parse(payload.AnalysisID); err != nil {
-		jobLogger.Error().Err(err).Str("analysis_id", payload.AnalysisID).Msg("Invalid analysis UUID format")
-		return asynq.SkipRetry
-	}
-
-	jobLogger.Info().
-		Str("sub_id", payload.SubmissionID).
-		Str("analysis_id", payload.AnalysisID).
-		Msg("Report generation job started")
-
-	if w.reportService == nil {
-		err := fmt.Errorf("report service not configured")
-		jobLogger.Error().Err(err).Msg("Cannot generate report")
-		return err
-	}
-
-	if _, err := w.reportService.Publish(ctx, payload.SubmissionID, payload.AnalysisID); err != nil {
-		jobLogger.Error().
-			Err(err).
-			Str("sub_id", payload.SubmissionID).
-			Dur("duration", time.Since(startTime)).
-			Msg("Report generation failed")
-
-		if isRetryableError(err) {
-			return fmt.Errorf("retryable error: %w", err)
-		}
-		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
-	}
-
-	jobLogger.Info().
-		Str("sub_id", payload.SubmissionID).
-		Dur("duration", time.Since(startTime)).
-		Int64("duration_ms", time.Since(startTime).Milliseconds()).
-		Msg("Report generation completed successfully")
 
 	return nil
 }
@@ -464,30 +291,6 @@ func (w *Worker) markJobAsFailed(ctx context.Context, task *asynq.Task, err erro
 	errorMsg := err.Error()
 
 	switch task.Type() {
-	case jobtypes.TypeEnrichment:
-		var payload EnrichmentJobPayload
-		if unmarshalErr := json.Unmarshal(task.Payload(), &payload); unmarshalErr != nil {
-			w.logger.Error().Err(unmarshalErr).Msg("Failed to unmarshal payload for marking failed")
-			return
-		}
-
-		submissionID, parseErr := uuid.Parse(payload.SubmissionID)
-		if parseErr != nil {
-			w.logger.Error().Err(parseErr).Msg("Failed to parse submission ID")
-			return
-		}
-
-		if err := w.enrichmentService.MarkAsFailed(ctx, submissionID, errorMsg); err != nil {
-			w.logger.Error().
-				Err(err).
-				Str("sub_id", submissionID.String()).
-				Msg("Failed to mark enrichment as failed in database")
-		} else {
-			w.logger.Info().
-				Str("sub_id", submissionID.String()).
-				Msg("Enrichment marked as failed in database")
-		}
-
 	case jobtypes.TypeAnalysis:
 		var payload AnalysisJobPayload
 		if unmarshalErr := json.Unmarshal(task.Payload(), &payload); unmarshalErr != nil {
@@ -604,8 +407,6 @@ func (w *Worker) enqueueJob(typeName string, payload interface{}) error {
 	// Generate task ID for deduplication
 	var taskID string
 	switch p := payload.(type) {
-	case EnrichmentJobPayload:
-		taskID = fmt.Sprintf("enrichment:%s", p.SubmissionID)
 	case AnalysisJobPayload:
 		taskID = fmt.Sprintf("analysis:%s", p.SubmissionID)
 	default:
@@ -617,10 +418,7 @@ func (w *Worker) enqueueJob(typeName string, payload interface{}) error {
 	opts = append(opts, asynq.TaskID(taskID))
 	opts = append(opts, asynq.Retention(24*time.Hour))
 
-	if typeName == jobtypes.TypeEnrichment {
-		opts = append(opts, asynq.MaxRetry(w.cfg.EnrichmentMaxRetries))
-		opts = append(opts, asynq.Timeout(time.Duration(w.cfg.EnrichmentTimeout)*time.Second))
-	} else if typeName == jobtypes.TypeAnalysis {
+	if typeName == jobtypes.TypeAnalysis {
 		opts = append(opts, asynq.MaxRetry(w.cfg.AnalysisMaxRetries))
 		opts = append(opts, asynq.Timeout(time.Duration(w.cfg.AnalysisTimeout)*time.Second))
 	}
@@ -640,15 +438,6 @@ func (w *Worker) enqueueJob(typeName string, payload interface{}) error {
 }
 
 // Task Creation Helpers
-
-// NewEnrichmentTask creates a new enrichment task
-func NewEnrichmentTask(payload EnrichmentJobPayload) (*asynq.Task, error) {
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
-	return asynq.NewTask(jobtypes.TypeEnrichment, data), nil
-}
 
 // NewAnalysisTask creates a new analysis task
 func NewAnalysisTask(payload AnalysisJobPayload) (*asynq.Task, error) {
@@ -678,8 +467,8 @@ func (w *Worker) HandleMacroFetchJob(ctx context.Context, task *asynq.Task) erro
 
 	// Check if macro service is available
 	if w.macroService == nil {
-		jobLogger.Error().Msg("Macro service not configured - skipping job")
-		return fmt.Errorf("%w: macro service not configured", asynq.SkipRetry)
+		jobLogger.Warn().Msg("Macro service not yet configured - will retry")
+		return fmt.Errorf("macro service not yet configured")
 	}
 
 	// Parse payload
@@ -741,8 +530,8 @@ func (w *Worker) HandleMacroRefreshAllJob(ctx context.Context, task *asynq.Task)
 
 	// Check if macro service is available
 	if w.macroService == nil {
-		jobLogger.Error().Msg("Macro service not configured - skipping job")
-		return fmt.Errorf("%w: macro service not configured", asynq.SkipRetry)
+		jobLogger.Warn().Msg("Macro service not yet configured - will retry")
+		return fmt.Errorf("macro service not yet configured")
 	}
 
 	jobLogger.Info().Msg("Macro refresh-all job started")
