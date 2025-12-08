@@ -39,15 +39,16 @@ type CompanyInput struct {
 	Location *string
 }
 
-// EnrichCompany calls the enrichment model with web search to fill company fields
-// Uses Gemini 3 Pro with :online suffix for Exa-powered web search
+// EnrichCompany calls Gemini 3 Pro to fill company fields
+// Uses best reasoning model with comprehensive training data
+// Falls back to Perplexity (with native web search) if Gemini fails
 // Returns enriched data - caller is responsible for saving to company table
 func (s *Service) EnrichCompany(ctx context.Context, company *CompanyInput) (*EnrichedCompanyData, error) {
 	log.Info().
 		Str("company_id", company.ID.String()).
 		Str("company_name", company.Name).
 		Str("model", s.preSearchCfg.Model).
-		Msg("Starting company enrichment with web search")
+		Msg("Starting company enrichment")
 
 	// 1. Identify missing fields
 	missingFields := s.identifyMissingFields(company)
@@ -58,7 +59,7 @@ func (s *Service) EnrichCompany(ctx context.Context, company *CompanyInput) (*En
 	// 2. Build enrichment prompt
 	prompt := s.buildEnrichmentPrompt(company, missingFields)
 
-	// 3. Call enrichment model (Gemini with web search)
+	// 3. Call enrichment model (Gemini 3 Pro)
 	req := llm.Request{
 		Model: s.preSearchCfg.Model,
 		SystemPrompt: `Você é um analista de inteligência de mercado especializado em pesquisa corporativa.
@@ -66,9 +67,9 @@ func (s *Service) EnrichCompany(ctx context.Context, company *CompanyInput) (*En
 REGRAS ABSOLUTAS:
 1. Retorne APENAS JSON válido, sem texto antes ou depois
 2. SEMPRE preencha competitors, strengths, weaknesses com dados reais (NUNCA arrays vazios)
-3. Use a busca web para encontrar informações atualizadas
+3. Use seu conhecimento para fornecer informações precisas e atualizadas
 4. Se não encontrar dados específicos da empresa, use dados do SETOR como proxy
-5. Inclua URLs das fontes consultadas`,
+5. Liste fontes conhecidas no campo "sources" (sites oficiais, portais de notícias, etc.)`,
 		Messages:    []llm.Message{{Role: "user", Content: prompt}},
 		Temperature: 0.3, // Low temperature for consistent results
 		MaxTokens:   4000, // Increased for comprehensive output
