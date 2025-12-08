@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -52,7 +53,10 @@ func NewClientWithBaseURL(apiKey, baseURL string) *Client {
 		apiKey:  apiKey,
 		baseURL: baseURL,
 		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
+			// 5 minutes timeout to handle long LLM response streaming
+			// Some frameworks (OKRs, Synthesis) generate 3000-5000 tokens
+			// which can take 90-120+ seconds to stream from the API
+			Timeout: 300 * time.Second,
 		},
 		circuitBreaker: gobreaker.NewCircuitBreaker(cbSettings),
 	}
@@ -134,6 +138,9 @@ func (c *Client) GenerateStructuredWithOptions(ctx context.Context, opts Generat
 	if start != -1 && end != -1 && end > start {
 		cleanJson = cleanJson[start : end+1]
 	}
+
+	// 4.5. Repair common JSON issues from LLM responses
+	cleanJson = repairJSON(cleanJson)
 
 	// 5. Unmarshal into Target
 	if err := json.Unmarshal([]byte(cleanJson), targetSchema); err != nil {
@@ -317,6 +324,28 @@ func (c *Client) makeRequest(ctx context.Context, req *Request) (*Response, erro
 		req.Model, resp.InputTokens, resp.OutputTokens, resp.Tokens, resp.CostUSD, resp.LatencyMS)
 
 	return resp, nil
+}
+
+// repairJSON fixes common JSON issues in LLM responses:
+// - Trailing commas before } or ]
+// - Invisible/control characters
+// - Extra whitespace
+func repairJSON(input string) string {
+	// Remove any BOM or invisible characters
+	input = strings.Map(func(r rune) rune {
+		// Keep valid JSON characters and printable ASCII/Unicode
+		if r == '\t' || r == '\n' || r == '\r' || (r >= 32 && r != 127) {
+			return r
+		}
+		return -1 // Remove invalid characters
+	}, input)
+
+	// Remove trailing commas before ] or }
+	// Pattern: ,\s*] → ] and ,\s*} → }
+	result := regexp.MustCompile(`,\s*\]`).ReplaceAllString(input, "]")
+	result = regexp.MustCompile(`,\s*\}`).ReplaceAllString(result, "}")
+
+	return result
 }
 
 func (c *Client) buildRequestBody(req *Request) map[string]interface{} {
