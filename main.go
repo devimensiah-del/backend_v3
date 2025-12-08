@@ -146,14 +146,14 @@ func main() {
 	log.Info().Msg("Submission service initialized (with company + challenge creation)")
 
 	// Enrichment (Two-Stage Process)
-	// Stage 1: Perplexity sonar-pro for web search
-	// Stage 2: Claude Opus 4.5 :online for reasoning + validation
+	// Stage 1: Perplexity sonar-pro for web search (real-time data)
+	// Stage 2: Claude Sonnet 4.5 for reasoning + synthesis (no :online needed)
 	// Models are hardcoded in enrichment package (not configurable via env)
 	enrichSvc := enrichment.NewService(llmClient)
 	log.Info().
 		Str("stage1_model", enrichment.ModelStage1Search).
 		Str("stage2_model", enrichment.ModelStage2Synthesis).
-		Msg("Enrichment service initialized (two-stage: Perplexity → Opus 4.5)")
+		Msg("Enrichment service initialized (two-stage: Perplexity → Sonnet 4.5)")
 
 	// Inject enrichment service into company service
 	companySvc.SetEnrichmentService(enrichSvc)

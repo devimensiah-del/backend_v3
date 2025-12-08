@@ -13,21 +13,24 @@ import (
 )
 
 // Hardcoded models for enrichment pipeline (via OpenRouter)
+// Validated via SELIC test: Only Perplexity has real web search
+// Claude :online suffix returns empty responses (Dec 2024)
 const (
-	// Stage 1: Perplexity for web search and raw data gathering
-	// Native web search finds competitors, news, facts
+	// Stage 1: Perplexity for web search (ONLY model with real-time data)
+	// SELIC test confirmed: Returns current 15% rate
 	ModelStage1Search   = "perplexity/sonar-pro"
 	ModelStage1Fallback = "perplexity/sonar"
 
-	// Stage 2: Claude Sonnet 4.5 for reasoning and validation
-	// Note: :online suffix doesn't work with Opus 4.5, use Sonnet instead
+	// Stage 2: Claude Sonnet 4.5 for reasoning and synthesis
+	// NO :online suffix - use Perplexity for web data, Sonnet for reasoning
+	// Cost: ~$0.01 per call vs $0.16 for :online
 	ModelStage2Synthesis = "anthropic/claude-sonnet-4.5"
 	ModelStage2Fallback  = "anthropic/claude-sonnet-4"
 )
 
 // Service handles stateless enrichment operations using a two-stage approach:
-// Stage 1: Perplexity for web search and raw data gathering
-// Stage 2: Claude Opus 4.5 for strategic reasoning and validation
+// Stage 1: Perplexity sonar-pro for web search and raw data gathering
+// Stage 2: Claude Sonnet 4.5 for strategic reasoning and synthesis
 // The caller is responsible for persisting the enriched data
 type Service struct {
 	llmClient *llm.Client
@@ -102,35 +105,22 @@ INSTRUÇÕES:
 	synthesisPrompt := s.buildSynthesisPrompt(company, rawData)
 	synthesisReq := llm.Request{
 		Model: ModelStage2Synthesis,
-		SystemPrompt: `Você é um analista estratégico sênior com pensamento crítico rigoroso.
+		SystemPrompt: `Você é um analista de dados. Sua ÚNICA tarefa é extrair dados da pesquisa e retornar JSON PLANO.
 
-## SUA TAREFA
-Analisar dados brutos de pesquisa e produzir análise estratégica estruturada.
+REGRAS ABSOLUTAS:
+1. Retorne APENAS JSON válido, SEM texto antes ou depois
+2. JSON deve ser PLANO (sem objetos aninhados)
+3. Arrays devem conter APENAS strings, NUNCA objetos
+4. SEMPRE preencha: competitors, strengths, weaknesses (mínimo 3 itens cada)
+5. Se dado não existir, use "N/A" ou infira do setor
 
-## REGRAS DE VALIDAÇÃO DE DADOS
-
-Para CADA campo, aplique este raciocínio:
-
-### Dados que mudam frequentemente (notícias, funcionários, receita, funding):
-- SÓ inclua se tiver CERTEZA que é a informação mais atual
-- Se a fonte for de >6 meses atrás, marque como "dados de [data]" ou omita
-- Prefira não incluir a incluir dado desatualizado
-
-### Dados estáveis (CNPJ, fundação, sede, setor, fundadores):
-- Inclua se for verdadeiro e verificável
-- Estes raramente mudam, então fontes antigas são aceitáveis
-
-### Análises estratégicas (forças, fraquezas, concorrentes):
-- Baseie-se nos dados da pesquisa
-- Se não houver dados suficientes, infira do setor com ressalva
-- NUNCA invente - prefira "informação não disponível"
-
-## FORMATO
-Retorne APENAS JSON válido, sem texto antes ou depois.
-SEMPRE preencha competitors, strengths, weaknesses (NUNCA arrays vazios).
-Se não encontrar dados específicos, use análise do setor.`,
+FORMATO DOS ARRAYS (OBRIGATÓRIO):
+- ✅ CORRETO: "competitors": ["Empresa A", "Empresa B"]
+- ❌ ERRADO: "competitors": [{"nome": "Empresa A"}]
+- ✅ CORRETO: "recent_news": ["Jan/2024: Notícia X", "Fev/2024: Notícia Y"]
+- ❌ ERRADO: "recent_news": [{"data": "Jan/2024", "titulo": "Notícia X"}]`,
 		Messages:    []llm.Message{{Role: "user", Content: synthesisPrompt}},
-		Temperature: 0.3,
+		Temperature: 0.2, // Lower for more consistent JSON
 		MaxTokens:   4000,
 	}
 
@@ -289,9 +279,22 @@ Retorne APENAS o JSON abaixo, preenchido com dados reais:
 }
 
 // parseEnrichmentResponse parses the LLM response into EnrichedCompanyData
+// Handles flexible JSON structures where models may return objects instead of strings
 func (s *Service) parseEnrichmentResponse(content string) (*EnrichedCompanyData, error) {
 	// Clean and extract JSON
 	cleanJSON := strings.TrimSpace(content)
+
+	// Remove markdown code blocks if present
+	if strings.HasPrefix(cleanJSON, "```json") {
+		cleanJSON = strings.TrimPrefix(cleanJSON, "```json")
+	}
+	if strings.HasPrefix(cleanJSON, "```") {
+		cleanJSON = strings.TrimPrefix(cleanJSON, "```")
+	}
+	if strings.HasSuffix(cleanJSON, "```") {
+		cleanJSON = strings.TrimSuffix(cleanJSON, "```")
+	}
+	cleanJSON = strings.TrimSpace(cleanJSON)
 
 	// Find JSON boundaries (handles conversational text before/after JSON)
 	startObj := strings.Index(cleanJSON, "{")
@@ -317,9 +320,15 @@ func (s *Service) parseEnrichmentResponse(content string) (*EnrichedCompanyData,
 		cleanJSON = cleanJSON[start : end+1]
 	}
 
+	// First try strict parsing
 	var result EnrichedCompanyData
 	if err := json.Unmarshal([]byte(cleanJSON), &result); err != nil {
-		return nil, fmt.Errorf("failed to parse JSON: %w (content: %s)", err, cleanJSON)
+		// Fallback: try flexible parsing with intermediate struct
+		result, flexErr := parseFlexibleJSON(cleanJSON)
+		if flexErr != nil {
+			return nil, fmt.Errorf("failed to parse JSON: %w (content: %.500s)", err, cleanJSON)
+		}
+		return result, nil
 	}
 
 	// Validate confidence score
@@ -328,4 +337,178 @@ func (s *Service) parseEnrichmentResponse(content string) (*EnrichedCompanyData,
 	}
 
 	return &result, nil
+}
+
+// parseFlexibleJSON handles JSON where arrays may contain objects instead of strings
+// Also handles nested structures where data might be under "empresa", "produtos", etc.
+func parseFlexibleJSON(jsonStr string) (*EnrichedCompanyData, error) {
+	// Parse into generic map first
+	var rawMap map[string]interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &rawMap); err != nil {
+		return nil, err
+	}
+
+	// Flatten nested structures (e.g., "empresa": {...} -> top level)
+	flatMap := flattenNestedStructure(rawMap)
+
+	// Convert back to JSON with normalized arrays
+	normalized := normalizeArrayFields(flatMap)
+
+	// Marshal and unmarshal into final struct
+	normalizedJSON, err := json.Marshal(normalized)
+	if err != nil {
+		return nil, err
+	}
+
+	var result EnrichedCompanyData
+	if err := json.Unmarshal(normalizedJSON, &result); err != nil {
+		return nil, err
+	}
+
+	// Validate confidence score
+	if result.ConfidenceScore < 0 || result.ConfidenceScore > 100 {
+		result.ConfidenceScore = 50
+	}
+
+	return &result, nil
+}
+
+// flattenNestedStructure extracts data from nested objects like "empresa", "sede"
+func flattenNestedStructure(m map[string]interface{}) map[string]interface{} {
+	result := make(map[string]interface{})
+
+	// Field mappings from Portuguese nested keys to our flat structure
+	fieldMappings := map[string]string{
+		"nome":             "legal_name",
+		"razao_social":     "legal_name",
+		"ano_fundacao":     "foundation_year",
+		"fundacao":         "foundation_year",
+		"numero_funcionarios": "employees_range",
+		"funcionarios":     "employees_range",
+		"cidade":           "location",
+		"sede":             "headquarters",
+		"setor":            "industry",
+		"descricao":        "business_model",
+		"modelo_negocio":   "business_model",
+		"produtos":         "main_products",
+		"produtos_servicos": "main_products",
+		"noticias":         "recent_news",
+		"noticias_recentes": "recent_news",
+		"noticias_2024":    "recent_news",
+		"executivos":       "key_executives",
+		"executivos_chave": "key_executives",
+		"concorrentes":     "competitors",
+		"forcas":           "strengths",
+		"fraquezas":        "weaknesses",
+		"oportunidades":    "opportunities",
+		"ameacas":          "threats",
+		"fontes":           "sources",
+	}
+
+	// Process each key
+	for key, value := range m {
+		// Check if it's a nested object we should flatten
+		if nested, ok := value.(map[string]interface{}); ok {
+			// Special handling for known nested containers
+			if key == "empresa" || key == "company" || key == "dados" || key == "data" {
+				// Merge nested fields into result
+				for nestedKey, nestedValue := range nested {
+					targetKey := nestedKey
+					if mapped, ok := fieldMappings[nestedKey]; ok {
+						targetKey = mapped
+					}
+					// Handle nested sede object
+					if nestedKey == "sede" {
+						if sedeObj, ok := nestedValue.(map[string]interface{}); ok {
+							if cidade, ok := sedeObj["cidade"].(string); ok {
+								if estado, ok := sedeObj["estado"].(string); ok {
+									result["headquarters"] = fmt.Sprintf("%s, %s", cidade, estado)
+								} else {
+									result["headquarters"] = cidade
+								}
+							}
+							continue
+						}
+					}
+					result[targetKey] = nestedValue
+				}
+				continue
+			}
+		}
+
+		// Map Portuguese field names to English
+		targetKey := key
+		if mapped, ok := fieldMappings[key]; ok {
+			targetKey = mapped
+		}
+		result[targetKey] = value
+	}
+
+	return result
+}
+
+// normalizeArrayFields converts object arrays to string arrays
+func normalizeArrayFields(m map[string]interface{}) map[string]interface{} {
+	arrayFields := []string{
+		"main_products", "service_areas", "tech_stack", "certifications",
+		"key_partnerships", "recent_news", "key_executives", "customer_segments",
+		"unique_selling_points", "competitors", "competitor_details",
+		"strengths", "weaknesses", "opportunities", "threats",
+		"strategic_challenges", "industry_trends", "sources",
+	}
+
+	for _, field := range arrayFields {
+		if arr, ok := m[field].([]interface{}); ok {
+			stringArr := make([]string, 0, len(arr))
+			for _, item := range arr {
+				stringArr = append(stringArr, objectToString(item))
+			}
+			m[field] = stringArr
+		}
+	}
+
+	return m
+}
+
+// objectToString converts any value to a string representation
+func objectToString(v interface{}) string {
+	switch val := v.(type) {
+	case string:
+		return val
+	case map[string]interface{}:
+		// Try common field patterns for news/product objects
+		if title, ok := val["titulo"].(string); ok {
+			if date, ok := val["data"].(string); ok {
+				return fmt.Sprintf("%s: %s", date, title)
+			}
+			return title
+		}
+		if name, ok := val["nome"].(string); ok {
+			if desc, ok := val["descricao"].(string); ok {
+				return fmt.Sprintf("%s - %s", name, desc)
+			}
+			return name
+		}
+		if name, ok := val["name"].(string); ok {
+			if desc, ok := val["description"].(string); ok {
+				return fmt.Sprintf("%s - %s", name, desc)
+			}
+			return name
+		}
+		// Generic: join all string values
+		var parts []string
+		for _, v := range val {
+			if s, ok := v.(string); ok {
+				parts = append(parts, s)
+			}
+		}
+		if len(parts) > 0 {
+			return strings.Join(parts, " - ")
+		}
+		// Last resort: marshal to JSON
+		b, _ := json.Marshal(val)
+		return string(b)
+	default:
+		return fmt.Sprintf("%v", v)
+	}
 }
