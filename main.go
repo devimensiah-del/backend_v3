@@ -60,7 +60,9 @@ func main() {
 	log.Info().Msg("Connecting to PostgreSQL database...")
 	db, err := sqlx.Connect("postgres", cfg.DatabaseURL)
 	if err != nil {
-		log.Fatal().Err(err).Msg("FATAL: Failed to connect to PostgreSQL database")
+		// Print to stdout as well to ensure we see the error
+		fmt.Printf("DATABASE CONNECTION ERROR: %v\n", err)
+		log.Fatal().Err(err).Str("error_detail", err.Error()).Msg("FATAL: Failed to connect to PostgreSQL database")
 	}
 	defer db.Close()
 
