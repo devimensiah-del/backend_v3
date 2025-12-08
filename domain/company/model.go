@@ -45,6 +45,13 @@ type Company struct {
 	Strengths         StringSlice `json:"strengths,omitempty" db:"strengths"`
 	Weaknesses        StringSlice `json:"weaknesses,omitempty" db:"weaknesses"`
 
+	// Industry context (enrichment v2 - deeper market intelligence)
+	IndustryGrowthRate  *string     `json:"industry_growth_rate,omitempty" db:"industry_growth_rate"`
+	IndustryTrends      StringSlice `json:"industry_trends,omitempty" db:"industry_trends"`
+	RegulatoryContext   *string     `json:"regulatory_context,omitempty" db:"regulatory_context"`
+	MarketConcentration *string     `json:"market_concentration,omitempty" db:"market_concentration"`
+	EnrichmentSources   StringSlice `json:"enrichment_sources,omitempty" db:"enrichment_sources"`
+
 	// Social links
 	LinkedInURL   *string `json:"linkedin_url,omitempty" db:"linkedin_url"`
 	TwitterHandle *string `json:"twitter_handle,omitempty" db:"twitter_handle"`

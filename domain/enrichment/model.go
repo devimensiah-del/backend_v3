@@ -34,6 +34,12 @@ type EnrichedCompanyData struct {
 	Strengths   []string `json:"strengths,omitempty"`
 	Weaknesses  []string `json:"weaknesses,omitempty"`
 
+	// Industry context (enrichment v2)
+	IndustryGrowthRate  *string  `json:"industry_growth_rate,omitempty"`
+	IndustryTrends      []string `json:"industry_trends,omitempty"`
+	RegulatoryContext   *string  `json:"regulatory_context,omitempty"`
+	MarketConcentration *string  `json:"market_concentration,omitempty"`
+
 	// Social links
 	LinkedInURL   *string `json:"linkedin_url,omitempty"`
 	TwitterHandle *string `json:"twitter_handle,omitempty"`

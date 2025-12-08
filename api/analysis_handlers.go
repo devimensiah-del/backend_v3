@@ -287,6 +287,65 @@ func (h *AnalysisHandlers) TogglePublic(c *gin.Context) {
 	})
 }
 
+// UpdateVisibility handles PATCH /api/v1/admin/analysis/:id/visibility
+// Admin sets visibility and public status in one call
+func (h *AnalysisHandlers) UpdateVisibility(c *gin.Context) {
+	analysisID := c.Param("id")
+
+	// Parse request body - both fields are optional
+	var req struct {
+		IsVisibleToUser *bool `json:"is_visible_to_user"`
+		IsPublic        *bool `json:"is_public"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid request",
+			Message: "Expected JSON with is_visible_to_user and/or is_public fields",
+		})
+		return
+	}
+
+	// Update visibility if provided
+	if req.IsVisibleToUser != nil {
+		if err := h.AnalysisService.SetVisibility(c.Request.Context(), analysisID, *req.IsVisibleToUser); err != nil {
+			h.Logger.Error().Err(err).Str("analysis_id", analysisID).Msg("Failed to set visibility")
+			c.JSON(http.StatusBadRequest, ErrorResponse{
+				Error:   "Update failed",
+				Message: err.Error(),
+			})
+			return
+		}
+	}
+
+	// Update public status if provided
+	if req.IsPublic != nil {
+		if err := h.AnalysisService.SetPublicStatus(c.Request.Context(), analysisID, *req.IsPublic); err != nil {
+			h.Logger.Error().Err(err).Str("analysis_id", analysisID).Msg("Failed to set public status")
+			c.JSON(http.StatusBadRequest, ErrorResponse{
+				Error:   "Update failed",
+				Message: err.Error(),
+			})
+			return
+		}
+	}
+
+	// Fetch updated analysis to return current state
+	updatedAnalysis, err := h.AnalysisService.GetByID(c.Request.Context(), analysisID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Fetch failed",
+			Message: "Visibility updated but failed to fetch analysis",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":                 updatedAnalysis.ID,
+		"is_visible_to_user": updatedAnalysis.IsVisibleToUser,
+		"is_public":          updatedAnalysis.IsPublic,
+	})
+}
+
 // GenerateAccessCode handles POST /api/v1/admin/analysis/:id/access-code
 // Admin generates a unique access code for public sharing
 func (h *AnalysisHandlers) GenerateAccessCode(c *gin.Context) {

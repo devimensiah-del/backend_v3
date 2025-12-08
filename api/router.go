@@ -238,6 +238,7 @@ func SetupRouter(
 		adminAPI.GET("/analysis/:id", mainHandler.AnalysisHandlers.GetAnalysisAdmin)
 		adminAPI.PUT("/analysis/:id", mainHandler.AnalysisHandlers.UpdateAnalysis)
 		adminAPI.POST("/analysis/:id/visibility", mainHandler.AnalysisHandlers.ToggleVisibility)
+		adminAPI.PATCH("/analysis/:id/visibility", mainHandler.AnalysisHandlers.UpdateVisibility)
 		adminAPI.POST("/analysis/:id/public", mainHandler.AnalysisHandlers.TogglePublic)
 		adminAPI.POST("/analysis/:id/access-code", mainHandler.AnalysisHandlers.GenerateAccessCode)
 		adminAPI.POST("/analysis/:id/wizard/generate-all", wizardHandlers.GenerateAllSteps)
