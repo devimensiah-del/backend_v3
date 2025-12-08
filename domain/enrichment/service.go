@@ -99,20 +99,25 @@ INSTRUÇÕES:
 		Int("raw_data_length", len(rawData)).
 		Msg("Stage 1 complete: raw data gathered")
 
-	// ==================== STAGE 2: Claude Opus 4.5 Reasoning ====================
-	log.Debug().Msg("Stage 2: Claude Opus 4.5 reasoning and validation")
+	// ==================== STAGE 2: Claude Sonnet 4.5 Synthesis ====================
+	log.Debug().Msg("Stage 2: Claude Sonnet 4.5 data synthesis")
 
 	synthesisPrompt := s.buildSynthesisPrompt(company, rawData)
 	synthesisReq := llm.Request{
 		Model: ModelStage2Synthesis,
-		SystemPrompt: `Você é um analista de dados. Sua ÚNICA tarefa é extrair dados da pesquisa e retornar JSON PLANO.
+		SystemPrompt: `Você é um extrator de dados. Sua ÚNICA tarefa é extrair dados da pesquisa e retornar JSON.
 
-REGRAS ABSOLUTAS:
+REGRA CRÍTICA DE INTEGRIDADE:
+- Use APENAS dados do texto de pesquisa fornecido
+- NUNCA use seu conhecimento prévio para "corrigir" ou substituir valores
+- Se a pesquisa diz "SELIC = 15%", retorne 15%, mesmo que pareça diferente do que você "sabe"
+
+REGRAS DE FORMATO:
 1. Retorne APENAS JSON válido, SEM texto antes ou depois
 2. JSON deve ser PLANO (sem objetos aninhados)
 3. Arrays devem conter APENAS strings, NUNCA objetos
 4. SEMPRE preencha: competitors, strengths, weaknesses (mínimo 3 itens cada)
-5. Se dado não existir, use "N/A" ou infira do setor
+5. Se dado não existir na pesquisa, use "N/A" ou infira do setor
 
 FORMATO DOS ARRAYS (OBRIGATÓRIO):
 - ✅ CORRETO: "competitors": ["Empresa A", "Empresa B"]
@@ -120,7 +125,7 @@ FORMATO DOS ARRAYS (OBRIGATÓRIO):
 - ✅ CORRETO: "recent_news": ["Jan/2024: Notícia X", "Fev/2024: Notícia Y"]
 - ❌ ERRADO: "recent_news": [{"data": "Jan/2024", "titulo": "Notícia X"}]`,
 		Messages:    []llm.Message{{Role: "user", Content: synthesisPrompt}},
-		Temperature: 0.2, // Lower for more consistent JSON
+		Temperature: 0.1, // Very low for consistent JSON and data preservation
 		MaxTokens:   4000,
 	}
 

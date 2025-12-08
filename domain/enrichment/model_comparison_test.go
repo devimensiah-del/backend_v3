@@ -337,38 +337,13 @@ func buildSynthesisPromptForTest(company *CompanyInput, rawData string) string {
 }`, company.Name, rawData)
 }
 
+// parseEnrichmentJSON delegates to the service's flexible parser
 func parseEnrichmentJSON(content string) (*EnrichedCompanyData, error) {
-	clean := content
-	if start := indexOf(clean, "{"); start != -1 {
-		if end := lastIndexOf(clean, "}"); end != -1 && end > start {
-			clean = clean[start : end+1]
-		}
-	}
-
-	var result EnrichedCompanyData
-	if err := json.Unmarshal([]byte(clean), &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
+	// Use an instance of the service to access parseEnrichmentResponse
+	svc := &Service{}
+	return svc.parseEnrichmentResponse(content)
 }
 
-func indexOf(s, substr string) int {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return i
-		}
-	}
-	return -1
-}
-
-func lastIndexOf(s, substr string) int {
-	for i := len(s) - len(substr); i >= 0; i-- {
-		if s[i:i+len(substr)] == substr {
-			return i
-		}
-	}
-	return -1
-}
 
 func scoreResult(r *EnrichedCompanyData) int {
 	score := 0
