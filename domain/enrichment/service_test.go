@@ -3,7 +3,6 @@ package enrichment
 import (
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -91,93 +90,9 @@ func TestService_parseEnrichmentResponse(t *testing.T) {
 	}
 }
 
-func TestService_identifyMissingFields(t *testing.T) {
-	svc := &Service{}
-
-	tests := []struct {
-		name    string
-		company *CompanyInput
-		want    string
-	}{
-		{
-			name: "all fields missing",
-			company: &CompanyInput{
-				ID:   uuid.New(),
-				Name: "Test Corp",
-			},
-			want: "Campos faltantes",
-		},
-		{
-			name: "all fields present",
-			company: &CompanyInput{
-				ID:       uuid.New(),
-				Name:     "Test Corp",
-				CNPJ:     ptrString("12.345.678/0001-90"),
-				Website:  ptrString("https://example.com"),
-				Industry: ptrString("Technology"),
-				Location: ptrString("São Paulo, SP"),
-			},
-			want: "Todos os campos principais estão preenchidos",
-		},
-		{
-			name: "some fields missing",
-			company: &CompanyInput{
-				ID:      uuid.New(),
-				Name:    "Test Corp",
-				Website: ptrString("https://example.com"),
-			},
-			want: "Campos faltantes",
-		},
-		{
-			name: "empty string values treated as missing",
-			company: &CompanyInput{
-				ID:       uuid.New(),
-				Name:     "Test Corp",
-				CNPJ:     ptrString(""),
-				Website:  ptrString(""),
-				Industry: ptrString(""),
-				Location: ptrString(""),
-			},
-			want: "Campos faltantes",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := svc.identifyMissingFields(tt.company)
-			assert.Contains(t, got, tt.want)
-		})
-	}
-}
-
-func TestService_buildEnrichmentPrompt(t *testing.T) {
-	svc := &Service{}
-
-	company := &CompanyInput{
-		ID:       uuid.New(),
-		Name:     "Acme Corp",
-		CNPJ:     ptrString("12.345.678/0001-90"),
-		Website:  ptrString("https://acme.com"),
-		Industry: ptrString("Manufacturing"),
-		Location: ptrString("São Paulo, SP"),
-	}
-
-	missingFields := "Todos os campos principais estão preenchidos."
-
-	prompt := svc.buildEnrichmentPrompt(company, missingFields)
-
-	// Check that prompt contains company info
-	assert.Contains(t, prompt, "Acme Corp")
-	assert.Contains(t, prompt, "12.345.678/0001-90")
-	assert.Contains(t, prompt, "https://acme.com")
-	assert.Contains(t, prompt, "Manufacturing")
-	assert.Contains(t, prompt, "São Paulo, SP")
-
-	// Check that prompt contains instructions
-	assert.Contains(t, prompt, "Agente de Enriquecimento")
-	assert.Contains(t, prompt, "JSON")
-	assert.Contains(t, prompt, "confidence_score")
-}
+// Note: TestService_identifyMissingFields and TestService_buildEnrichmentPrompt
+// were removed because those methods no longer exist in the two-stage architecture.
+// The new architecture uses buildSearchPrompt and buildSynthesisPrompt.
 
 func TestEnrichedCompanyData_Structure(t *testing.T) {
 	// Test that the struct can be properly populated

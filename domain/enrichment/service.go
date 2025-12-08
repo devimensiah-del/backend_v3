@@ -19,10 +19,10 @@ const (
 	ModelStage1Search   = "perplexity/sonar-pro"
 	ModelStage1Fallback = "perplexity/sonar"
 
-	// Stage 2: Claude Opus 4.5 with web search for reasoning and validation
-	// Best reasoning model with :online suffix for fact-checking
-	ModelStage2Synthesis   = "anthropic/claude-opus-4.5:online"
-	ModelStage2Fallback    = "anthropic/claude-sonnet-4:online"
+	// Stage 2: Claude Sonnet 4.5 for reasoning and validation
+	// Note: :online suffix doesn't work with Opus 4.5, use Sonnet instead
+	ModelStage2Synthesis = "anthropic/claude-sonnet-4.5"
+	ModelStage2Fallback  = "anthropic/claude-sonnet-4"
 )
 
 // Service handles stateless enrichment operations using a two-stage approach:
