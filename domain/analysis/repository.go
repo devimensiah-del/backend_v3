@@ -20,9 +20,9 @@ type Repository interface {
 	GetByChallengeID(ctx context.Context, challengeID uuid.UUID) (*Analysis, error)
 	List(ctx context.Context, limit, offset int) ([]*Analysis, error)
 	Delete(ctx context.Context, id string) error
-	BeginTx(ctx context.Context) (*sqlx.Tx, error)                     // Begin transaction
-	SetVisibility(ctx context.Context, id string, visible bool) error  // Toggle user visibility
-	SetPublicStatus(ctx context.Context, id string, public bool) error // Toggle public access (no login required)
+	BeginTx(ctx context.Context) (*sqlx.Tx, error)                       // Begin transaction
+	SetVisibility(ctx context.Context, id string, visible bool) error    // Toggle user visibility
+	SetPublicStatus(ctx context.Context, id string, public bool) error   // Toggle public access (no login required)
 	GetByAccessCode(ctx context.Context, code string) (*Analysis, error) // Get by public access code
 	SetAccessCode(ctx context.Context, id string, code string) error     // Set access code
 	AccessCodeExists(ctx context.Context, code string) (bool, error)     // Check if code exists (for collision handling)

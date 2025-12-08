@@ -63,11 +63,11 @@ func TestCompanyCreate(t *testing.T) {
 
 		start := time.Now()
 		resp, err := client.POST("/api/v1/companies", map[string]interface{}{
-			"name":         "Test Company Direct Create",
-			"website":      "https://testcompany.com",
-			"industry":     "Technology",
-			"company_size": "medium",
-			"location":     "São Paulo, SP",
+			"name":          "Test Company Direct Create",
+			"website":       "https://testcompany.com",
+			"industry":      "Technology",
+			"company_size":  "medium",
+			"location":      "São Paulo, SP",
 			"target_market": "B2B",
 		})
 		duration := time.Since(start)

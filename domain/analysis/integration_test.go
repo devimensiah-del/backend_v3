@@ -316,13 +316,13 @@ func TestIntegration_JSONB_SWOTSavesAndLoads(t *testing.T) {
 
 		now := time.Now()
 		a := &analysis.Analysis{
-			ID:              uuid.New().String(),
-			SubmissionID:    subID,
-			CompanyID:       &companyID,
-			Status:          string(analysis.StatusPending),
+			ID:               uuid.New().String(),
+			SubmissionID:     subID,
+			CompanyID:        &companyID,
+			Status:           string(analysis.StatusPending),
 			FrameworkResults: make(map[string]json.RawMessage),
-			CreatedAt:       now,
-			UpdatedAt:       now,
+			CreatedAt:        now,
+			UpdatedAt:        now,
 		}
 
 		// Use SetFramework to add SWOT data
@@ -375,13 +375,13 @@ func TestIntegration_JSONB_PorterSavesAndLoads(t *testing.T) {
 
 		now := time.Now()
 		a := &analysis.Analysis{
-			ID:              uuid.New().String(),
-			SubmissionID:    subID,
-			CompanyID:       &companyID,
-			Status:          string(analysis.StatusPending),
+			ID:               uuid.New().String(),
+			SubmissionID:     subID,
+			CompanyID:        &companyID,
+			Status:           string(analysis.StatusPending),
 			FrameworkResults: make(map[string]json.RawMessage),
-			CreatedAt:       now,
-			UpdatedAt:       now,
+			CreatedAt:        now,
+			UpdatedAt:        now,
 		}
 
 		// Use SetFramework to add Porter data
@@ -436,13 +436,13 @@ func TestIntegration_JSONB_OKRsSavesAndLoads(t *testing.T) {
 
 		now := time.Now()
 		a := &analysis.Analysis{
-			ID:              uuid.New().String(),
-			SubmissionID:    subID,
-			CompanyID:       &companyID,
-			Status:          string(analysis.StatusPending),
+			ID:               uuid.New().String(),
+			SubmissionID:     subID,
+			CompanyID:        &companyID,
+			Status:           string(analysis.StatusPending),
 			FrameworkResults: make(map[string]json.RawMessage),
-			CreatedAt:       now,
-			UpdatedAt:       now,
+			CreatedAt:        now,
+			UpdatedAt:        now,
 		}
 
 		// Use SetFramework to add OKRs data
@@ -498,13 +498,13 @@ func TestIntegration_JSONB_Plan90DaysSavesAndLoads(t *testing.T) {
 
 		now := time.Now()
 		a := &analysis.Analysis{
-			ID:              uuid.New().String(),
-			SubmissionID:    subID,
-			CompanyID:       &companyID,
-			Status:          string(analysis.StatusPending),
+			ID:               uuid.New().String(),
+			SubmissionID:     subID,
+			CompanyID:        &companyID,
+			Status:           string(analysis.StatusPending),
 			FrameworkResults: make(map[string]json.RawMessage),
-			CreatedAt:       now,
-			UpdatedAt:       now,
+			CreatedAt:        now,
+			UpdatedAt:        now,
 		}
 
 		// Use SetFramework to add Plan90Days data

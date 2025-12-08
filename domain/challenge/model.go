@@ -53,10 +53,10 @@ const (
 
 // Transform types
 const (
-	TypeTransformDigital      ChallengeType = "transform_digital"
-	TypeTransformModel        ChallengeType = "transform_model"
-	TypeTransformCulture      ChallengeType = "transform_culture"
-	TypeTransformOperational  ChallengeType = "transform_operational"
+	TypeTransformDigital     ChallengeType = "transform_digital"
+	TypeTransformModel       ChallengeType = "transform_model"
+	TypeTransformCulture     ChallengeType = "transform_culture"
+	TypeTransformOperational ChallengeType = "transform_operational"
 )
 
 // Transition types

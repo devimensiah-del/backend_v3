@@ -8,11 +8,11 @@ type EnrichedCompanyData struct {
 	Website *string `json:"website,omitempty"`
 
 	// Business context
-	Industry         *string `json:"industry,omitempty"`
-	CompanySize      *string `json:"company_size,omitempty"`
-	Location         *string `json:"location,omitempty"`
-	TargetMarket     *string `json:"target_market,omitempty"`
-	FundingStage     *string `json:"funding_stage,omitempty"`
+	Industry         *string  `json:"industry,omitempty"`
+	CompanySize      *string  `json:"company_size,omitempty"`
+	Location         *string  `json:"location,omitempty"`
+	TargetMarket     *string  `json:"target_market,omitempty"`
+	FundingStage     *string  `json:"funding_stage,omitempty"`
 	AnnualRevenueMin *float64 `json:"annual_revenue_min,omitempty"`
 	AnnualRevenueMax *float64 `json:"annual_revenue_max,omitempty"`
 

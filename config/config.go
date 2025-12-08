@@ -54,10 +54,10 @@ type Config struct {
 	DatabaseURL string `envconfig:"DATABASE_URL" required:"true"`
 
 	// Database Connection Pool Settings
-	DBMaxOpenConns       int           `envconfig:"DB_MAX_OPEN_CONNS" default:"25"`         // Maximum open connections (default: 25)
-	DBMaxIdleConns       int           `envconfig:"DB_MAX_IDLE_CONNS" default:"5"`          // Maximum idle connections (default: 5)
+	DBMaxOpenConns       int           `envconfig:"DB_MAX_OPEN_CONNS" default:"25"`           // Maximum open connections (default: 25)
+	DBMaxIdleConns       int           `envconfig:"DB_MAX_IDLE_CONNS" default:"5"`            // Maximum idle connections (default: 5)
 	DBConnMaxLifetimeMin int           `envconfig:"DB_CONN_MAX_LIFETIME_MINUTES" default:"5"` // Connection max lifetime in minutes (default: 5)
-	DBConnMaxLifetime    time.Duration `ignored:"true"`                                     // Computed from DBConnMaxLifetimeMin
+	DBConnMaxLifetime    time.Duration `ignored:"true"`                                       // Computed from DBConnMaxLifetimeMin
 
 	// ==================== AI/LLM CONFIGURATION ====================
 	// OpenRouterAPIKey: API key for OpenRouter (REQUIRED)
@@ -82,10 +82,10 @@ type Config struct {
 	SynthesisFallback string `envconfig:"AI_SYNTHESIS_FALLBACK" default:"openai/gpt-4.1"`
 
 	// Shared AI Settings
-	AITemperature       float64 `envconfig:"AI_TEMPERATURE" default:"0.5"`                // Temperature for analysis (0.0-1.0, default: 0.5)
-	MaxTokensEnrichment int     `envconfig:"AI_MAX_TOKENS_ENRICHMENT" default:"2000"`    // Max tokens for enrichment (default: 2000)
-	MaxTokensAnalysis   int     `envconfig:"AI_MAX_TOKENS_ANALYSIS" default:"8000"`      // Max tokens for analysis (default: 8000)
-	MaxTokensSynthesis  int     `envconfig:"AI_MAX_TOKENS_SYNTHESIS" default:"6000"`     // Max tokens for synthesis (default: 6000)
+	AITemperature       float64 `envconfig:"AI_TEMPERATURE" default:"0.5"`            // Temperature for analysis (0.0-1.0, default: 0.5)
+	MaxTokensEnrichment int     `envconfig:"AI_MAX_TOKENS_ENRICHMENT" default:"2000"` // Max tokens for enrichment (default: 2000)
+	MaxTokensAnalysis   int     `envconfig:"AI_MAX_TOKENS_ANALYSIS" default:"8000"`   // Max tokens for analysis (default: 8000)
+	MaxTokensSynthesis  int     `envconfig:"AI_MAX_TOKENS_SYNTHESIS" default:"6000"`  // Max tokens for synthesis (default: 6000)
 
 	// Framework-specific configurations (auto-generated from above settings)
 	Frameworks map[string]FrameworkConfig `ignored:"true"`
@@ -96,8 +96,8 @@ type Config struct {
 	RedisPassword string `ignored:"true"`
 
 	// Worker Settings
-	WorkerEnabled     bool   `envconfig:"WORKER_ENABLED" default:"true"`                       // Enable background workers (default: true)
-	WorkerConcurrency int    `envconfig:"ASYNQ_CONCURRENCY" default:"10"`                      // Concurrent job workers (default: 10)
+	WorkerEnabled     bool   `envconfig:"WORKER_ENABLED" default:"true"`                      // Enable background workers (default: true)
+	WorkerConcurrency int    `envconfig:"ASYNQ_CONCURRENCY" default:"10"`                     // Concurrent job workers (default: 10)
 	WorkerQueues      string `envconfig:"WORKER_QUEUES" default:"critical:6,default:3,low:1"` // Queue priority weights
 
 	// Job Timeout Settings (seconds)
@@ -105,11 +105,11 @@ type Config struct {
 	AnalysisTimeout   int `envconfig:"ANALYSIS_TIMEOUT" default:"900"`   // Analysis job timeout (default: 900s = 15min)
 
 	// Job Retry Settings
-	EnrichmentMaxRetries int `envconfig:"ENRICHMENT_MAX_RETRIES" default:"3"` // Enrichment max retries (default: 3)
-	AnalysisMaxRetries   int `envconfig:"ANALYSIS_MAX_RETRIES" default:"2"`   // Analysis max retries (default: 2)
-	JobRetryInitialDelay int `envconfig:"JOB_RETRY_INITIAL_DELAY" default:"60"`   // Initial retry delay in seconds (default: 60s)
-	JobRetryMaxDelay     int `envconfig:"JOB_RETRY_MAX_DELAY" default:"3600"`     // Max retry delay in seconds (default: 3600s = 1h)
-	DeadLetterQueueTTL   int `envconfig:"DLQ_TTL_HOURS" default:"168"`            // Dead letter queue TTL in hours (default: 168h = 7 days)
+	EnrichmentMaxRetries int `envconfig:"ENRICHMENT_MAX_RETRIES" default:"3"`   // Enrichment max retries (default: 3)
+	AnalysisMaxRetries   int `envconfig:"ANALYSIS_MAX_RETRIES" default:"2"`     // Analysis max retries (default: 2)
+	JobRetryInitialDelay int `envconfig:"JOB_RETRY_INITIAL_DELAY" default:"60"` // Initial retry delay in seconds (default: 60s)
+	JobRetryMaxDelay     int `envconfig:"JOB_RETRY_MAX_DELAY" default:"3600"`   // Max retry delay in seconds (default: 3600s = 1h)
+	DeadLetterQueueTTL   int `envconfig:"DLQ_TTL_HOURS" default:"168"`          // Dead letter queue TTL in hours (default: 168h = 7 days)
 
 	// ==================== MACRO SCHEDULER ====================
 	// MacroSchedulerEnabled: Enable/disable macro data cron jobs (SELIC, IPCA, USD/BRL)

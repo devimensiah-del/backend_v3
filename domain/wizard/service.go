@@ -475,17 +475,17 @@ func (s *Service) GenerateAll(ctx context.Context, analysisID string) (*Generate
 		// Create/update step record
 		now := time.Now()
 		step_record := &analysis.AnalysisStep{
-			ID:              uuid.New().String(),
-			AnalysisID:      analysisID,
-			StepNumber:      step,
-			FrameworkCode:   framework.Code,
-			Status:          "approved",
-			Output:          output,
+			ID:               uuid.New().String(),
+			AnalysisID:       analysisID,
+			StepNumber:       step,
+			FrameworkCode:    framework.Code,
+			Status:           "approved",
+			Output:           output,
 			ProcessingTimeMs: stepProcessingTime,
-			GeneratedAt:     &now,
-			ApprovedAt:      &now,
-			CreatedAt:       now,
-			UpdatedAt:       now,
+			GeneratedAt:      &now,
+			ApprovedAt:       &now,
+			CreatedAt:        now,
+			UpdatedAt:        now,
 		}
 
 		if err := s.repo.SaveAnalysisStep(ctx, step_record); err != nil {

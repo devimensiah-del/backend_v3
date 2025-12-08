@@ -163,4 +163,3 @@ const (
 	MaxAdditionalNotesLength   = 10000
 	MaxURLLength               = 2048
 )
-

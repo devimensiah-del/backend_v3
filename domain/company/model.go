@@ -221,15 +221,15 @@ const (
 
 // Validation errors
 var (
-	ErrNameRequired        = errors.New("company name is required")
-	ErrNameTooLong         = errors.New("company name exceeds 200 characters")
-	ErrWebsiteTooLong      = errors.New("website URL exceeds 2048 characters")
-	ErrIndustryTooLong     = errors.New("industry exceeds 200 characters")
-	ErrLocationTooLong     = errors.New("location exceeds 200 characters")
-	ErrLinkedInURLTooLong  = errors.New("LinkedIn URL exceeds 2048 characters")
+	ErrNameRequired         = errors.New("company name is required")
+	ErrNameTooLong          = errors.New("company name exceeds 200 characters")
+	ErrWebsiteTooLong       = errors.New("website URL exceeds 2048 characters")
+	ErrIndustryTooLong      = errors.New("industry exceeds 200 characters")
+	ErrLocationTooLong      = errors.New("location exceeds 200 characters")
+	ErrLinkedInURLTooLong   = errors.New("LinkedIn URL exceeds 2048 characters")
 	ErrTwitterHandleTooLong = errors.New("Twitter handle exceeds 200 characters")
-	ErrRevenueRangeInvalid = errors.New("annual revenue min cannot be greater than max")
-	ErrRevenueNegative     = errors.New("annual revenue cannot be negative")
+	ErrRevenueRangeInvalid  = errors.New("annual revenue min cannot be greater than max")
+	ErrRevenueNegative      = errors.New("annual revenue cannot be negative")
 )
 
 // StringSlice handles JSON array columns in PostgreSQL

@@ -22,7 +22,6 @@ type LLMClient interface {
 	GenerateStructuredWithOptions(ctx context.Context, opts llm.GenerationOptions, prompt string, data interface{}, targetSchema interface{}) error
 }
 
-
 // AnalysisCompanyServiceInterface defines what analysis needs from company service
 // This interface allows analysis to read company data directly instead of from enrichment
 type AnalysisCompanyServiceInterface interface {
@@ -56,7 +55,6 @@ type AnalysisCompanyData struct {
 	MacroContext      map[string]interface{} `json:"macro_context,omitempty"`
 }
 
-
 // SubmissionRepository defines the interface for accessing submission data
 // We only need GetByID for fetching submission context
 type SubmissionRepository interface {
@@ -79,12 +77,12 @@ type SubmissionData struct {
 
 // Service handles all business analysis operations
 type Service struct {
-	repo             Repository
-	submissionRepo   SubmissionRepository
-	llm              LLMClient
-	logger           zerolog.Logger
-	queueClient      *asynq.Client                     // For job orchestration
-	companyService   AnalysisCompanyServiceInterface   // Optional: used to fetch company data directly
+	repo           Repository
+	submissionRepo SubmissionRepository
+	llm            LLMClient
+	logger         zerolog.Logger
+	queueClient    *asynq.Client                   // For job orchestration
+	companyService AnalysisCompanyServiceInterface // Optional: used to fetch company data directly
 
 	// Framework configurations (4-model approach: presearch, enrichment, primary, synthesis)
 	frameworks map[string]config.FrameworkConfig
@@ -193,7 +191,6 @@ func getMapKeys(m map[string]interface{}) []string {
 	}
 	return keys
 }
-
 
 // generateAnalysisID generates a new UUID for analysis
 func generateAnalysisID() string {

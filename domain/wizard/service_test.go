@@ -65,8 +65,8 @@ func TestGetFrameworkByStep(t *testing.T) {
 		{1, "pestel", false},
 		{5, "tam_sam_som", false},
 		{11, "bsc", false},
-		{12, "", true},  // Out of range
-		{-1, "", true},  // Negative
+		{12, "", true}, // Out of range
+		{-1, "", true}, // Negative
 	}
 
 	for _, tt := range tests {

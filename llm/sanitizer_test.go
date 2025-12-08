@@ -8,9 +8,9 @@ func TestSanitizer_BasicInjection(t *testing.T) {
 	s := NewSanitizer()
 
 	tests := []struct {
-		name     string
-		input    string
-		contains string
+		name        string
+		input       string
+		contains    string
 		notContains string
 	}{
 		{
@@ -39,9 +39,9 @@ func TestSanitizer_BasicInjection(t *testing.T) {
 			notContains: "ignore previous",
 		},
 		{
-			name:        "normal input passes through",
-			input:       "Acme Corporation - Technology Company",
-			contains:    "Acme Corporation - Technology Company",
+			name:     "normal input passes through",
+			input:    "Acme Corporation - Technology Company",
+			contains: "Acme Corporation - Technology Company",
 		},
 	}
 
@@ -160,8 +160,8 @@ func TestSanitize_ConvenienceFunction(t *testing.T) {
 func containsIgnoreCase(s, substr string) bool {
 	return len(s) >= len(substr) &&
 		(s == substr ||
-		 len(s) > len(substr) &&
-		 (indexIgnoreCase(s, substr) >= 0))
+			len(s) > len(substr) &&
+				(indexIgnoreCase(s, substr) >= 0))
 }
 
 func indexIgnoreCase(s, substr string) int {

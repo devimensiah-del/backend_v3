@@ -85,9 +85,9 @@ type Analysis struct {
 	Version int `db:"version" json:"version"`
 
 	// Wizard mode fields
-	CurrentStep    int             `db:"current_step" json:"current_step"`
-	WizardMode     bool            `db:"wizard_mode" json:"wizard_mode"`
-	StepsCompleted pq.StringArray  `db:"steps_completed" json:"steps_completed,omitempty"` // pq.StringArray handles NULL
+	CurrentStep    int            `db:"current_step" json:"current_step"`
+	WizardMode     bool           `db:"wizard_mode" json:"wizard_mode"`
+	StepsCompleted pq.StringArray `db:"steps_completed" json:"steps_completed,omitempty"` // pq.StringArray handles NULL
 
 	// Framework Results - All framework outputs stored in single JSONB column
 	// Use GetFramework/SetFramework helpers for typed access to framework data
@@ -425,8 +425,8 @@ type AnalysisStep struct {
 	Output        json.RawMessage `db:"output" json:"output,omitempty"`
 
 	// Human refinement
-	HumanContext    string          `db:"human_context" json:"human_context,omitempty"`
-	RefinementNotes string          `db:"refinement_notes" json:"refinement_notes,omitempty"`
+	HumanContext    string `db:"human_context" json:"human_context,omitempty"`
+	RefinementNotes string `db:"refinement_notes" json:"refinement_notes,omitempty"`
 
 	// Clarifying questions and answers
 	ClarifyingQuestions json.RawMessage `db:"clarifying_questions" json:"clarifying_questions,omitempty"`
@@ -452,7 +452,6 @@ type AnalysisStep struct {
 	// Stores previous outputs when refinements are made
 	PreviousOutputs json.RawMessage `db:"previous_outputs" json:"previous_outputs,omitempty"`
 }
-
 
 // Status management methods for Analysis
 

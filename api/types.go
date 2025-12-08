@@ -75,14 +75,14 @@ type AdditionalInfoData struct {
 
 // CreateCompanyRequest represents the request body for creating a company directly
 type CreateCompanyRequest struct {
-	Name          string  `json:"name" binding:"required"`
-	Website       *string `json:"website"`
-	CNPJ          *string `json:"cnpj"`
-	Industry      *string `json:"industry"`
-	CompanySize   *string `json:"company_size"`
-	Location      *string `json:"location"`
-	TargetMarket  *string `json:"target_market"`
-	FundingStage  *string `json:"funding_stage"`
+	Name         string  `json:"name" binding:"required"`
+	Website      *string `json:"website"`
+	CNPJ         *string `json:"cnpj"`
+	Industry     *string `json:"industry"`
+	CompanySize  *string `json:"company_size"`
+	Location     *string `json:"location"`
+	TargetMarket *string `json:"target_market"`
+	FundingStage *string `json:"funding_stage"`
 }
 
 // ==================== RESPONSE TYPES ====================
@@ -124,27 +124,27 @@ type SubmissionResponse struct {
 
 // SubmissionDetailResponse contains the public/admin submission payload used by the UI
 type SubmissionDetailResponse struct {
-	ID              string   `json:"id"`
-	UserID          *string  `json:"userId,omitempty"`
-	CompanyName     string   `json:"companyName"`
-	CNPJ            *string  `json:"cnpj,omitempty"`
-	CompanyWebsite  *string  `json:"companyWebsite,omitempty"`
-	CompanyIndustry *string  `json:"companyIndustry,omitempty"`
-	CompanySize     *string  `json:"companySize,omitempty"`
-	CompanyLocation *string  `json:"companyLocation,omitempty"`
-	ContactName     string   `json:"contactName"`
-	ContactEmail    string   `json:"contactEmail"`
-	ContactPhone    *string  `json:"contactPhone,omitempty"`
-	ContactPosition *string  `json:"contactPosition,omitempty"`
-	TargetMarket    *string  `json:"targetMarket,omitempty"`
+	ID               string   `json:"id"`
+	UserID           *string  `json:"userId,omitempty"`
+	CompanyName      string   `json:"companyName"`
+	CNPJ             *string  `json:"cnpj,omitempty"`
+	CompanyWebsite   *string  `json:"companyWebsite,omitempty"`
+	CompanyIndustry  *string  `json:"companyIndustry,omitempty"`
+	CompanySize      *string  `json:"companySize,omitempty"`
+	CompanyLocation  *string  `json:"companyLocation,omitempty"`
+	ContactName      string   `json:"contactName"`
+	ContactEmail     string   `json:"contactEmail"`
+	ContactPhone     *string  `json:"contactPhone,omitempty"`
+	ContactPosition  *string  `json:"contactPosition,omitempty"`
+	TargetMarket     *string  `json:"targetMarket,omitempty"`
 	AnnualRevenueMin *float64 `json:"annualRevenueMin,omitempty"`
 	AnnualRevenueMax *float64 `json:"annualRevenueMax,omitempty"`
-	FundingStage    *string  `json:"fundingStage,omitempty"`
-	AdditionalNotes *string  `json:"additionalNotes,omitempty"`
-	LinkedInURL     *string  `json:"linkedinUrl,omitempty"`
-	TwitterHandle   *string  `json:"twitterHandle,omitempty"`
-	CreatedAt       string   `json:"createdAt"`
-	UpdatedAt       string   `json:"updatedAt"`
+	FundingStage     *string  `json:"fundingStage,omitempty"`
+	AdditionalNotes  *string  `json:"additionalNotes,omitempty"`
+	LinkedInURL      *string  `json:"linkedinUrl,omitempty"`
+	TwitterHandle    *string  `json:"twitterHandle,omitempty"`
+	CreatedAt        string   `json:"createdAt"`
+	UpdatedAt        string   `json:"updatedAt"`
 
 	// Related entities
 	CompanyID   *string `json:"companyId,omitempty"`   // Linked company

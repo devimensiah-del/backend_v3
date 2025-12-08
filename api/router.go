@@ -32,8 +32,8 @@ func SetupRouter(
 	submissionSvc *domainsubmission.Service, // Pass domain services directly
 	enrichmentSvc *domainenrichment.Service,
 	analysisSvc *domainanalysis.Service,
-	companySvc *domaincompany.Service,       // Company service for re-enrich/re-analyze workflows
-	wizardSvc *domainwizard.Service,       // Wizard service for human-in-the-loop analysis
+	companySvc *domaincompany.Service, // Company service for re-enrich/re-analyze workflows
+	wizardSvc *domainwizard.Service, // Wizard service for human-in-the-loop analysis
 	challengeSvc *domainchallenge.Service, // Challenge service for challenge management
 ) *gin.Engine {
 	if isProd {
@@ -232,7 +232,7 @@ func SetupRouter(
 		adminAPI.POST("/submissions/:id/retry-analysis", mainHandler.AdminHandlers.RetryAnalysis)
 		// REMOVED: GET /analytics - Needs to be rebuilt with new workflow
 		adminAPI.GET("/metrics", mainHandler.AdminHandlers.GetMetrics) // System-wide metrics (LLM costs, success rates)
-		adminAPI.GET("/queue-diagnostic", mainHandler.QueueDiagnostic)  // Queue status and cleanup (add ?clear=true to clear)
+		adminAPI.GET("/queue-diagnostic", mainHandler.QueueDiagnostic) // Queue status and cleanup (add ?clear=true to clear)
 
 		// Analysis management
 		adminAPI.GET("/analysis/:id", mainHandler.AnalysisHandlers.GetAnalysisAdmin)

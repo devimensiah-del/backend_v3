@@ -1068,4 +1068,3 @@ func (s *Service) generateOKRsSummaryFallback(okrs *OKRAnalysis) string {
 
 	return summary
 }
-

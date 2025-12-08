@@ -125,13 +125,13 @@ func (h *Handler) QueueDiagnostic(c *gin.Context) {
 	if err == nil {
 		for _, t := range archivedTasks {
 			archivedDetails = append(archivedDetails, map[string]interface{}{
-				"id":           t.ID,
-				"type":         t.Type,
-				"payload":      string(t.Payload),
-				"last_error":   t.LastErr,
-				"last_failed":  t.LastFailedAt,
-				"max_retry":    t.MaxRetry,
-				"retried":      t.Retried,
+				"id":          t.ID,
+				"type":        t.Type,
+				"payload":     string(t.Payload),
+				"last_error":  t.LastErr,
+				"last_failed": t.LastFailedAt,
+				"max_retry":   t.MaxRetry,
+				"retried":     t.Retried,
 			})
 		}
 	}

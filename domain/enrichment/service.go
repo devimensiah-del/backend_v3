@@ -17,8 +17,8 @@ import (
 // It calls Perplexity to gather company data and returns it to the caller
 // The caller is responsible for persisting the enriched data
 type Service struct {
-	llmClient     *llm.Client
-	preSearchCfg  config.FrameworkConfig // Perplexity config
+	llmClient    *llm.Client
+	preSearchCfg config.FrameworkConfig // Perplexity config
 }
 
 // NewService creates a new stateless enrichment service

@@ -216,7 +216,7 @@ func TestRepository_Create_WithAll11Frameworks(t *testing.T) {
 			testAnalysis.ID,
 			testAnalysis.CompanyID,
 			testAnalysis.ChallengeID, // Challenge ID (v2)
-			sqlmock.AnyArg(), // framework_results (JSONB)
+			sqlmock.AnyArg(),         // framework_results (JSONB)
 			testAnalysis.Status,
 			testAnalysis.ErrorMessage,
 			testAnalysis.IsVisibleToUser,
@@ -286,9 +286,9 @@ func TestRepository_Update_Success(t *testing.T) {
 			testAnalysis.DeletedAt,
 			sqlmock.AnyArg(), // updated_at
 			testAnalysis.CompletedAt,
-			testAnalysis.CurrentStep,   // wizard field
-			testAnalysis.WizardMode,    // wizard field
-			sqlmock.AnyArg(),           // steps_completed (JSONB array)
+			testAnalysis.CurrentStep, // wizard field
+			testAnalysis.WizardMode,  // wizard field
+			sqlmock.AnyArg(),         // steps_completed (JSONB array)
 			testAnalysis.ID,
 		).
 		WillReturnResult(sqlmock.NewResult(0, 1))

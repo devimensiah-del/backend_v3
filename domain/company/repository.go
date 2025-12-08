@@ -475,4 +475,3 @@ func (r *PostgresRepository) SetEnrichmentFailed(ctx context.Context, id uuid.UU
 	}
 	return nil
 }
-

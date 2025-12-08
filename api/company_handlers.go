@@ -23,8 +23,8 @@ type CompanyHandlers struct {
 	CompanyService    *company.Service
 	SubmissionService *submission.Service // Needed for re-analyze flow
 	EnrichmentService *enrichment.Service
-	ChallengeService  *challenge.Service  // For creating challenges for analysis
-	AnalysisService   *analysis.Service   // For fetching latest analysis per challenge
+	ChallengeService  *challenge.Service // For creating challenges for analysis
+	AnalysisService   *analysis.Service  // For fetching latest analysis per challenge
 	AsynqClient       *asynq.Client
 	Logger            zerolog.Logger
 }
@@ -591,7 +591,6 @@ func (h *CompanyHandlers) ReAnalyzeCompany(c *gin.Context) {
 	})
 }
 
-
 // AnalyzeChallenge handles POST /api/v1/admin/challenges/:id/analyze
 // Triggers analysis for an existing challenge (no new challenge creation)
 func (h *CompanyHandlers) AnalyzeChallenge(c *gin.Context) {
@@ -733,6 +732,7 @@ func (h *CompanyHandlers) AnalyzeChallenge(c *gin.Context) {
 		},
 	})
 }
+
 // RetryEnrichment handles POST /api/v1/admin/companies/:id/retry-enrichment
 // Re-runs enrichment for a company using "fill gaps only" logic
 // Only fills in NULL/empty fields - preserves any manually edited values

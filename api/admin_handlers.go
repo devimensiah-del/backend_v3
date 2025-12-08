@@ -20,9 +20,9 @@ import (
 // Handlers holds all service dependencies and configuration for admin handlers
 type AdminHandlers struct {
 	SubmissionService         *submission.Service
-	EnrichmentService         *enrichment.Service  // For RetryAnalysis
-	CompanyService            *company.Service     // For checking company status
-	ChallengeService          *challenge.Service   // For getting/creating challenges for analysis
+	EnrichmentService         *enrichment.Service // For RetryAnalysis
+	CompanyService            *company.Service    // For checking company status
+	ChallengeService          *challenge.Service  // For getting/creating challenges for analysis
 	AsynqClient               *asynq.Client
 	Logger                    zerolog.Logger
 	SubmissionResponseBuilder *SubmissionResponseBuilder // New field
