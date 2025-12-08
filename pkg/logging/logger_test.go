@@ -98,19 +98,19 @@ func TestLoggerContextualFields(t *testing.T) {
 		}
 	})
 
-	// Test WithEnrichmentID
-	t.Run("WithEnrichmentID", func(t *testing.T) {
+	// Test WithCompanyID (renamed from WithEnrichmentID)
+	t.Run("WithCompanyID", func(t *testing.T) {
 		buf.Reset()
-		enrichLogger := logger.WithEnrichmentID("enrich-101")
-		enrichLogger.Info().Msg("test message")
+		companyLogger := logger.WithCompanyID("company-101")
+		companyLogger.Info().Msg("test message")
 
 		var logEntry map[string]interface{}
 		if err := json.Unmarshal(buf.Bytes(), &logEntry); err != nil {
 			t.Fatalf("Failed to parse log output: %v", err)
 		}
 
-		if logEntry["enrichment_id"] != "enrich-101" {
-			t.Errorf("Expected enrichment_id=enrich-101, got %v", logEntry["enrichment_id"])
+		if logEntry["company_id"] != "company-101" {
+			t.Errorf("Expected company_id=company-101, got %v", logEntry["company_id"])
 		}
 	})
 

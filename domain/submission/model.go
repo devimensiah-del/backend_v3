@@ -1,7 +1,6 @@
 package submission
 
 import (
-	"errors"
 	"net/mail"
 	"time"
 
@@ -34,14 +33,12 @@ type Submission struct {
 	AnnualRevenueMax *float64 `json:"annualRevenueMax,omitempty" db:"annual_revenue_max"`
 	FundingStage     *string  `json:"fundingStage,omitempty" db:"funding_stage"`
 
-	// Submission Details (4 fields)
-	BusinessChallenge string  `json:"businessChallenge" db:"business_challenge"`
-	AdditionalNotes   *string `json:"additionalNotes,omitempty" db:"additional_notes"`
-	LinkedInURL       *string `json:"linkedinUrl,omitempty" db:"linkedin_url"`
-	TwitterHandle     *string `json:"twitterHandle,omitempty" db:"twitter_handle"`
+	// Additional Details
+	AdditionalNotes *string `json:"additionalNotes,omitempty" db:"additional_notes"`
+	LinkedInURL     *string `json:"linkedinUrl,omitempty" db:"linkedin_url"`
+	TwitterHandle   *string `json:"twitterHandle,omitempty" db:"twitter_handle"`
 
 	// Metadata
-	Status Status     `json:"status" db:"status"`
 	UserID *uuid.UUID `json:"userId,omitempty" db:"user_id"` // Nullable for public submissions
 
 	// Timestamps
@@ -50,53 +47,51 @@ type Submission struct {
 	DeletedAt *time.Time `json:"deletedAt,omitempty" db:"deleted_at"`
 }
 
-// Status represents the submission workflow status
-// Submission status NEVER changes after creation - always "received"
-// All workflow state is tracked in Enrichment and Analysis entities
-type Status string
-
-const (
-	StatusReceived Status = "received" // Only status - set on creation, never changes
-)
-
 // NewSubmission creates a new submission with default values
 func NewSubmission(
 	companyName string,
 	contactName string,
 	contactEmail string,
-	businessChallenge string,
 	userID *uuid.UUID,
 ) *Submission {
 	now := time.Now()
 	return &Submission{
-		ID:                uuid.New(),
-		CompanyName:       companyName,
-		ContactName:       contactName,
-		ContactEmail:      contactEmail,
-		BusinessChallenge: businessChallenge,
-		UserID:            userID,
-		Status:            StatusReceived,
-		CreatedAt:         now,
-		UpdatedAt:         now,
+		ID:           uuid.New(),
+		CompanyName:  companyName,
+		ContactName:  contactName,
+		ContactEmail: contactEmail,
+		UserID:       userID,
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}
 }
 
 // Validate validates the submission fields
 func (s *Submission) Validate() error {
 	if s.CompanyName == "" {
-		return errors.New("company name is required")
+		return NewValidationError("company_name", "is required")
 	}
 	if s.ContactName == "" {
-		return errors.New("contact name is required")
+		return NewValidationError("contact_name", "is required")
 	}
 	if s.ContactEmail == "" {
-		return errors.New("contact email is required")
+		return NewValidationError("contact_email", "is required")
 	}
 	if _, err := mail.ParseAddress(s.ContactEmail); err != nil {
-		return errors.New("contact email is invalid")
+		return NewValidationError("contact_email", "is invalid")
 	}
-	if s.BusinessChallenge == "" {
-		return errors.New("business challenge is required")
+	// Validate revenue range: min must be <= max (if both provided)
+	if s.AnnualRevenueMin != nil && s.AnnualRevenueMax != nil {
+		if *s.AnnualRevenueMin > *s.AnnualRevenueMax {
+			return NewValidationError("annual_revenue", "min cannot be greater than max")
+		}
+	}
+	// Validate non-negative revenue values
+	if s.AnnualRevenueMin != nil && *s.AnnualRevenueMin < 0 {
+		return NewValidationError("annual_revenue_min", "cannot be negative")
+	}
+	if s.AnnualRevenueMax != nil && *s.AnnualRevenueMax < 0 {
+		return NewValidationError("annual_revenue_max", "cannot be negative")
 	}
 	return nil
 }

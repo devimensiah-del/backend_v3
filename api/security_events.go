@@ -87,11 +87,8 @@ func (s *SecurityEventLogger) LogAdminAction(userID, role, ip, resource, action 
 		Str("action", action).
 		Bool("success", true)
 
-	// Add metadata fields
-	if metadata != nil {
-		for key, value := range metadata {
-			event = event.Interface(key, value)
-		}
+	for key, value := range metadata {
+		event = event.Interface(key, value)
 	}
 
 	event.Msg("SECURITY: Admin action performed")
@@ -107,11 +104,8 @@ func (s *SecurityEventLogger) LogSuspiciousActivity(ip, userAgent, resource, rea
 		Str("resource", resource).
 		Str("reason", reason)
 
-	// Add metadata fields
-	if metadata != nil {
-		for key, value := range metadata {
-			event = event.Interface(key, value)
-		}
+	for key, value := range metadata {
+		event = event.Interface(key, value)
 	}
 
 	event.Msg("SECURITY: Suspicious activity detected")

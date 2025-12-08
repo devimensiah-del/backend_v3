@@ -1,23 +1,20 @@
 package api
 
 import (
-	"backend_v3/domain/enrichment"
 	"backend_v3/domain/submission"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/hibiken/asynq"
 	"github.com/rs/zerolog" // Needed for logger
 )
 
 // Handlers holds all service dependencies and configuration for submission handlers
 type SubmissionHandlers struct {
 	SubmissionService         *submission.Service
-	EnrichmentService         *enrichment.Service
-	AsynqClient               *asynq.Client
 	Logger                    zerolog.Logger
 	SubmissionResponseBuilder *SubmissionResponseBuilder
 }
@@ -25,15 +22,11 @@ type SubmissionHandlers struct {
 // NewSubmissionHandlers creates a new submission.Handlers instance with all dependencies
 func NewSubmissionHandlers(
 	submissionSvc *submission.Service,
-	enrichmentSvc *enrichment.Service,
-	asynqClient *asynq.Client,
 	logger zerolog.Logger,
 	submissionResponseBuilder *SubmissionResponseBuilder,
 ) *SubmissionHandlers {
 	return &SubmissionHandlers{
 		SubmissionService:         submissionSvc,
-		EnrichmentService:         enrichmentSvc,
-		AsynqClient:               asynqClient,
 		Logger:                    logger,
 		SubmissionResponseBuilder: submissionResponseBuilder,
 	}
@@ -56,7 +49,6 @@ func (h *SubmissionHandlers) CreateSubmission(c *gin.Context) {
 	}
 
 	// Validate required contact fields from additionalInfo
-	// Required: contactName, contactEmail
 	if additionalInfo.ContactName == "" {
 		respondError(c, h.Logger, http.StatusBadRequest, fmt.Errorf("missing contact name"), "Nome de contato é obrigatório (em additionalInfo).")
 		return
@@ -64,24 +56,6 @@ func (h *SubmissionHandlers) CreateSubmission(c *gin.Context) {
 	if additionalInfo.ContactEmail == "" {
 		respondError(c, h.Logger, http.StatusBadRequest, fmt.Errorf("missing contact email"), "Email de contato é obrigatório (em additionalInfo).")
 		return
-	}
-
-	// Use defaults for optional fields if not provided
-	if req.CNPJ == "" {
-		req.CNPJ = "00.000.000/0000-00" // Default CNPJ
-	}
-	if req.Industry == "" {
-		req.Industry = "Não especificado"
-	}
-	if req.CompanySize == "" {
-		req.CompanySize = "Não especificado"
-	}
-	if req.StrategicGoal == "" {
-		req.StrategicGoal = "Em definição"
-	}
-	// Note: CurrentChallenges deliberately left empty - will be populated during enrichment phase
-	if req.CompetitivePosition == "" {
-		req.CompetitivePosition = "Em análise"
 	}
 
 	// Get authenticated user ID if available
@@ -94,15 +68,7 @@ func (h *SubmissionHandlers) CreateSubmission(c *gin.Context) {
 		}
 	}
 
-	// Check if user is admin (can bypass verified CNPJ restrictions)
-	isAdmin := false
-	if role, exists := c.Get("userRole"); exists {
-		if roleStr, ok := role.(string); ok {
-			isAdmin = roleStr == "admin" || roleStr == "super_admin" || roleStr == "service_role"
-		}
-	}
-
-	// Transform frontend format to domain model and trigger enrichment workflow
+	// Transform frontend format to domain model
 	submitReq := &submission.SubmitRequest{
 		// Company Information
 		CompanyName:     req.CompanyName,
@@ -124,47 +90,45 @@ func (h *SubmissionHandlers) CreateSubmission(c *gin.Context) {
 		AnnualRevenueMax: additionalInfo.AnnualRevenueMax,
 		FundingStage:     stringToPtr(additionalInfo.FundingStage),
 
-		// Strategic information - concatenate with " | " separator, skipping empty fields
-		BusinessChallenge: buildBusinessChallengeString(req.StrategicGoal, req.CurrentChallenges, req.CompetitivePosition),
-		AdditionalNotes:   stringToPtr(additionalInfo.AdditionalNotes),
-		LinkedInURL:       stringToPtr(additionalInfo.LinkedInURL),
-		TwitterHandle:     stringToPtr(additionalInfo.TwitterHandle),
+		// Challenge Definition (required - drives the analysis)
+		ChallengeCategory: req.ChallengeCategory,
+		ChallengeType:     req.ChallengeType,
+		BusinessChallenge: req.BusinessChallenge,
+
+		// Additional fields
+		AdditionalNotes: stringToPtr(additionalInfo.AdditionalNotes),
+		LinkedInURL:     stringToPtr(additionalInfo.LinkedInURL),
+		TwitterHandle:   stringToPtr(additionalInfo.TwitterHandle),
 
 		// User association
 		UserID: userID,
 	}
 
-	// Use SubmitForm which saves to DB
-	// Pass admin flag to bypass verified CNPJ restrictions if needed
-	opts := &submission.CreateOptions{IsAdmin: isAdmin}
-	sub, err := h.SubmissionService.SubmitForm(c.Request.Context(), submitReq, opts)
+	// Use SubmitForm which saves to DB and creates Company + Challenge
+	// SubmitForm no longer accepts CreateOptions - it's always public workflow
+	resp, err := h.SubmissionService.SubmitForm(c.Request.Context(), submitReq)
 
 	if err != nil {
-		// Check for verified CNPJ error - return specific error message
-		if err == submission.ErrVerifiedCNPJExists {
-			c.JSON(http.StatusConflict, ErrorResponse{
-				Error:   "CNPJ já verificado",
-				Message: "Este CNPJ pertence a uma empresa verificada e não pode ser usado para novas submissões. Entre em contato com o administrador.",
-			})
-			return
-		}
+		// TODO: Add back CNPJ verification check if needed
 		respondError(c, h.Logger, http.StatusInternalServerError, err, "Falha ao criar submissão.")
 		return
 	}
 
-	// NOTE: SubmitForm() already handles:
-	// 1. Creating the enrichment record via ReserveEnrichment()
-	// 2. Enqueueing the enrichment job via TriggerEnrichmentProcess()
-	// No need for duplicate enrichment trigger here - it would cause double-enqueue.
+	// NOTE: SubmitForm() handles:
+	// 1. Creating Submission (status: always "received")
+	// 2. Creating Company (triggers async Perplexity enrichment)
+	// 3. Creating Challenge
+	// Analysis is NOT auto-triggered - user must start via wizard or admin can use generate-all
 
 	// Frontend expects wrapped response: { submission: {...} }
+	now := time.Now()
 	c.JSON(http.StatusCreated, gin.H{
 		"submission": SubmissionResponse{
-			ID:          sub.ID.String(),
-			CompanyName: sub.CompanyName,
-			Status:      string(sub.Status),
-			CreatedAt:   sub.CreatedAt,
-			UpdatedAt:   sub.UpdatedAt,
+			ID:          resp.SubmissionID.String(),
+			CompanyID:   resp.CompanyID.String(),
+			ChallengeID: resp.ChallengeID.String(),
+			CreatedAt:   &now,
+			UpdatedAt:   &now,
 		},
 	})
 }
@@ -279,14 +243,12 @@ func (h *SubmissionHandlers) ListUserSubmissions(c *gin.Context) {
 		}
 	}
 
-	// Add status filter if provided
-	if status != "" {
-		s := submission.Status(status)
-		opts.Status = &s
-	}
+	// NOTE: Status filter removed - submissions no longer have status field
+	// Status is now tracked on related entities (Company.enrichment_status, Analysis.status)
+	_ = status // Avoid unused variable error
 
 	// Query submissions
-	submissions, total, err := h.SubmissionService.ListAll(c.Request.Context(), opts)
+	submissions, total, err := h.SubmissionService.List(c.Request.Context(), opts)
 	if err != nil {
 		h.Logger.Error().Err(err).Msg("Failed to list user submissions")
 		c.JSON(http.StatusInternalServerError, ErrorResponse{

@@ -10,361 +10,24 @@ import (
 	"syscall"
 	"time"
 
-	"backend_v3/adapter/macrodata"
 	"backend_v3/api"
 	"backend_v3/config"
 	"backend_v3/domain/analysis"
+	"backend_v3/domain/challenge"
 	"backend_v3/domain/company"
 	"backend_v3/domain/enrichment"
-	"backend_v3/domain/framework"
-	"backend_v3/domain/macroeconomics"
-	"backend_v3/domain/report"
 	"backend_v3/domain/submission"
-	"backend_v3/infrastructure"
+	"backend_v3/domain/wizard"
+	"backend_v3/internal/adapters"
 	"backend_v3/jobs"
 	"backend_v3/llm"
 
-	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog/log"
 )
-
-// reportLookupAdapter implements analysis.ReportLookup without creating package cycles
-type reportLookupAdapter struct {
-	svc *report.Service
-}
-
-type reportSummary struct {
-	rep *report.Report
-}
-
-func (r reportSummary) GetPDFURL() string { return r.rep.PDFURL }
-
-func (a reportLookupAdapter) GetBySubmissionID(ctx context.Context, submissionID string) (analysis.ReportSummary, error) {
-	rep, err := a.svc.GetBySubmissionID(ctx, submissionID)
-	if err != nil {
-		return nil, err
-	}
-	return reportSummary{rep: rep}, nil
-}
-
-// macroServiceAdapter implements enrichment.MacroServiceInterface
-// Converts macroeconomics.LatestSnapshot to enrichment.MacroSnapshot
-type macroServiceAdapter struct {
-	svc *macroeconomics.Service
-}
-
-func (a macroServiceAdapter) GetLatestSnapshot(ctx context.Context) (*enrichment.MacroSnapshot, error) {
-	snapshot, err := a.svc.GetLatestSnapshot(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if snapshot == nil {
-		return nil, nil
-	}
-
-	// Convert macroeconomics types to enrichment types (dynamic map)
-	result := &enrichment.MacroSnapshot{
-		Indicators: make(map[string]*enrichment.MacroIndicator),
-		AsOf:       snapshot.AsOf,
-	}
-
-	// Convert each indicator from macroeconomics to enrichment type
-	for code, v := range snapshot.Indicators {
-		if v != nil {
-			result.Indicators[code] = &enrichment.MacroIndicator{
-				Code:            v.Code,
-				Name:            v.Name,
-				Category:        v.Category,
-				Value:           v.Value,
-				Unit:            v.Unit,
-				EffectiveDate:   v.EffectiveDate,
-				ReferencePeriod: v.ReferencePeriod,
-				SourceCode:      v.SourceCode,
-				FetchedAt:       v.FetchedAt,
-			}
-		}
-	}
-
-	return result, nil
-}
-
-// macroServiceAdapterForAnalysis implements analysis.MacroServiceInterface
-// Converts macroeconomics.LatestSnapshot to analysis.MacroSnapshot
-type macroServiceAdapterForAnalysis struct {
-	svc *macroeconomics.Service
-}
-
-func (a macroServiceAdapterForAnalysis) GetLatestSnapshot(ctx context.Context) (*analysis.MacroSnapshot, error) {
-	snapshot, err := a.svc.GetLatestSnapshot(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if snapshot == nil {
-		return nil, nil
-	}
-
-	// Convert macroeconomics types to analysis types
-	result := &analysis.MacroSnapshot{
-		Indicators: make(map[string]*analysis.MacroIndicator),
-	}
-
-	for code, v := range snapshot.Indicators {
-		if v != nil {
-			unit := ""
-			if v.Unit != "" {
-				unit = v.Unit
-			}
-			result.Indicators[code] = &analysis.MacroIndicator{
-				Code:  v.Code,
-				Name:  v.Name,
-				Value: v.Value,
-				Unit:  unit,
-			}
-		}
-	}
-
-	return result, nil
-}
-
-// companyServiceAdapterForSubmission implements submission.CompanyServiceInterface
-type companyServiceAdapterForSubmission struct {
-	svc *company.Service
-}
-
-func (a companyServiceAdapterForSubmission) CreateFromSubmission(ctx context.Context, input submission.CompanyCreateInput) error {
-	_, err := a.svc.CreateFromSubmission(ctx, company.CreateFromSubmissionInput{
-		SubmissionID:     input.SubmissionID,
-		CompanyName:      input.CompanyName,
-		CNPJ:             input.CNPJ,
-		Website:          input.Website,
-		Industry:         input.Industry,
-		CompanySize:      input.CompanySize,
-		Location:         input.Location,
-		TargetMarket:     input.TargetMarket,
-		FundingStage:     input.FundingStage,
-		AnnualRevenueMin: input.AnnualRevenueMin,
-		AnnualRevenueMax: input.AnnualRevenueMax,
-		LinkedInURL:      input.LinkedInURL,
-		TwitterHandle:    input.TwitterHandle,
-	})
-	return err
-}
-
-func (a companyServiceAdapterForSubmission) IsVerifiedCNPJExists(ctx context.Context, cnpj string) (bool, error) {
-	return a.svc.IsVerifiedCNPJExists(ctx, cnpj)
-}
-
-func (a companyServiceAdapterForSubmission) SetOwnerFromSubmission(ctx context.Context, submissionID, userID uuid.UUID) error {
-	return a.svc.SetOwnerFromSubmission(ctx, submissionID, userID)
-}
-
-// companyServiceAdapterForEnrichment implements enrichment.CompanyServiceInterface
-type companyServiceAdapterForEnrichment struct {
-	svc *company.Service
-}
-
-func (a companyServiceAdapterForEnrichment) UpdateFromEnrichment(ctx context.Context, submissionID string, input enrichment.CompanyUpdateInput) error {
-	// Parse the submission ID
-	subID, err := uuid.Parse(submissionID)
-	if err != nil {
-		return err
-	}
-
-	// Get the company by submission ID
-	comp, err := a.svc.GetBySubmissionID(ctx, subID)
-	if err != nil {
-		return err
-	}
-	if comp == nil {
-		log.Warn().Str("submission_id", submissionID).Msg("No company found for submission - skipping enrichment update")
-		return nil
-	}
-
-	// Parse enrichment ID
-	enrichID, err := uuid.Parse(input.EnrichmentID)
-	if err != nil {
-		return err
-	}
-
-	// Update the company (COALESCE behavior)
-	return a.svc.UpdateFromEnrichment(ctx, comp.ID, company.UpdateFromEnrichmentInput{
-		EnrichmentID:      enrichID,
-		FoundationYear:    input.FoundationYear,
-		LegalName:         input.LegalName,
-		Headquarters:      input.Headquarters,
-		Sector:            input.Sector,
-		TargetAudience:    input.TargetAudience,
-		ValueProposition:  input.ValueProposition,
-		EmployeesRange:    input.EmployeesRange,
-		RevenueEstimate:   input.RevenueEstimate,
-		BusinessModel:     input.BusinessModel,
-		Competitors:       input.Competitors,
-		MarketShareStatus: input.MarketShareStatus,
-		DigitalMaturity:   input.DigitalMaturity,
-		Strengths:         input.Strengths,
-		Weaknesses:        input.Weaknesses,
-		CNPJ:              input.CNPJ,
-		Website:           input.Website,
-		LinkedInURL:       input.LinkedInURL,
-		TwitterHandle:     input.TwitterHandle,
-	})
-}
-
-// UpdateFromEnrichmentSmartMerge uses smart merge (respects verified fields)
-// Includes retry logic to handle race condition with async company creation
-func (a companyServiceAdapterForEnrichment) UpdateFromEnrichmentSmartMerge(ctx context.Context, submissionID string, input enrichment.CompanyUpdateInput) error {
-	// Parse the submission ID
-	subID, err := uuid.Parse(submissionID)
-	if err != nil {
-		return err
-	}
-
-	// Parse enrichment ID early
-	enrichID, err := uuid.Parse(input.EnrichmentID)
-	if err != nil {
-		return err
-	}
-
-	// Get the company by submission ID with retry (handles race condition with async company creation)
-	// Company creation runs in a goroutine when submission is created, so it may not exist yet
-	var comp *company.Company
-	maxRetries := 5
-	retryDelay := 500 * time.Millisecond
-
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		comp, err = a.svc.GetBySubmissionID(ctx, subID)
-		if err != nil {
-			return err
-		}
-		if comp != nil {
-			break // Found it!
-		}
-
-		// Company not found yet - wait and retry
-		if attempt < maxRetries-1 {
-			log.Debug().
-				Str("submission_id", submissionID).
-				Int("attempt", attempt+1).
-				Int("max_retries", maxRetries).
-				Dur("delay", retryDelay).
-				Msg("Company not found yet, waiting for async creation...")
-			time.Sleep(retryDelay)
-			retryDelay *= 2 // Exponential backoff: 500ms, 1s, 2s, 4s
-		}
-	}
-
-	if comp == nil {
-		log.Warn().
-			Str("submission_id", submissionID).
-			Int("retries", maxRetries).
-			Msg("No company found for submission after retries - skipping enrichment update")
-		return nil
-	}
-
-	log.Info().
-		Str("submission_id", submissionID).
-		Str("company_id", comp.ID.String()).
-		Str("company_name", comp.Name).
-		Msg("Company found, updating with enrichment data")
-
-	// Update the company (Smart Merge - respects verified fields)
-	return a.svc.UpdateFromEnrichmentSmartMerge(ctx, comp.ID, company.UpdateFromEnrichmentInput{
-		EnrichmentID:      enrichID,
-		FoundationYear:    input.FoundationYear,
-		LegalName:         input.LegalName,
-		Headquarters:      input.Headquarters,
-		Sector:            input.Sector,
-		TargetAudience:    input.TargetAudience,
-		ValueProposition:  input.ValueProposition,
-		EmployeesRange:    input.EmployeesRange,
-		RevenueEstimate:   input.RevenueEstimate,
-		BusinessModel:     input.BusinessModel,
-		Competitors:       input.Competitors,
-		MarketShareStatus: input.MarketShareStatus,
-		DigitalMaturity:   input.DigitalMaturity,
-		Strengths:         input.Strengths,
-		Weaknesses:        input.Weaknesses,
-		CNPJ:              input.CNPJ,
-		Website:           input.Website,
-		LinkedInURL:       input.LinkedInURL,
-		TwitterHandle:     input.TwitterHandle,
-	})
-}
-
-// GetCompanyIDBySubmissionID retrieves the company ID linked to a submission
-func (a companyServiceAdapterForEnrichment) GetCompanyIDBySubmissionID(ctx context.Context, submissionID string) (*string, error) {
-	// Parse the submission ID
-	subID, err := uuid.Parse(submissionID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Get the company by submission ID
-	comp, err := a.svc.GetBySubmissionID(ctx, subID)
-	if err != nil {
-		return nil, err
-	}
-	if comp == nil {
-		return nil, nil
-	}
-
-	id := comp.ID.String()
-	return &id, nil
-}
-
-// GetCompanyDataByID retrieves company data by ID for enrichment purposes
-func (a companyServiceAdapterForEnrichment) GetCompanyDataByID(ctx context.Context, companyID string) (*enrichment.CompanyData, error) {
-	// Parse the company ID
-	compID, err := uuid.Parse(companyID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Get the company by ID
-	comp, err := a.svc.GetByID(ctx, compID)
-	if err != nil {
-		return nil, err
-	}
-	if comp == nil {
-		return nil, nil
-	}
-
-	// Convert to CompanyData
-	return &enrichment.CompanyData{
-		ID:               comp.ID.String(),
-		Name:             comp.Name,
-		CNPJ:             comp.CNPJ,
-		Website:          comp.Website,
-		Industry:         comp.Industry,
-		CompanySize:      comp.CompanySize,
-		Location:         comp.Location,
-		TargetMarket:     comp.TargetMarket,
-		FundingStage:     comp.FundingStage,
-		AnnualRevenueMin: comp.AnnualRevenueMin,
-		AnnualRevenueMax: comp.AnnualRevenueMax,
-		FoundationYear:   comp.FoundationYear,
-		LegalName:        comp.LegalName,
-		Headquarters:     comp.Headquarters,
-		Sector:           comp.Sector,
-		LinkedInURL:      comp.LinkedInURL,
-		TwitterHandle:    comp.TwitterHandle,
-	}, nil
-}
-
-// GetVerifiedFieldNames retrieves the list of verified field names for a company
-func (a companyServiceAdapterForEnrichment) GetVerifiedFieldNames(ctx context.Context, companyID string) ([]string, error) {
-	// Parse the company ID
-	compID, err := uuid.Parse(companyID)
-	if err != nil {
-		return nil, err
-	}
-
-	return a.svc.GetVerifiedFieldNames(ctx, compID)
-}
 
 func main() {
 	// Add panic recovery at the top level
@@ -401,9 +64,7 @@ func main() {
 	}
 	defer db.Close()
 
-	// Configure Connection Pool
-	// PRODUCTION FIX: Use configurable connection pool settings instead of hardcoded values
-	// This allows tuning for Railway/production limits without code changes
+	// Configure Connection Pool (configurable via environment variables)
 	db.SetMaxOpenConns(cfg.DBMaxOpenConns)
 	db.SetMaxIdleConns(cfg.DBMaxIdleConns)
 	db.SetConnMaxLifetime(cfg.DBConnMaxLifetime)
@@ -441,6 +102,11 @@ func main() {
 	log.Info().Msg("Redis connection verified")
 	defer rClient.Close()
 
+	// Asynq Client (for enqueuing background jobs)
+	asynqClient := asynq.NewClient(redisOpt)
+	defer asynqClient.Close()
+	log.Info().Msg("Asynq job queue client initialized")
+
 	// 4. EXTERNAL CLIENTS
 	log.Info().Msg("Initializing external service clients...")
 
@@ -448,83 +114,50 @@ func main() {
 	llmClient := llm.NewClient(cfg.OpenRouterAPIKey)
 	log.Info().Msg("OpenRouter LLM client initialized")
 
-	// PDF Generator (Gotenberg)
-	pdfGen := infrastructure.NewGotenbergClient(cfg.GotenbergURL)
-	log.Info().Str("gotenberg_url", cfg.GotenbergURL).Msg("Gotenberg PDF client initialized")
-
-	// Cloud Storage (Supabase)
-	storage := infrastructure.NewSupabaseStorageClient(
-		cfg.SupabaseURL,
-		cfg.SupabaseBucket,
-		cfg.SupabaseServiceKey,
-		cfg.SupabaseSignedTTL,
-	)
-	log.Info().Str("bucket", "reports").Msg("Supabase storage client initialized")
-
 	// 5. REPOSITORIES
 	log.Info().Msg("Initializing data repositories...")
 	subRepo := submission.NewRepository(db)
-	enrichRepo := enrichment.NewRepository(db)
 	analysisRepo := analysis.NewPostgresRepository(db)
-	reportRepo := report.NewPostgresRepository(db)
 	companyRepo := company.NewRepository(db)
-	frameworkRepo := framework.NewRepository(db)
 	log.Info().Msg("All repositories initialized")
 
 	// 6. SERVICES
 	log.Info().Msg("Initializing business services...")
 
 	// Company Service (Data persistence for company records)
-	companySvc := company.NewService(companyRepo, log.Logger)
-	log.Info().Msg("Company service initialized (company data persistence enabled)")
+	companySvc := company.NewService(companyRepo, log.Logger, cfg.EnrichmentTimeout)
+	log.Info().
+		Int("enrichment_timeout_seconds", cfg.EnrichmentTimeout).
+		Msg("Company service initialized (company data persistence enabled)")
 
-	// Framework Service (Strategic framework management)
-	frameworkSvc := framework.NewService(frameworkRepo, log.Logger)
-	log.Info().Msg("Framework service initialized (strategic framework management enabled)")
+	// Challenge Domain (Strategic business challenges)
+	challengeRepo := challenge.NewRepository(db)
+	challengeSvc := challenge.NewService(challengeRepo)
+	log.Info().Msg("Challenge domain initialized (business challenge management)")
 
-	// Submission (Needs Asynq Client to enqueue jobs)
-	asynqClient := asynq.NewClient(redisOpt)
-	defer asynqClient.Close()
-	subSvc := submission.NewService(subRepo, asynqClient)
+	// Submission (Entry point for analysis pipeline)
+	subSvc := submission.NewService(subRepo)
 	// Inject company service for automatic company creation on submission
-	subSvc.SetCompanyService(companyServiceAdapterForSubmission{svc: companySvc})
-	log.Info().Msg("Submission service initialized (with company creation)")
-
-	// MacroData Provider (BCB/IBGE APIs for real-time economic indicators)
-	macroProvider := macrodata.NewMacroDataProvider()
-	log.Info().Msg("MacroData provider initialized (BCB/IBGE APIs for SELIC, IPCA, USD/BRL)")
-
-	// Macroeconomics Domain (Persistent storage for economic indicators)
-	macroRepo := macroeconomics.NewRepository(db)
-	macroSvc := macroeconomics.NewService(macroRepo, macroProvider)
-	log.Info().Msg("Macroeconomics domain initialized (DB-backed economic indicators)")
+	subSvc.SetCompanyService(adapters.NewCompanyServiceAdapterForSubmission(companySvc))
+	// Inject challenge service for automatic challenge creation on submission
+	subSvc.SetChallengeService(adapters.NewChallengeServiceAdapterForSubmission(challengeSvc))
+	log.Info().Msg("Submission service initialized (with company + challenge creation)")
 
 	// Enrichment (The Researcher)
-	// Two-phase enrichment: Pre-Search (Perplexity) + Main Enrichment (Gemini)
-	// MacroDataProvider injects authoritative economic data from government APIs
+	// Stateless service using Perplexity for company enrichment
+	// Called inline during company creation, no separate enrichment table
 	enrichSvc := enrichment.NewService(
-		enrichRepo,
-		subRepo,
 		llmClient,
-		asynqClient,
-		cfg.Frameworks["enrichment"], // Gemini with Google Search
-		cfg.Frameworks["presearch"],  // Perplexity for company identification
-		macroProvider,                // BCB/IBGE APIs for SELIC, IPCA, USD/BRL
+		cfg.Frameworks["presearch"], // Perplexity for company enrichment
 	)
 	log.Info().
-		Str("enrichment_model", cfg.Frameworks["enrichment"].Model).
 		Str("presearch_model", cfg.Frameworks["presearch"].Model).
-		Float64("temperature", cfg.Frameworks["enrichment"].Temperature).
-		Msg("Enrichment service initialized with two-phase pipeline + MacroData APIs")
+		Float64("temperature", cfg.Frameworks["presearch"].Temperature).
+		Msg("Enrichment service initialized (Perplexity-only, stateless)")
 
-	// Inject macroeconomics service for DB-first macro data fetching
-	// Use adapter to convert macroeconomics.LatestSnapshot → enrichment.MacroSnapshot
-	enrichSvc.SetMacroService(macroServiceAdapter{svc: macroSvc})
-	log.Info().Msg("MacroService injected into enrichment (DB-first enabled)")
-
-	// Inject company service for automatic company updates after enrichment
-	enrichSvc.SetCompanyService(companyServiceAdapterForEnrichment{svc: companySvc})
-	log.Info().Msg("CompanyService injected into enrichment (company updates enabled)")
+	// Inject enrichment service into company service
+	companySvc.SetEnrichmentService(enrichSvc)
+	log.Info().Msg("Enrichment service injected into company service (automatic enrichment at company creation)")
 
 	// Analysis (The Strategy Team)
 	// Create submission repository adapter for analysis service
@@ -543,39 +176,39 @@ func main() {
 		Int("framework_count", len(cfg.Frameworks)).
 		Msg("Analysis service initialized with 4-model configuration")
 
-	// Inject macro service for direct DB access (preferred over extracting from enrichment)
-	analysisSvc.SetMacroService(macroServiceAdapterForAnalysis{svc: macroSvc})
-	log.Info().Msg("MacroService injected into analysis (DB-first macro data enabled)")
+	// Inject company service for direct company data access
+	analysisSvc.SetCompanyService(adapters.NewCompanyServiceAdapterForAnalysis(companySvc))
+	log.Info().Msg("CompanyService injected into analysis (company data enabled)")
 
-	// Report (The Publisher)
-	reportSvc := report.NewService(
-		reportRepo,
+	// Wizard Service (Human-in-the-Loop Framework Wizard)
+	wizardSvc := wizard.NewService(
 		analysisRepo,
-		subRepo,
-		pdfGen,
-		storage,
+		llmClient,
+		cfg.Frameworks,
 		log.Logger,
 	)
-	log.Info().Msg("Report service initialized")
-	analysisSvc.SetReportLookup(reportLookupAdapter{svc: reportSvc})
+	// Inject company service for getting company data in wizard (same adapter as analysis)
+	wizardSvc.SetCompanyService(adapters.NewCompanyServiceAdapterForAnalysis(companySvc))
+	log.Info().Msg("Wizard service initialized (human-in-the-loop enabled with company data)")
 
 	// 7. BACKGROUND WORKER
 	log.Info().Msg("Initializing background job worker...")
 	worker := jobs.NewWorker(
 		cfg,
 		subSvc,
-		enrichSvc,
+		enrichSvc, // Used for reading enrichment data in analysis jobs only
 		analysisSvc,
-		reportSvc,
 		log.Logger,
 	)
-
-	// Inject macroeconomics service into worker for scheduled job handling
-	worker.SetMacroService(macroSvc)
 
 	// Start Worker in a separate goroutine
 	// STABILITY FIX: Graceful degradation - if worker fails, API stays alive
 	if cfg.WorkerEnabled {
+		log.Info().
+			Str("redis_addr", cfg.RedisURL).
+			Bool("has_password", cfg.RedisPassword != "").
+			Msg("🚀 WORKER_ENABLED=true - Preparing to start background worker")
+
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -589,43 +222,23 @@ func main() {
 			log.Info().
 				Int("concurrency", cfg.WorkerConcurrency).
 				Str("queues", cfg.WorkerQueues).
-				Msg("Starting background worker")
+				Str("redis_addr", cfg.RedisURL).
+				Msg("🔧 Starting background worker NOW - listening for jobs")
 
 			if err := worker.Start(); err != nil {
-				log.Error().Err(err).Msg("Worker failed to start - background jobs disabled. Check Redis connection.")
+				log.Error().
+					Err(err).
+					Str("redis_addr", cfg.RedisURL).
+					Msg("❌ Worker failed to start - background jobs disabled. Check Redis connection.")
 				// API continues running, but background processing won't work
 				// Admin must use retry endpoints to manually trigger jobs
+			} else {
+				log.Info().Msg("✅ Background worker started successfully")
 			}
 		}()
 		defer worker.Stop()
-
-		// Start Macro Scheduler (AFTER worker is started so handlers are ready)
-		macroScheduler, err := macroeconomics.NewScheduler(redisOpt, macroSvc)
-		if err != nil {
-			log.Error().Err(err).Msg("Failed to create macro scheduler - scheduled jobs disabled")
-		} else {
-			if err := macroScheduler.RegisterTasks(); err != nil {
-				log.Error().Err(err).Msg("Failed to register macro scheduler tasks")
-			} else {
-				go func() {
-					defer func() {
-						if r := recover(); r != nil {
-							log.Error().
-								Interface("panic", r).
-								Str("component", "macro_scheduler").
-								Msg("PANIC in macro scheduler")
-						}
-					}()
-					if err := macroScheduler.Start(); err != nil {
-						log.Error().Err(err).Msg("Macro scheduler failed to start")
-					}
-				}()
-				defer macroScheduler.Stop()
-				log.Info().Msg("Macro scheduler started (BRT timezone)")
-			}
-		}
 	} else {
-		log.Warn().Msg("Background worker disabled (WORKER_ENABLED=false). Jobs must be triggered manually.")
+		log.Warn().Msg("⚠️ Background worker disabled (WORKER_ENABLED=false). Jobs must be triggered manually.")
 	}
 
 	// 8. HTTP API
@@ -645,10 +258,9 @@ func main() {
 		subSvc,
 		enrichSvc,
 		analysisSvc,
-		reportSvc,
-		macroSvc,      // Macroeconomics service for admin endpoints
-		companySvc,    // Company service for re-enrich/re-analyze workflows
-		frameworkSvc,  // Framework service for framework management
+		companySvc,   // Company service for re-enrich/re-analyze workflows
+		wizardSvc,    // Wizard service for human-in-the-loop analysis
+		challengeSvc, // Challenge service for challenge management
 	)
 
 	srv := &http.Server{

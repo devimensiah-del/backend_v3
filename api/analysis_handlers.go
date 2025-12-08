@@ -4,17 +4,22 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"backend_v3/domain/analysis" // Assuming this domain exists
+	"backend_v3/domain/analysis"
+	"backend_v3/domain/challenge"
+	"backend_v3/domain/company"
 	"backend_v3/domain/submission"
 
 	"github.com/gin-gonic/gin"
-	"github.com/rs/zerolog" // Needed for logger
+	"github.com/google/uuid"
+	"github.com/rs/zerolog"
 )
 
 // AnalysisHandlers holds all service dependencies and configuration for analysis handlers
 type AnalysisHandlers struct {
 	SubmissionService *submission.Service
 	AnalysisService   *analysis.Service
+	CompanyService    *company.Service
+	ChallengeService  *challenge.Service
 	Logger            zerolog.Logger
 }
 
@@ -22,127 +27,21 @@ type AnalysisHandlers struct {
 func NewAnalysisHandlers(
 	submissionSvc *submission.Service,
 	analysisSvc *analysis.Service,
+	companySvc *company.Service,
+	challengeSvc *challenge.Service,
 	logger zerolog.Logger,
 ) *AnalysisHandlers {
 	return &AnalysisHandlers{
 		SubmissionService: submissionSvc,
 		AnalysisService:   analysisSvc,
+		CompanyService:    companySvc,
+		ChallengeService:  challengeSvc,
 		Logger:            logger,
 	}
 }
 
-// GetAnalysis handles GET /api/v1/submissions/:id/analysis
-func (h *AnalysisHandlers) GetAnalysis(c *gin.Context) {
-	submissionID := c.Param("id")
-
-	// Parse and validate UUID
-	subUUID, err := parseUUID(submissionID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Error:   "Invalid ID",
-			Message: "Invalid submission ID format",
-		})
-		return
-	}
-
-	// Get user ID from context
-	userID, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, ErrorResponse{
-			Error:   "Unauthorized",
-			Message: "User not authenticated",
-		})
-		return
-	}
-
-	// Get submission to verify ownership (unless admin)
-	submission, err := h.SubmissionService.GetByID(c.Request.Context(), subUUID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, ErrorResponse{
-			Error:   "Not found",
-			Message: "Submission not found",
-		})
-		return
-	}
-
-	// Check if user owns this submission (admins can access any)
-	role, _ := c.Get("userRole")
-	userRole := ""
-	if r, ok := role.(string); ok {
-		userRole = r
-	}
-
-	// Convert userID string to UUID for comparison
-	userIDStr := userID.(string)
-	currentUserUUID, err := parseUUID(userIDStr)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:   "Internal error",
-			Message: "Invalid user ID format",
-		})
-		return
-	}
-
-	if submission.UserID != nil && *submission.UserID != currentUserUUID {
-		if userRole != "admin" && userRole != "super_admin" {
-			c.JSON(http.StatusForbidden, ErrorResponse{
-				Error:   "Forbidden",
-				Message: "You don't have permission to access this analysis",
-			})
-			return
-		}
-	}
-
-	// Get analysis data by submission ID
-	analysis, err := h.AnalysisService.GetBySubmissionID(c.Request.Context(), submissionID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, ErrorResponse{
-			Error:   "Not found",
-			Message: "Analysis not found for this submission",
-		})
-		return
-	}
-
-	// Transform domain model to map[string]interface{} for frontend
-	analysisData := make(map[string]interface{})
-
-	// Marshal the entire analysis to JSON then unmarshal to map
-	// This ensures all frameworks are included with their proper structure
-	analysisBytes, err := json.Marshal(analysis)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:   "Internal error",
-			Message: "Failed to serialize analysis data",
-		})
-		return
-	}
-
-	if err := json.Unmarshal(analysisBytes, &analysisData); err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:   "Internal error",
-			Message: "Failed to deserialize analysis data",
-		})
-		return
-	}
-
-	// Build response DTO
-	response := AnalysisResponse{
-		ID:              analysis.ID,
-		SubmissionID:    analysis.SubmissionID,
-		Status:          analysis.Status,
-		Analysis:        analysisData,
-		IsVisibleToUser: analysis.IsVisibleToUser,
-		IsBlurred:       analysis.IsBlurred,
-		IsPublic:        analysis.IsPublic,
-		AccessCode:      analysis.AccessCode,
-		CreatedAt:       analysis.CreatedAt,
-		UpdatedAt:       analysis.UpdatedAt,
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"analysis": response,
-	})
-}
+// NOTE: GetAnalysis (by submission ID) was removed in v2_013 schema cleanup
+// Use GetAnalysisUser (by analysis ID) or GetAnalysisByChallengeID instead
 
 // UpdateAnalysis handles PUT /api/v1/admin/analysis/:id
 // Admin can edit analysis framework fields (status remains unchanged)
@@ -182,18 +81,62 @@ func (h *AnalysisHandlers) UpdateAnalysis(c *gin.Context) {
 	analysisBytes, _ := json.Marshal(updatedAnalysis)
 	json.Unmarshal(analysisBytes, &analysisData)
 
-	response := AnalysisResponse{
-		ID:              updatedAnalysis.ID,
-		SubmissionID:    updatedAnalysis.SubmissionID,
-		Status:          updatedAnalysis.Status,
-		Analysis:        analysisData,
-		IsVisibleToUser: updatedAnalysis.IsVisibleToUser,
-		IsBlurred:       updatedAnalysis.IsBlurred,
-		IsPublic:        updatedAnalysis.IsPublic,
-		AccessCode:      updatedAnalysis.AccessCode,
-		CreatedAt:       updatedAnalysis.CreatedAt,
-		UpdatedAt:       updatedAnalysis.UpdatedAt,
+	response := buildAnalysisResponse(updatedAnalysis, analysisData)
+
+	c.JSON(http.StatusOK, gin.H{
+		"analysis": response,
+	})
+}
+
+// GetAnalysisUser handles GET /api/v1/analyses/:id
+// User can fetch analysis by ID if they have access to the associated company
+func (h *AnalysisHandlers) GetAnalysisUser(c *gin.Context) {
+	analysisID := c.Param("id")
+
+	// Verify user is authenticated (userID needed for future company ownership checks)
+	_, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{
+			Error:   "Unauthorized",
+			Message: "User not authenticated",
+		})
+		return
 	}
+
+	// Get analysis by ID
+	analysis, err := h.AnalysisService.GetByID(c.Request.Context(), analysisID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{
+			Error:   "Not found",
+			Message: "Analysis not found",
+		})
+		return
+	}
+
+	// Check if user has access via admin role
+	role, _ := c.Get("userRole")
+	userRole := ""
+	if r, ok := role.(string); ok {
+		userRole = r
+	}
+
+	// Admin can access any analysis; non-admin users must have visibility enabled
+	// In v2, access control is based on company ownership (to be implemented via company service)
+	// For now, non-admin users can only access visible analyses
+	if userRole != "admin" && userRole != "super_admin" && !analysis.IsVisibleToUser {
+		c.JSON(http.StatusForbidden, ErrorResponse{
+			Error:   "Not available",
+			Message: "This analysis is not yet available for viewing",
+		})
+		return
+	}
+
+	// Transform to response
+	analysisData := make(map[string]interface{})
+	analysisBytes, _ := json.Marshal(analysis)
+	json.Unmarshal(analysisBytes, &analysisData)
+
+	response := buildAnalysisResponse(analysis, analysisData)
 
 	c.JSON(http.StatusOK, gin.H{
 		"analysis": response,
@@ -220,61 +163,15 @@ func (h *AnalysisHandlers) GetAnalysisAdmin(c *gin.Context) {
 	analysisBytes, _ := json.Marshal(analysis)
 	json.Unmarshal(analysisBytes, &analysisData)
 
-	response := AnalysisResponse{
-		ID:              analysis.ID,
-		SubmissionID:    analysis.SubmissionID,
-		Status:          analysis.Status,
-		Analysis:        analysisData,
-		IsVisibleToUser: analysis.IsVisibleToUser,
-		IsBlurred:       analysis.IsBlurred,
-		IsPublic:        analysis.IsPublic,
-		AccessCode:      analysis.AccessCode,
-		CreatedAt:       analysis.CreatedAt,
-		UpdatedAt:       analysis.UpdatedAt,
-	}
+	response := buildAnalysisResponse(analysis, analysisData)
 
 	c.JSON(http.StatusOK, gin.H{
 		"analysis": response,
 	})
 }
 
-// GetAnalysisBySubmissionAdmin handles GET /api/v1/admin/submissions/:id/analysis
-// Admin can fetch analysis by submission ID (no ownership check needed)
-func (h *AnalysisHandlers) GetAnalysisBySubmissionAdmin(c *gin.Context) {
-	submissionID := c.Param("id")
-
-	// Get analysis by submission ID (admin access, no ownership check needed)
-	analysis, err := h.AnalysisService.GetBySubmissionID(c.Request.Context(), submissionID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, ErrorResponse{
-			Error:   "Not found",
-			Message: "Analysis not found for this submission",
-		})
-		return
-	}
-
-	// Transform to response
-	analysisData := make(map[string]interface{})
-	analysisBytes, _ := json.Marshal(analysis)
-	json.Unmarshal(analysisBytes, &analysisData)
-
-	response := AnalysisResponse{
-		ID:              analysis.ID,
-		SubmissionID:    analysis.SubmissionID,
-		Status:          analysis.Status,
-		Analysis:        analysisData,
-		IsVisibleToUser: analysis.IsVisibleToUser,
-		IsBlurred:       analysis.IsBlurred,
-		IsPublic:        analysis.IsPublic,
-		AccessCode:      analysis.AccessCode,
-		CreatedAt:       analysis.CreatedAt,
-		UpdatedAt:       analysis.UpdatedAt,
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"analysis": response,
-	})
-}
+// NOTE: GetAnalysisBySubmissionAdmin was removed in v2_013 schema cleanup
+// Use GetAnalysisAdmin (by analysis ID) or GetAnalysisByChallengeID instead
 
 // ToggleVisibility handles POST /api/v1/admin/analysis/:id/visibility
 // Admin toggles whether the analysis is visible to end users
@@ -319,18 +216,7 @@ func (h *AnalysisHandlers) ToggleVisibility(c *gin.Context) {
 	analysisBytes, _ := json.Marshal(updatedAnalysis)
 	json.Unmarshal(analysisBytes, &analysisData)
 
-	response := AnalysisResponse{
-		ID:              updatedAnalysis.ID,
-		SubmissionID:    updatedAnalysis.SubmissionID,
-		Status:          updatedAnalysis.Status,
-		Analysis:        analysisData,
-		IsVisibleToUser: updatedAnalysis.IsVisibleToUser,
-		IsBlurred:       updatedAnalysis.IsBlurred,
-		IsPublic:        updatedAnalysis.IsPublic,
-		AccessCode:      updatedAnalysis.AccessCode,
-		CreatedAt:       updatedAnalysis.CreatedAt,
-		UpdatedAt:       updatedAnalysis.UpdatedAt,
-	}
+	response := buildAnalysisResponse(updatedAnalysis, analysisData)
 
 	action := "hidden from"
 	if req.Visible {
@@ -340,73 +226,6 @@ func (h *AnalysisHandlers) ToggleVisibility(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"analysis": response,
 		"message":  "Analysis " + action + " user successfully",
-	})
-}
-
-// ToggleBlur handles POST /api/v1/admin/analysis/:id/blur
-// Admin toggles the blur overlay for premium frameworks
-func (h *AnalysisHandlers) ToggleBlur(c *gin.Context) {
-	analysisID := c.Param("id")
-
-	// Parse request body
-	var req struct {
-		Blurred bool `json:"blurred"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Error:   "Invalid request",
-			Message: "blurred field is required (boolean)",
-		})
-		return
-	}
-
-	// Toggle blur status via service
-	err := h.AnalysisService.SetBlurStatus(c.Request.Context(), analysisID, req.Blurred)
-	if err != nil {
-		h.Logger.Error().Err(err).Str("analysis_id", analysisID).Msg("Failed to toggle blur status")
-		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Error:   "Toggle failed",
-			Message: err.Error(),
-		})
-		return
-	}
-
-	// Fetch updated analysis
-	updatedAnalysis, err := h.AnalysisService.GetByID(c.Request.Context(), analysisID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:   "Fetch failed",
-			Message: "Blur status toggled but failed to fetch updated analysis",
-		})
-		return
-	}
-
-	// Transform to response
-	analysisData := make(map[string]interface{})
-	analysisBytes, _ := json.Marshal(updatedAnalysis)
-	json.Unmarshal(analysisBytes, &analysisData)
-
-	response := AnalysisResponse{
-		ID:              updatedAnalysis.ID,
-		SubmissionID:    updatedAnalysis.SubmissionID,
-		Status:          updatedAnalysis.Status,
-		Analysis:        analysisData,
-		IsVisibleToUser: updatedAnalysis.IsVisibleToUser,
-		IsBlurred:       updatedAnalysis.IsBlurred,
-		IsPublic:        updatedAnalysis.IsPublic,
-		AccessCode:      updatedAnalysis.AccessCode,
-		CreatedAt:       updatedAnalysis.CreatedAt,
-		UpdatedAt:       updatedAnalysis.UpdatedAt,
-	}
-
-	action := "blurred"
-	if !req.Blurred {
-		action = "unblurred"
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"analysis": response,
-		"message":  "Analysis premium frameworks " + action + " successfully",
 	})
 }
 
@@ -455,18 +274,7 @@ func (h *AnalysisHandlers) TogglePublic(c *gin.Context) {
 	analysisBytes, _ := json.Marshal(updatedAnalysis)
 	json.Unmarshal(analysisBytes, &analysisData)
 
-	response := AnalysisResponse{
-		ID:              updatedAnalysis.ID,
-		SubmissionID:    updatedAnalysis.SubmissionID,
-		Status:          updatedAnalysis.Status,
-		Analysis:        analysisData,
-		IsVisibleToUser: updatedAnalysis.IsVisibleToUser,
-		IsBlurred:       updatedAnalysis.IsBlurred,
-		IsPublic:        updatedAnalysis.IsPublic,
-		AccessCode:      updatedAnalysis.AccessCode,
-		CreatedAt:       updatedAnalysis.CreatedAt,
-		UpdatedAt:       updatedAnalysis.UpdatedAt,
-	}
+	response := buildAnalysisResponse(updatedAnalysis, analysisData)
 
 	action := "made private (login required)"
 	if req.Public {
@@ -577,20 +385,66 @@ func (h *AnalysisHandlers) GetPublicReport(c *gin.Context) {
 		return
 	}
 
-	// Transform to response (includes full analysis data)
-	analysisData := make(map[string]interface{})
-	analysisBytes, _ := json.Marshal(analysis)
-	json.Unmarshal(analysisBytes, &analysisData)
+	// Get company info for display
+	var companyData *company.Company
+	if analysis.CompanyID != nil {
+		h.Logger.Debug().Str("company_id", *analysis.CompanyID).Msg("Fetching company for report")
+		companyUUID, parseErr := uuid.Parse(*analysis.CompanyID)
+		if parseErr != nil {
+			h.Logger.Warn().Err(parseErr).Str("company_id", *analysis.CompanyID).Msg("Failed to parse company UUID")
+		} else {
+			companyData, err = h.CompanyService.GetByID(c.Request.Context(), companyUUID)
+			if err != nil {
+				h.Logger.Warn().Err(err).Str("company_id", *analysis.CompanyID).Msg("Could not fetch company for report")
+			} else if companyData != nil {
+				h.Logger.Debug().Str("company_name", companyData.Name).Msg("Company found for report")
+			}
+		}
+	} else {
+		h.Logger.Warn().Str("analysis_id", analysis.ID).Msg("Analysis has no company_id")
+	}
 
-	// Build response with essential fields for public report
+	// Get challenge info for business context (ChallengeID is required, never nil)
+	var businessChallenge string
+	if analysis.ChallengeID != uuid.Nil {
+		challengeData, err := h.ChallengeService.GetByID(c.Request.Context(), analysis.ChallengeID)
+		if err == nil && challengeData != nil {
+			businessChallenge = challengeData.BusinessChallenge
+		}
+	}
+
+	// Extract framework_results from the analysis
+	frameworkResults := make(map[string]interface{})
+	frameworkKeys := []string{}
+	for key, value := range analysis.FrameworkResults {
+		var parsed interface{}
+		if err := json.Unmarshal(value, &parsed); err == nil {
+			frameworkResults[key] = parsed
+			frameworkKeys = append(frameworkKeys, key)
+		}
+	}
+	h.Logger.Debug().Strs("frameworks", frameworkKeys).Int("count", len(frameworkResults)).Msg("Parsed framework results")
+
+	// Build response with framework_results at root level (matching PublicReportData interface)
 	response := gin.H{
-		"id":            analysis.ID,
-		"submission_id": analysis.SubmissionID,
-		"status":        analysis.Status,
-		"analysis":      analysisData,
-		"created_at":    analysis.CreatedAt,
-		"is_blurred":    analysis.IsBlurred,
-		"is_public":     analysis.IsPublic,
+		"id":                analysis.ID,
+		"company_id":        analysis.CompanyID,
+		"challenge_id":      analysis.ChallengeID.String(),
+		"status":            analysis.Status,
+		"framework_results": frameworkResults,
+		"created_at":        analysis.CreatedAt,
+		"is_public":         analysis.IsPublic,
+	}
+
+	// Add company info for display
+	if companyData != nil {
+		response["company_name"] = companyData.Name
+		response["industry"] = companyData.Industry
+	}
+
+	// Add business challenge
+	if businessChallenge != "" {
+		response["business_challenge"] = businessChallenge
 	}
 
 	// Add preview flag for admin preview
@@ -599,4 +453,21 @@ func (h *AnalysisHandlers) GetPublicReport(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, response)
+}
+
+// buildAnalysisResponse is a helper to construct AnalysisResponse from domain.Analysis
+// Ensures consistent handling of nullable fields and ChallengeID
+func buildAnalysisResponse(analysis *analysis.Analysis, analysisData map[string]interface{}) AnalysisResponse {
+	return AnalysisResponse{
+		ID:              analysis.ID,
+		CompanyID:       analysis.CompanyID,
+		ChallengeID:     analysis.ChallengeID.String(),
+		Status:          analysis.Status,
+		Analysis:        analysisData,
+		IsVisibleToUser: analysis.IsVisibleToUser,
+		IsPublic:        analysis.IsPublic,
+		AccessCode:      analysis.AccessCode,
+		CreatedAt:       analysis.CreatedAt,
+		UpdatedAt:       analysis.UpdatedAt,
+	}
 }

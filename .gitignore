@@ -2,3 +2,14 @@
 .claude
 .claude-flow
 
+# Build artifacts
+*.exe
+*.exe~
+*.test
+*.out
+test_output.txt
+
+# IDE
+.idea/
+.vscode/
+

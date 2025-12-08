@@ -13,10 +13,28 @@ import (
 	"github.com/google/uuid"
 )
 
-// RunAnalysis executes the "Strategic Cascade".
-func (s *Service) RunAnalysis(ctx context.Context, submissionID, enrichmentID string, enrichmentData map[string]interface{}) (*Analysis, error) {
+// RunAnalysis executes the "Strategic Cascade" for a specific challenge.
+//
+// Parameters:
+// - submissionID: Historical reference to the originating submission
+// - companyID: The company being analyzed
+// - challengeID: REQUIRED - The specific business challenge this analysis addresses
+//
+// The wizard mode (WizardService) is recommended for human-in-the-loop workflows:
+// - Step-by-step execution with human approval at each framework
+// - "Add context → regenerate" refinement pattern
+// - Full audit trail via versioning
+func (s *Service) RunAnalysis(ctx context.Context, submissionID, companyID string, challengeID uuid.UUID) (*Analysis, error) {
 	startTime := time.Now()
-	s.logger.Info().Str("sub_id", submissionID).Msg("Starting Strategic Cascade Analysis")
+	s.logger.Info().
+		Str("sub_id", submissionID).
+		Str("challenge_id", challengeID.String()).
+		Msg("Starting Strategic Cascade Analysis")
+
+	// Validate challenge_id is not nil
+	if challengeID == uuid.Nil {
+		return nil, fmt.Errorf("challenge_id is required - cannot run analysis without a challenge")
+	}
 
 	// 1. FETCH SUBMISSION DATA
 	submissionUUID, err := uuid.Parse(submissionID)
@@ -34,18 +52,37 @@ func (s *Service) RunAnalysis(ctx context.Context, submissionID, enrichmentID st
 	// Convert submission to map for template injection
 	submissionData := submissionToMap(submission)
 
+	// 2. FETCH COMPANY DATA (use companyID directly, not submission lookup)
+	companyUUID, err := uuid.Parse(companyID)
+	if err != nil {
+		s.logger.Error().Err(err).Str("company_id", companyID).Msg("Invalid company ID format")
+		return nil, err
+	}
+
+	companyData, err := s.companyService.GetByID(ctx, companyUUID)
+	if err != nil {
+		s.logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to fetch company data")
+		return nil, err
+	}
+	if companyData == nil {
+		s.logger.Error().Str("company_id", companyID).Msg("Company not found")
+		return nil, fmt.Errorf("company not found: %s", companyID)
+	}
+
 	s.logger.Info().
 		Str("company_name", submission.CompanyName).
-		Str("business_challenge", submission.BusinessChallenge).
-		Msg("Submission data loaded successfully")
+		Str("challenge_id", challengeID.String()).
+		Msg("Submission and company data loaded successfully")
 
-	// 2. SETUP CONTEXT
+	// 3. SETUP CONTEXT
 	knowledge := &ContextContainer{
-		SubmissionID:   submissionID,
 		SubmissionData: submissionData,
-		EnrichmentData: enrichmentData,
+		CompanyData:    companyDataToMap(companyData),
 	}
-	analysis, err := s.startAnalysisRecord(ctx, submissionID, enrichmentID)
+
+	companyIDPtr := &companyID
+
+	analysis, err := s.startAnalysisRecord(ctx, challengeID, companyIDPtr)
 	if err != nil {
 		return nil, err
 	}
@@ -83,8 +120,20 @@ func (s *Service) RunAnalysis(ctx context.Context, submissionID, enrichmentID st
 	// LAYER 2: POSITIONING (Internal Fit)
 	// ========================================================================
 	s.runLayer("Layer 2: Positioning", func(wg *sync.WaitGroup) {
-		s.exec(wg, func() { knowledge.SWOT, _ = s.runSWOT(ctx, knowledge) })
-		s.exec(wg, func() { knowledge.Benchmarking, _ = s.runBenchmarking(ctx, knowledge) })
+		s.exec(wg, func() {
+			var err error
+			knowledge.SWOT, err = s.runSWOT(ctx, knowledge)
+			if err != nil {
+				s.logger.Error().Err(err).Msg("❌ SWOT failed")
+			}
+		})
+		s.exec(wg, func() {
+			var err error
+			knowledge.Benchmarking, err = s.runBenchmarking(ctx, knowledge)
+			if err != nil {
+				s.logger.Error().Err(err).Msg("❌ Benchmarking failed")
+			}
+		})
 	})
 	s.logger.Debug().Str("analysis_id", analysis.ID).Msg("Layer 3: Starting Strategy analysis")
 	s.saveCheckpoint(ctx, analysis, knowledge, string(StatusPending))
@@ -93,9 +142,27 @@ func (s *Service) RunAnalysis(ctx context.Context, submissionID, enrichmentID st
 	// LAYER 3: STRATEGY (Direction)
 	// ========================================================================
 	s.runLayer("Layer 3: Strategy", func(wg *sync.WaitGroup) {
-		s.exec(wg, func() { knowledge.BlueOcean, _ = s.runBlueOcean(ctx, knowledge) })
-		s.exec(wg, func() { knowledge.GrowthHacking, _ = s.runGrowthHacking(ctx, knowledge) })
-		s.exec(wg, func() { knowledge.Scenarios, _ = s.runScenarios(ctx, knowledge) })
+		s.exec(wg, func() {
+			var err error
+			knowledge.BlueOcean, err = s.runBlueOcean(ctx, knowledge)
+			if err != nil {
+				s.logger.Error().Err(err).Msg("❌ BlueOcean failed")
+			}
+		})
+		s.exec(wg, func() {
+			var err error
+			knowledge.GrowthHacking, err = s.runGrowthHacking(ctx, knowledge)
+			if err != nil {
+				s.logger.Error().Err(err).Msg("❌ GrowthHacking failed")
+			}
+		})
+		s.exec(wg, func() {
+			var err error
+			knowledge.Scenarios, err = s.runScenarios(ctx, knowledge)
+			if err != nil {
+				s.logger.Error().Err(err).Msg("❌ Scenarios failed")
+			}
+		})
 	})
 	s.logger.Debug().Str("analysis_id", analysis.ID).Msg("Layer 3.5: Starting Decision Making analysis")
 	s.saveCheckpoint(ctx, analysis, knowledge, string(StatusPending))
@@ -162,8 +229,11 @@ func (s *Service) RunAnalysis(ctx context.Context, submissionID, enrichmentID st
 	// FINAL SYNTHESIS (The Senior Partner)
 	// ========================================================================
 	// Uses the Premium Model (s.synthesisModel)
-	synthesis, _ := s.runSynthesis(ctx, knowledge)
-	if err := analysis.SetFramework("synthesis", synthesis); err != nil {
+	synthesis, err := s.runSynthesis(ctx, knowledge)
+	if err != nil {
+		s.logger.Error().Err(err).Msg("❌ Synthesis failed")
+	}
+	if err := analysis.SetFramework(FrameworkSynthesis, synthesis); err != nil {
 		s.logger.Error().Err(err).Msg("Failed to set synthesis framework")
 	}
 
@@ -180,7 +250,6 @@ func (s *Service) RunAnalysis(ctx context.Context, submissionID, enrichmentID st
 			Msg("❌ Analysis incomplete - marking as failed")
 		analysis.Status = string(StatusFailed)
 		analysis.ErrorMessage = &errorMsg
-		analysis.ProcessingTimeMs = time.Since(startTime).Milliseconds()
 		s.repo.Update(ctx, analysis)
 		return analysis, fmt.Errorf("analysis incomplete: %s", errorMsg)
 	}
@@ -206,19 +275,22 @@ func (s *Service) exec(wg *sync.WaitGroup, task func()) {
 	go func() { defer wg.Done(); task() }()
 }
 
-func (s *Service) startAnalysisRecord(ctx context.Context, subID, enrichID string) (*Analysis, error) {
-	s.logger.Info().Str("submission_id", subID).Str("enrichment_id", enrichID).Msg("startAnalysisRecord: BEGIN")
-
-	existing, err := s.repo.GetBySubmissionID(ctx, subID)
+func (s *Service) startAnalysisRecord(ctx context.Context, challengeID uuid.UUID, companyID *string) (*Analysis, error) {
 	s.logger.Info().
-		Str("submission_id", subID).
+		Str("challenge_id", challengeID.String()).
+		Interface("company_id", companyID).
+		Msg("startAnalysisRecord: BEGIN")
+
+	existing, err := s.repo.GetByChallengeID(ctx, challengeID)
+	s.logger.Info().
+		Str("challenge_id", challengeID.String()).
 		Bool("found", err == nil && existing != nil).
 		Interface("error", err).
-		Msg("startAnalysisRecord: GetBySubmissionID result")
+		Msg("startAnalysisRecord: GetByChallengeID result")
 
 	if err == nil && existing != nil {
 		s.logger.Info().
-			Str("submission_id", subID).
+			Str("challenge_id", challengeID.String()).
 			Str("existing_analysis_id", existing.ID).
 			Str("existing_status", existing.Status).
 			Msg("startAnalysisRecord: Found existing analysis record")
@@ -227,16 +299,15 @@ func (s *Service) startAnalysisRecord(ctx context.Context, subID, enrichID strin
 		case string(StatusCompleted):
 			// Allow re-running analysis by resetting the existing record
 			s.logger.Info().
-				Str("submission_id", subID).
+				Str("challenge_id", challengeID.String()).
 				Str("analysis_id", existing.ID).
 				Str("old_status", existing.Status).
 				Msg("startAnalysisRecord: Resetting existing analysis to pending for re-run")
 
 			existing.Status = string(StatusPending)
-			existing.EnrichmentID = enrichID
+			existing.CompanyID = companyID
 			existing.UpdatedAt = time.Now()
 			existing.CompletedAt = nil
-			existing.ProcessingTimeMs = 0
 
 			// Clear previous analysis results for fresh run
 			existing.FrameworkResults = make(map[string]json.RawMessage)
@@ -255,26 +326,26 @@ func (s *Service) startAnalysisRecord(ctx context.Context, subID, enrichID strin
 			return existing, nil
 		}
 	} else if err != nil && !strings.Contains(err.Error(), "not found") {
-		s.logger.Error().Err(err).Str("submission_id", subID).Msg("startAnalysisRecord: Error fetching existing analysis (not 'not found')")
+		s.logger.Error().Err(err).Str("challenge_id", challengeID.String()).Msg("startAnalysisRecord: Error fetching existing analysis (not 'not found')")
 		return nil, err
 	}
 
-	s.logger.Info().Str("submission_id", subID).Msg("startAnalysisRecord: No existing analysis found, creating new record")
+	s.logger.Info().Str("challenge_id", challengeID.String()).Msg("startAnalysisRecord: No existing analysis found, creating new record")
 
 	// If not found or other retrieval error, create a new record
 	a := &Analysis{
-		ID:           uuid.New().String(),
-		SubmissionID: subID,
-		EnrichmentID: enrichID,
-		Status:       string(StatusPending),
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
+		ID:          uuid.New().String(),
+		CompanyID:   companyID,
+		ChallengeID: challengeID,
+		Status:      string(StatusPending),
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
 	}
 
 	s.logger.Info().
 		Str("analysis_id", a.ID).
-		Str("submission_id", subID).
-		Str("enrichment_id", enrichID).
+		Str("challenge_id", challengeID.String()).
+		Interface("company_id", companyID).
 		Msg("startAnalysisRecord: Calling repo.Create")
 
 	if err := s.repo.Create(ctx, a); err != nil {
@@ -298,37 +369,37 @@ func (s *Service) saveCheckpoint(ctx context.Context, a *Analysis, k *ContextCon
 
 	// Store frameworks using SetFramework helper
 	if k.PESTEL != nil {
-		a.SetFramework("pestel", *k.PESTEL)
+		a.SetFramework(FrameworkPESTEL, *k.PESTEL)
 	}
 	if k.Porter != nil {
-		a.SetFramework("porter", *k.Porter)
+		a.SetFramework(FrameworkPorter, *k.Porter)
 	}
 	if k.TamSamSom != nil {
-		a.SetFramework("tam_sam_som", *k.TamSamSom)
+		a.SetFramework(FrameworkTAMSAMSOM, *k.TamSamSom)
 	}
 	if k.SWOT != nil {
-		a.SetFramework("swot", *k.SWOT)
+		a.SetFramework(FrameworkSWOT, *k.SWOT)
 	}
 	if k.Benchmarking != nil {
-		a.SetFramework("benchmarking", *k.Benchmarking)
+		a.SetFramework(FrameworkBenchmarking, *k.Benchmarking)
 	}
 	if k.BlueOcean != nil {
-		a.SetFramework("blue_ocean", *k.BlueOcean)
+		a.SetFramework(FrameworkBlueOcean, *k.BlueOcean)
 	}
 	if k.GrowthHacking != nil {
-		a.SetFramework("growth_hacking", *k.GrowthHacking)
+		a.SetFramework(FrameworkGrowthHacking, *k.GrowthHacking)
 	}
 	if k.Scenarios != nil {
-		a.SetFramework("scenarios", *k.Scenarios)
+		a.SetFramework(FrameworkScenarios, *k.Scenarios)
 	}
 	if k.OKRs != nil {
-		a.SetFramework("okrs", *k.OKRs)
+		a.SetFramework(FrameworkOKRs, *k.OKRs)
 	}
 	if k.BSC != nil {
-		a.SetFramework("bsc", *k.BSC)
+		a.SetFramework(FrameworkBSC, *k.BSC)
 	}
 	if k.DecisionMatrix != nil {
-		a.SetFramework("decision_matrix", *k.DecisionMatrix)
+		a.SetFramework(FrameworkDecisionMatrix, *k.DecisionMatrix)
 	}
 
 	a.Status = nextStatus
@@ -353,10 +424,21 @@ func (s *Service) saveCheckpoint(ctx context.Context, a *Analysis, k *ContextCon
 
 func (s *Service) markAsComplete(ctx context.Context, a *Analysis, startTime time.Time) {
 	a.Status = string(StatusCompleted)
-	a.ProcessingTimeMs = time.Since(startTime).Milliseconds()
 	now := time.Now()
+	s.logger.Info().Int64("processing_time_ms", time.Since(startTime).Milliseconds()).Msg("Analysis processing completed")
 	a.CompletedAt = &now
 	s.repo.Update(ctx, a)
+
+	// Auto-generate access code for public sharing
+	if a.AccessCode == nil || *a.AccessCode == "" {
+		code, err := s.GenerateAccessCode(ctx, a.ID)
+		if err != nil {
+			s.logger.Warn().Err(err).Str("analysis_id", a.ID).Msg("Failed to auto-generate access code")
+		} else {
+			s.logger.Info().Str("analysis_id", a.ID).Str("access_code", code).Msg("Access code auto-generated")
+		}
+	}
+
 	s.logger.Info().Msg("Analysis Workflow Completed")
 }
 
@@ -372,11 +454,10 @@ func withDataPriority(prompt string) string {
 func (s *Service) runPESTEL(ctx context.Context, k *ContextContainer) (*PESTELAnalysis, error) {
 	var res PESTELAnalysis
 	data := map[string]interface{}{
-		"company_data":    k.SubmissionData,
-		"enrichment_data": k.EnrichmentData,
-		"macro_context":   s.extractMacroContext(k.EnrichmentData),
+		"company_data":  k.CompanyData,
+		"macro_context": s.extractMacroContext(),
 	}
-	opts := llm.NewGenerationOptions(s.frameworks["pestel"])
+	opts := llm.NewGenerationOptions(s.frameworks[FrameworkPESTEL])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, withDataPriority(llm.FrameworkPESTELPrompt), data, &res)
 	return &res, err
 }
@@ -384,11 +465,10 @@ func (s *Service) runPESTEL(ctx context.Context, k *ContextContainer) (*PESTELAn
 func (s *Service) runPorter(ctx context.Context, k *ContextContainer) (*PorterAnalysis, error) {
 	var res PorterAnalysis
 	data := map[string]interface{}{
-		"company_data":    k.SubmissionData,
-		"enrichment_data": k.EnrichmentData,
-		"macro_context":   s.extractMacroContext(k.EnrichmentData),
+		"company_data":  k.CompanyData,
+		"macro_context": s.extractMacroContext(),
 	}
-	opts := llm.NewGenerationOptions(s.frameworks["porter"])
+	opts := llm.NewGenerationOptions(s.frameworks[FrameworkPorter])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, withDataPriority(llm.FrameworkPorterPrompt), data, &res)
 	return &res, err
 }
@@ -396,11 +476,10 @@ func (s *Service) runPorter(ctx context.Context, k *ContextContainer) (*PorterAn
 func (s *Service) runTamSamSom(ctx context.Context, k *ContextContainer) (*TamSamSomAnalysis, error) {
 	var res TamSamSomAnalysis
 	data := map[string]interface{}{
-		"company_data":    k.SubmissionData,
-		"enrichment_data": k.EnrichmentData,
-		"macro_context":   s.extractMacroContext(k.EnrichmentData),
+		"company_data":  k.CompanyData,
+		"macro_context": s.extractMacroContext(),
 	}
-	opts := llm.NewGenerationOptions(s.frameworks["tam_sam_som"])
+	opts := llm.NewGenerationOptions(s.frameworks[FrameworkTAMSAMSOM])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, withDataPriority(llm.FrameworkTamSamSomPrompt), data, &res)
 	return &res, err
 }
@@ -419,12 +498,11 @@ func (s *Service) runSWOT(ctx context.Context, k *ContextContainer) (*SWOTAnalys
 	}
 
 	data := map[string]interface{}{
-		"company_data":    k.SubmissionData,
-		"enrichment_data": k.EnrichmentData,
+		"company_data":    k.CompanyData,
 		"pestel_insights": pestelSummary,
 		"porter_insights": porterSummary,
 	}
-	opts := llm.NewGenerationOptions(s.frameworks["swot"])
+	opts := llm.NewGenerationOptions(s.frameworks[FrameworkSWOT])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, withDataPriority(llm.FrameworkSWOTPrompt), data, &res)
 	return &res, err
 }
@@ -439,11 +517,10 @@ func (s *Service) runBenchmarking(ctx context.Context, k *ContextContainer) (*Be
 	}
 
 	data := map[string]interface{}{
-		"company_data":    k.SubmissionData,
-		"enrichment_data": k.EnrichmentData,
-		"market_scale":    marketScale,
+		"company_data": k.CompanyData,
+		"market_scale": marketScale,
 	}
-	opts := llm.NewGenerationOptions(s.frameworks["benchmarking"])
+	opts := llm.NewGenerationOptions(s.frameworks[FrameworkBenchmarking])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, withDataPriority(llm.FrameworkBenchmarkingPrompt), data, &res)
 	return &res, err
 }
@@ -458,11 +535,10 @@ func (s *Service) runBlueOcean(ctx context.Context, k *ContextContainer) (*BlueO
 	}
 
 	data := map[string]interface{}{
-		"company_data":    k.SubmissionData,
-		"enrichment_data": k.EnrichmentData,
+		"company_data":    k.CompanyData,
 		"porter_insights": porterSummary,
 	}
-	opts := llm.NewGenerationOptions(s.frameworks["blue_ocean"])
+	opts := llm.NewGenerationOptions(s.frameworks[FrameworkBlueOcean])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, withDataPriority(llm.FrameworkBlueOceanPrompt), data, &res)
 	return &res, err
 }
@@ -496,14 +572,13 @@ func (s *Service) runGrowthHacking(ctx context.Context, k *ContextContainer) (*G
 		Msg("🔍 DEBUG GrowthHacking Input Data")
 
 	data := map[string]interface{}{
-		"company_data":       k.SubmissionData,
-		"enrichment_data":    k.EnrichmentData,
+		"company_data":       k.CompanyData,
 		"swot_summary":       swotSummary,
 		"swot_weaknesses":    swotWeaknesses,
 		"swot_opportunities": swotOpportunities,
 		"market_scale":       marketScale,
 	}
-	opts := llm.NewGenerationOptions(s.frameworks["growth_hacking"])
+	opts := llm.NewGenerationOptions(s.frameworks[FrameworkGrowthHacking])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, withDataPriority(llm.FrameworkGrowthHackingPrompt), data, &res)
 	return &res, err
 }
@@ -518,12 +593,11 @@ func (s *Service) runScenarios(ctx context.Context, k *ContextContainer) (*Scena
 	}
 
 	data := map[string]interface{}{
-		"company_data":    k.SubmissionData,
-		"enrichment_data": k.EnrichmentData,
+		"company_data":    k.CompanyData,
 		"pestel_insights": pestelSummary,
-		"macro_context":   s.extractMacroContext(k.EnrichmentData),
+		"macro_context":   s.extractMacroContext(),
 	}
-	opts := llm.NewGenerationOptions(s.frameworks["scenarios"])
+	opts := llm.NewGenerationOptions(s.frameworks[FrameworkScenarios])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, withDataPriority(llm.FrameworkScenariosPrompt), data, &res)
 	return &res, err
 }
@@ -556,13 +630,12 @@ func (s *Service) runOKRs(ctx context.Context, k *ContextContainer) (*OKRAnalysi
 		Msg("🔍 DEBUG OKRs Input Data")
 
 	data := map[string]interface{}{
-		"company_data":                    k.SubmissionData,
-		"enrichment_data":                 k.EnrichmentData,
+		"company_data":                    k.CompanyData,
 		"blue_ocean_insights":             blueOceanSummary,
 		"swot_weaknesses":                 swotWeaknesses,
 		"decision_matrix_recommendations": decisionMatrixRecommendations,
 	}
-	opts := llm.NewGenerationOptions(s.frameworks["okrs"])
+	opts := llm.NewGenerationOptions(s.frameworks[FrameworkOKRs])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, withDataPriority(llm.FrameworkOKRsPrompt), data, &res)
 
 	// DEBUG: Log what we got back
@@ -597,11 +670,10 @@ func (s *Service) runBSC(ctx context.Context, k *ContextContainer) (*BalancedSco
 		Msg("🔍 DEBUG BSC Input Data")
 
 	data := map[string]interface{}{
-		"company_data":        k.SubmissionData,
-		"enrichment_data":     k.EnrichmentData,
+		"company_data":        k.CompanyData,
 		"blue_ocean_insights": blueOceanSummary,
 	}
-	opts := llm.NewGenerationOptions(s.frameworks["bsc"])
+	opts := llm.NewGenerationOptions(s.frameworks[FrameworkBSC])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, withDataPriority(llm.FrameworkBSCPrompt), data, &res)
 
 	// DEBUG: Log what we got back
@@ -631,11 +703,10 @@ func (s *Service) runDecisionMatrix(ctx context.Context, k *ContextContainer) (*
 		Msg("🔍 DEBUG DecisionMatrix Input Data")
 
 	data := map[string]interface{}{
-		"company_data":      k.SubmissionData,
-		"enrichment_data":   k.EnrichmentData,
+		"company_data":      k.CompanyData,
 		"scenario_insights": scenarioSummary,
 	}
-	opts := llm.NewGenerationOptions(s.frameworks["decision_matrix"])
+	opts := llm.NewGenerationOptions(s.frameworks[FrameworkDecisionMatrix])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, withDataPriority(llm.FrameworkDecisionMatrixPrompt), data, &res)
 
 	// DEBUG: Log what we got back
@@ -654,21 +725,20 @@ func (s *Service) runSynthesis(ctx context.Context, k *ContextContainer) (Analys
 
 	// SAFETY: Build summaries map with nil checks to prevent panic if any framework failed
 	summaries := map[string]string{
-		"pestel":     safeGetSummary(k.PESTEL),
-		"porter":     safeGetSummary(k.Porter),
-		"swot":       safeGetSummary(k.SWOT),
-		"blue_ocean": safeGetSummary(k.BlueOcean),
-		"okrs":       safeGetSummary(k.OKRs),
-		"scenarios":  safeGetSummary(k.Scenarios),
-		"growth":     safeGetSummary(k.GrowthHacking),
+		FrameworkPESTEL:        safeGetSummary(k.PESTEL),
+		FrameworkPorter:        safeGetSummary(k.Porter),
+		FrameworkSWOT:          safeGetSummary(k.SWOT),
+		FrameworkBlueOcean:     safeGetSummary(k.BlueOcean),
+		FrameworkOKRs:          safeGetSummary(k.OKRs),
+		FrameworkScenarios:     safeGetSummary(k.Scenarios),
+		FrameworkGrowthHacking: safeGetSummary(k.GrowthHacking),
 	}
 	data := map[string]interface{}{
-		"company_data":            k.SubmissionData,
-		"enrichment_data":         k.EnrichmentData,
+		"company_data":            k.CompanyData,
 		"all_framework_summaries": summaries,
 	}
 	// NEW: Uses framework-specific synthesis config (Claude 3.5 Sonnet with T=0.4)
-	opts := llm.NewGenerationOptions(s.frameworks["synthesis"])
+	opts := llm.NewGenerationOptions(s.frameworks[FrameworkSynthesis])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, llm.SynthesisPrompt, data, &res)
 	return res, err
 }
@@ -781,80 +851,94 @@ func submissionToMap(s *SubmissionData) map[string]interface{} {
 	return result
 }
 
-// extractMacroContext fetches macro data directly from the macroeconomics database
-// IMPORTANT: This now fetches fresh data from DB, NOT from enrichment output
-// This ensures analysis always has the most current macro data
-// Falls back to enrichment data for backwards compatibility with old enrichments
-func (s *Service) extractMacroContext(enrichmentData map[string]interface{}) map[string]interface{} {
-	ctx := context.Background()
-
-	// PRIMARY: Fetch macro data directly from macroeconomics service (DB)
-	if s.macroService != nil {
-		snapshot, err := s.macroService.GetLatestSnapshot(ctx)
-		if err == nil && snapshot.HasData() {
-			s.logger.Debug().
-				Int("indicator_count", len(snapshot.Indicators)).
-				Msg("Using macro data directly from DB (preferred)")
-
-			// Convert snapshot to map for prompt injection
-			result := map[string]interface{}{
-				"economic_indicators": s.formatSnapshotForPrompt(snapshot),
-			}
-			return result
-		}
-		if err != nil {
-			s.logger.Warn().Err(err).Msg("Failed to fetch macro data from DB, falling back to enrichment data")
-		} else {
-			s.logger.Warn().Msg("No macro data in DB, falling back to enrichment data")
-		}
-	} else {
-		s.logger.Debug().Msg("MacroService not configured, falling back to enrichment data")
+// companyDataToMap converts AnalysisCompanyData to a map for template injection
+func companyDataToMap(c *AnalysisCompanyData) map[string]interface{} {
+	result := map[string]interface{}{
+		"name": c.Name,
 	}
 
-	// FALLBACK: Try to extract from enrichment data (backwards compatibility)
-	if enrichmentData == nil {
-		s.logger.Debug().Msg("No enrichment data provided, returning empty macro_context")
-		return map[string]interface{}{}
+	// Add all optional fields if present
+	if c.CNPJ != nil {
+		result["cnpj"] = *c.CNPJ
 	}
-
-	// Check if macro_context exists in enrichment data
-	if macroCtx, ok := enrichmentData["macro_context"]; ok && macroCtx != nil {
-		if macroMap, ok := macroCtx.(map[string]interface{}); ok {
-			s.logger.Debug().Msg("Macro-context extracted from enrichment data (legacy)")
-			return macroMap
-		}
-		s.logger.Warn().Msg("macro_context exists but is not a map, returning empty")
+	if c.Website != nil {
+		result["website"] = *c.Website
 	}
-
-	// Return empty map for backward compatibility
-	return map[string]interface{}{}
-}
-
-// formatSnapshotForPrompt converts macro snapshot to a map suitable for prompt injection
-func (s *Service) formatSnapshotForPrompt(snapshot *MacroSnapshot) map[string]interface{} {
-	result := map[string]interface{}{}
-
-	for code, ind := range snapshot.Indicators {
-		if ind == nil {
-			continue
-		}
-		// Format based on indicator type
-		switch code {
-		case "selic", "selic_meta":
-			result["interest_rate"] = fmt.Sprintf("%.2f%% a.a.", ind.Value)
-		case "ipca", "ipca_12m":
-			result["inflation_rate"] = fmt.Sprintf("%.2f%% (12 meses)", ind.Value)
-		case "usd_brl":
-			result["exchange_rate"] = fmt.Sprintf("R$ %.2f/USD", ind.Value)
-		case "pib":
-			result["gdp_growth"] = fmt.Sprintf("%.2f%%", ind.Value)
-		default:
-			// Include other indicators by code
-			result[code] = fmt.Sprintf("%.2f %s", ind.Value, ind.Unit)
-		}
+	if c.Industry != nil {
+		result["industry"] = *c.Industry
+	}
+	if c.Sector != nil {
+		result["sector"] = *c.Sector
+	}
+	if c.CompanySize != nil {
+		result["company_size"] = *c.CompanySize
+	}
+	if c.Location != nil {
+		result["location"] = *c.Location
+	}
+	if c.TargetMarket != nil {
+		result["target_market"] = *c.TargetMarket
+	}
+	if c.FundingStage != nil {
+		result["funding_stage"] = *c.FundingStage
+	}
+	if c.FoundationYear != nil {
+		result["foundation_year"] = *c.FoundationYear
+	}
+	if c.Headquarters != nil {
+		result["headquarters"] = *c.Headquarters
+	}
+	if c.TargetAudience != nil {
+		result["target_audience"] = *c.TargetAudience
+	}
+	if c.ValueProposition != nil {
+		result["value_proposition"] = *c.ValueProposition
+	}
+	if c.EmployeesRange != nil {
+		result["employees_range"] = *c.EmployeesRange
+	}
+	if c.RevenueEstimate != nil {
+		result["revenue_estimate"] = *c.RevenueEstimate
+	}
+	if c.BusinessModel != nil {
+		result["business_model"] = *c.BusinessModel
+	}
+	if len(c.Competitors) > 0 {
+		result["competitors"] = c.Competitors
+	}
+	if c.MarketShareStatus != nil {
+		result["market_share_status"] = *c.MarketShareStatus
+	}
+	if c.DigitalMaturity != nil {
+		result["digital_maturity"] = *c.DigitalMaturity
+	}
+	if len(c.Strengths) > 0 {
+		result["strengths"] = c.Strengths
+	}
+	if len(c.Weaknesses) > 0 {
+		result["weaknesses"] = c.Weaknesses
+	}
+	if c.MacroContext != nil {
+		result["macro_context"] = c.MacroContext
 	}
 
 	return result
+}
+
+// extractMacroContext returns hardcoded Brazilian economic indicators for MVP
+// These values are updated periodically and reflect the most recent available data
+// TODO: Re-enable dynamic fetch from database when scaling beyond MVP
+func (s *Service) extractMacroContext() map[string]interface{} {
+	// Hardcoded Brazilian economic indicators for MVP
+	// Last updated: December 2025
+	return map[string]interface{}{
+		"economic_indicators": map[string]interface{}{
+			"interest_rate":  "15.00% a.a.",      // SELIC (BCB) - 05/12/2025
+			"inflation_rate": "4.68% (12 meses)", // IPCA (IBGE) - 05/12/2025
+			"exchange_rate":  "R$ 5,44/USD",      // Dólar Comercial - 05/12/2025
+			"as_of":          "2025-12",          // Reference date
+		},
+	}
 }
 
 // =================================================================================
@@ -866,37 +950,37 @@ func (s *Service) validateFrameworkCompleteness(k *ContextContainer) []string {
 	var empty []string
 
 	if k.PESTEL == nil || k.PESTEL.Summary == "" {
-		empty = append(empty, "pestel")
+		empty = append(empty, FrameworkPESTEL)
 	}
 	if k.Porter == nil || k.Porter.Summary == "" {
-		empty = append(empty, "porter")
+		empty = append(empty, FrameworkPorter)
 	}
 	if k.TamSamSom == nil || k.TamSamSom.Summary == "" {
-		empty = append(empty, "tam_sam_som")
+		empty = append(empty, FrameworkTAMSAMSOM)
 	}
 	if k.SWOT == nil || k.SWOT.Summary == "" {
-		empty = append(empty, "swot")
+		empty = append(empty, FrameworkSWOT)
 	}
 	if k.Benchmarking == nil || k.Benchmarking.Summary == "" {
-		empty = append(empty, "benchmarking")
+		empty = append(empty, FrameworkBenchmarking)
 	}
 	if k.BlueOcean == nil || k.BlueOcean.Summary == "" {
-		empty = append(empty, "blue_ocean")
+		empty = append(empty, FrameworkBlueOcean)
 	}
 	if k.GrowthHacking == nil || k.GrowthHacking.Summary == "" {
-		empty = append(empty, "growth_hacking")
+		empty = append(empty, FrameworkGrowthHacking)
 	}
 	if k.Scenarios == nil || k.Scenarios.Summary == "" {
-		empty = append(empty, "scenarios")
+		empty = append(empty, FrameworkScenarios)
 	}
 	if k.OKRs == nil || k.OKRs.Summary == "" {
-		empty = append(empty, "okrs")
+		empty = append(empty, FrameworkOKRs)
 	}
 	if k.BSC == nil || k.BSC.Summary == "" {
-		empty = append(empty, "bsc")
+		empty = append(empty, FrameworkBSC)
 	}
 	if k.DecisionMatrix == nil || k.DecisionMatrix.Summary == "" {
-		empty = append(empty, "decision_matrix")
+		empty = append(empty, FrameworkDecisionMatrix)
 	}
 
 	return empty
@@ -912,25 +996,25 @@ func (s *Service) validateCriticalFrameworks(a *Analysis) []string {
 	// Layer 1 - Environment (at least PESTEL or Porter must work)
 	var pestel PESTELAnalysis
 	var porter PorterAnalysis
-	pestelEmpty := a.GetFramework("pestel", &pestel) != nil || pestel.Summary == ""
-	porterEmpty := a.GetFramework("porter", &porter) != nil || porter.Summary == ""
+	pestelEmpty := a.GetFramework(FrameworkPESTEL, &pestel) != nil || pestel.Summary == ""
+	porterEmpty := a.GetFramework(FrameworkPorter, &porter) != nil || porter.Summary == ""
 	if pestelEmpty && porterEmpty {
 		missing = append(missing, "environment_layer (pestel+porter both empty)")
 	}
 
 	// Layer 2 - Positioning (SWOT is critical)
 	var swot SWOTAnalysis
-	if a.GetFramework("swot", &swot) != nil || (swot.Summary == "" && len(swot.Strengths) == 0 && len(swot.Weaknesses) == 0) {
-		missing = append(missing, "swot")
+	if a.GetFramework(FrameworkSWOT, &swot) != nil || (swot.Summary == "" && len(swot.Strengths) == 0 && len(swot.Weaknesses) == 0) {
+		missing = append(missing, FrameworkSWOT)
 	}
 
 	// Layer 3 - Strategy (at least one strategy framework)
 	var blueOcean BlueOceanAnalysis
 	var growthHacking GrowthHackingAnalysis
 	var scenarios ScenarioAnalysis
-	blueOceanEmpty := a.GetFramework("blue_ocean", &blueOcean) != nil || blueOcean.Summary == ""
-	growthHackingEmpty := a.GetFramework("growth_hacking", &growthHacking) != nil || growthHacking.Summary == ""
-	scenariosEmpty := a.GetFramework("scenarios", &scenarios) != nil || scenarios.Summary == ""
+	blueOceanEmpty := a.GetFramework(FrameworkBlueOcean, &blueOcean) != nil || blueOcean.Summary == ""
+	growthHackingEmpty := a.GetFramework(FrameworkGrowthHacking, &growthHacking) != nil || growthHacking.Summary == ""
+	scenariosEmpty := a.GetFramework(FrameworkScenarios, &scenarios) != nil || scenarios.Summary == ""
 	if blueOceanEmpty && growthHackingEmpty && scenariosEmpty {
 		missing = append(missing, "strategy_layer (blue_ocean+growth_hacking+scenarios all empty)")
 	}
@@ -938,16 +1022,16 @@ func (s *Service) validateCriticalFrameworks(a *Analysis) []string {
 	// Layer 4 - Execution (OKRs or BSC)
 	var okrs OKRAnalysis
 	var bsc BalancedScorecardAnalysis
-	okrsEmpty := a.GetFramework("okrs", &okrs) != nil || okrs.Summary == ""
-	bscEmpty := a.GetFramework("bsc", &bsc) != nil || bsc.Summary == ""
+	okrsEmpty := a.GetFramework(FrameworkOKRs, &okrs) != nil || okrs.Summary == ""
+	bscEmpty := a.GetFramework(FrameworkBSC, &bsc) != nil || bsc.Summary == ""
 	if okrsEmpty && bscEmpty {
 		missing = append(missing, "execution_layer (okrs+bsc both empty)")
 	}
 
 	// Synthesis must exist
 	var synthesis AnalysisSynthesis
-	if a.GetFramework("synthesis", &synthesis) != nil || (synthesis.ExecutiveSummary == "" && synthesis.CentralChallenge == "") {
-		missing = append(missing, "synthesis")
+	if a.GetFramework(FrameworkSynthesis, &synthesis) != nil || (synthesis.ExecutiveSummary == "" && synthesis.CentralChallenge == "") {
+		missing = append(missing, FrameworkSynthesis)
 	}
 
 	return missing
@@ -985,218 +1069,3 @@ func (s *Service) generateOKRsSummaryFallback(okrs *OKRAnalysis) string {
 	return summary
 }
 
-// =================================================================================
-// DYNAMIC FRAMEWORK EXECUTION
-// =================================================================================
-
-// RunAnalysisDynamic executes frameworks dynamically based on database configuration
-// This is the new flexible approach that will replace hardcoded layer execution
-func (s *Service) RunAnalysisDynamic(
-	ctx context.Context,
-	analysisID string,
-	enrichmentData map[string]interface{},
-	requestedCodes []string, // Optional: nil or empty means all active frameworks
-) error {
-	if s.frameworkService == nil {
-		return fmt.Errorf("framework service not configured")
-	}
-
-	// Determine which frameworks to run
-	var codes []string
-	if len(requestedCodes) > 0 {
-		codes = requestedCodes
-	} else {
-		// Get all active framework codes
-		activeFrameworks, err := s.frameworkService.ListActive(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get active frameworks: %w", err)
-		}
-		for _, fw := range activeFrameworks {
-			codes = append(codes, fw.Code)
-		}
-	}
-
-	// Get execution plan (resolves dependencies, orders correctly)
-	frameworks, err := s.frameworkService.GetExecutionPlan(ctx, codes)
-	if err != nil {
-		return fmt.Errorf("failed to get execution plan: %w", err)
-	}
-
-	s.logger.Info().
-		Str("analysis_id", analysisID).
-		Int("framework_count", len(frameworks)).
-		Strs("codes", codes).
-		Msg("Starting dynamic analysis execution")
-
-	results := make(map[string]json.RawMessage)
-
-	// Execute each framework in dependency order
-	for _, fw := range frameworks {
-		s.logger.Info().
-			Str("analysis_id", analysisID).
-			Str("framework", fw.Code).
-			Msg("Executing framework")
-
-		result, err := s.executeFrameworkDynamic(ctx, fw, enrichmentData, results)
-		if err != nil {
-			s.logger.Error().
-				Err(err).
-				Str("analysis_id", analysisID).
-				Str("framework", fw.Code).
-				Msg("Framework execution failed")
-			return fmt.Errorf("framework %s failed: %w", fw.Code, err)
-		}
-
-		results[fw.Code] = result
-
-		// Save incrementally to database
-		if err := s.repo.SetFrameworkResult(ctx, analysisID, fw.Code, result); err != nil {
-			s.logger.Warn().
-				Err(err).
-				Str("analysis_id", analysisID).
-				Str("framework", fw.Code).
-				Msg("Failed to save framework result incrementally")
-			// Continue anyway - we'll save everything at the end
-		}
-	}
-
-	s.logger.Info().
-		Str("analysis_id", analysisID).
-		Int("completed", len(results)).
-		Msg("Dynamic analysis execution completed")
-
-	return nil
-}
-
-// executeFrameworkDynamic executes a single framework using database configuration
-func (s *Service) executeFrameworkDynamic(
-	ctx context.Context,
-	fw *Framework,
-	enrichmentData map[string]interface{},
-	previousResults map[string]json.RawMessage,
-) (json.RawMessage, error) {
-	// Execute using existing LLM infrastructure
-	// Create a context container for compatibility with existing methods
-	// We need to populate it with previous results for dependent frameworks
-	k := &ContextContainer{
-		EnrichmentData: enrichmentData,
-	}
-
-	// Populate context container with previous results if needed
-	// This allows dependent frameworks to access results of their dependencies
-	if err := s.populateContextFromResults(k, previousResults); err != nil {
-		s.logger.Warn().Err(err).Str("framework", fw.Code).Msg("Failed to populate context from previous results")
-	}
-
-	// Map framework code to existing execution methods
-	// This bridges the dynamic system with existing hardcoded implementations
-	var result interface{}
-	var err error
-
-	switch fw.Code {
-	case "pestel":
-		result, err = s.runPESTEL(ctx, k)
-	case "porter":
-		result, err = s.runPorter(ctx, k)
-	case "tam_sam_som":
-		result, err = s.runTamSamSom(ctx, k)
-	case "swot":
-		result, err = s.runSWOT(ctx, k)
-	case "benchmarking":
-		result, err = s.runBenchmarking(ctx, k)
-	case "blue_ocean":
-		result, err = s.runBlueOcean(ctx, k)
-	case "growth_hacking":
-		result, err = s.runGrowthHacking(ctx, k)
-	case "scenarios":
-		result, err = s.runScenarios(ctx, k)
-	case "okrs":
-		result, err = s.runOKRs(ctx, k)
-	case "bsc":
-		result, err = s.runBSC(ctx, k)
-	case "decision_matrix":
-		result, err = s.runDecisionMatrix(ctx, k)
-	case "synthesis":
-		result, err = s.runSynthesis(ctx, k)
-	default:
-		return nil, fmt.Errorf("unknown framework code: %s", fw.Code)
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("LLM call failed for %s: %w", fw.Code, err)
-	}
-
-	// Convert result to JSON
-	resultJSON, err := json.Marshal(result)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal result for %s: %w", fw.Code, err)
-	}
-
-	return resultJSON, nil
-}
-
-// populateContextFromResults populates the ContextContainer with results from previously executed frameworks
-// This enables dependent frameworks to access the outputs of their dependencies
-func (s *Service) populateContextFromResults(k *ContextContainer, results map[string]json.RawMessage) error {
-	// Unmarshal each result into its appropriate field in the context container
-	for code, resultJSON := range results {
-		switch code {
-		case "pestel":
-			var pestel PESTELAnalysis
-			if err := json.Unmarshal(resultJSON, &pestel); err == nil {
-				k.PESTEL = &pestel
-			}
-		case "porter":
-			var porter PorterAnalysis
-			if err := json.Unmarshal(resultJSON, &porter); err == nil {
-				k.Porter = &porter
-			}
-		case "tam_sam_som":
-			var tamSamSom TamSamSomAnalysis
-			if err := json.Unmarshal(resultJSON, &tamSamSom); err == nil {
-				k.TamSamSom = &tamSamSom
-			}
-		case "swot":
-			var swot SWOTAnalysis
-			if err := json.Unmarshal(resultJSON, &swot); err == nil {
-				k.SWOT = &swot
-			}
-		case "benchmarking":
-			var bench BenchmarkingAnalysis
-			if err := json.Unmarshal(resultJSON, &bench); err == nil {
-				k.Benchmarking = &bench
-			}
-		case "blue_ocean":
-			var blueOcean BlueOceanAnalysis
-			if err := json.Unmarshal(resultJSON, &blueOcean); err == nil {
-				k.BlueOcean = &blueOcean
-			}
-		case "growth_hacking":
-			var growth GrowthHackingAnalysis
-			if err := json.Unmarshal(resultJSON, &growth); err == nil {
-				k.GrowthHacking = &growth
-			}
-		case "scenarios":
-			var scenarios ScenarioAnalysis
-			if err := json.Unmarshal(resultJSON, &scenarios); err == nil {
-				k.Scenarios = &scenarios
-			}
-		case "okrs":
-			var okrs OKRAnalysis
-			if err := json.Unmarshal(resultJSON, &okrs); err == nil {
-				k.OKRs = &okrs
-			}
-		case "bsc":
-			var bsc BalancedScorecardAnalysis
-			if err := json.Unmarshal(resultJSON, &bsc); err == nil {
-				k.BSC = &bsc
-			}
-		case "decision_matrix":
-			var dm DecisionMatrixAnalysis
-			if err := json.Unmarshal(resultJSON, &dm); err == nil {
-				k.DecisionMatrix = &dm
-			}
-		}
-	}
-	return nil
-}

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	apperrors "backend_v3/pkg/errors"
+
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -60,7 +62,7 @@ func NewAuthHandlers(
 func (h *AuthHandlers) GetCurrentUser(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Não autorizado", Message: "Usuário não autenticado"})
+		RespondAppError(c, h.Logger, apperrors.ErrUnauthorized)
 		return
 	}
 
@@ -73,8 +75,7 @@ func (h *AuthHandlers) GetCurrentUser(c *gin.Context) {
 
 	err := h.DB.Get(&profile, query, userID)
 	if err != nil {
-		h.Logger.Error().Err(err).Str("user_id", fmt.Sprintf("%v", userID)).Msg("Failed to fetch user profile")
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Não encontrado", Message: "Perfil do usuário não encontrado"})
+		RespondAppError(c, h.Logger, apperrors.ErrNotFound.WithInternal(err))
 		return
 	}
 
@@ -133,6 +134,40 @@ func (h *AuthHandlers) Login(c *gin.Context) {
 
 	if accessToken, ok := resp["access_token"].(string); ok {
 		resp["token"] = accessToken
+	}
+
+	// Fetch user profile from database to get role
+	var profile UserProfile
+	query := `
+		SELECT id, email, full_name, role, is_active, created_at, updated_at
+		FROM user_profiles
+		WHERE email = $1
+	`
+	if err := h.DB.Get(&profile, query, req.Email); err == nil {
+		resp["user"] = gin.H{
+			"id":         profile.ID,
+			"email":      profile.Email,
+			"full_name":  profile.FullName,
+			"role":       profile.Role,
+			"is_active":  profile.IsActive,
+			"created_at": profile.CreatedAt,
+			"updated_at": profile.UpdatedAt,
+		}
+	} else {
+		// Profile doesn't exist - create it from Supabase user data
+		// This handles users who signed up before profile creation was implemented
+		if userID := h.extractUserIDFromResponse(resp); userID != "" {
+			if createErr := h.createUserProfile(userID, req.Email, ""); createErr != nil {
+				h.Logger.Warn().Err(createErr).Str("email", req.Email).Msg("Failed to create missing profile on login")
+			} else {
+				resp["user"] = gin.H{
+					"id":        userID,
+					"email":     req.Email,
+					"full_name": strings.Split(req.Email, "@")[0],
+					"role":      "user",
+				}
+			}
+		}
 	}
 
 	c.JSON(http.StatusOK, resp)
@@ -199,9 +234,25 @@ func (h *AuthHandlers) Signup(c *gin.Context) {
 		resp["token"] = accessToken
 	}
 
-	// Extract userID from Supabase response and link anonymous submissions
-	if userID := h.extractUserIDFromResponse(resp); userID != "" {
+	// Extract userID from Supabase response
+	userID := h.extractUserIDFromResponse(resp)
+	if userID != "" {
+		// Create user_profiles record (Supabase only creates auth.users)
+		if err := h.createUserProfile(userID, req.Email, req.FullName); err != nil {
+			h.Logger.Error().Err(err).Str("user_id", userID).Msg("Failed to create user profile")
+			// Continue anyway - user can still use the app, profile can be created on first login
+		}
+
+		// Link anonymous submissions to the new user (non-blocking)
 		h.linkAnonymousSubmissions(userID, req.Email)
+
+		// Add user info to response
+		resp["user"] = gin.H{
+			"id":        userID,
+			"email":     req.Email,
+			"full_name": req.FullName,
+			"role":      "user",
+		}
 	}
 
 	c.JSON(http.StatusCreated, resp)
@@ -379,17 +430,45 @@ func (h *AuthHandlers) UpdatePassword(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+// createUserProfile creates a user_profiles record for a newly signed up Supabase user
+func (h *AuthHandlers) createUserProfile(userID, email, fullName string) error {
+	// Check if profile already exists (idempotent)
+	var exists bool
+	err := h.DB.Get(&exists, "SELECT EXISTS(SELECT 1 FROM user_profiles WHERE id = $1)", userID)
+	if err == nil && exists {
+		return nil // Already exists, nothing to do
+	}
+
+	// Default full_name to email prefix if not provided
+	if fullName == "" {
+		fullName = strings.Split(email, "@")[0]
+	}
+
+	_, err = h.DB.Exec(
+		`INSERT INTO user_profiles (id, email, full_name, role, is_active, created_at, updated_at)
+		 VALUES ($1, $2, $3, 'user', TRUE, NOW(), NOW())
+		 ON CONFLICT (id) DO NOTHING`,
+		userID, email, fullName,
+	)
+	return err
+}
+
 // Helpers for mock auth flow
 func (h *AuthHandlers) ensureUserExists(email string) (string, string, error) {
+	// Check if user already exists - fetch both id and role from database
+	var userData struct {
+		ID   string `db:"id"`
+		Role string `db:"role"`
+	}
+	err := h.DB.Get(&userData, "SELECT id, role FROM user_profiles WHERE email = $1", email)
+	if err == nil && userData.ID != "" {
+		return userData.ID, userData.Role, nil
+	}
+
+	// User doesn't exist - create with default role based on email
 	role := "user"
 	if strings.Contains(strings.ToLower(email), "admin") {
 		role = "admin"
-	}
-
-	var userID string
-	err := h.DB.Get(&userID, "SELECT id FROM user_profiles WHERE email = $1", email)
-	if err == nil && userID != "" {
-		return userID, role, nil
 	}
 
 	newID := uuid.New().String()

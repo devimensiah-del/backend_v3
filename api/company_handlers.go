@@ -1,10 +1,13 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
 
+	"backend_v3/domain/analysis"
+	"backend_v3/domain/challenge"
 	"backend_v3/domain/company"
 	"backend_v3/domain/enrichment"
 	"backend_v3/domain/submission"
@@ -18,8 +21,10 @@ import (
 // CompanyHandlers handles company-based re-enrich/re-analyze endpoints
 type CompanyHandlers struct {
 	CompanyService    *company.Service
-	SubmissionService *submission.Service
+	SubmissionService *submission.Service // Needed for re-analyze flow
 	EnrichmentService *enrichment.Service
+	ChallengeService  *challenge.Service  // For creating challenges for analysis
+	AnalysisService   *analysis.Service   // For fetching latest analysis per challenge
 	AsynqClient       *asynq.Client
 	Logger            zerolog.Logger
 }
@@ -29,6 +34,8 @@ func NewCompanyHandlers(
 	companySvc *company.Service,
 	submissionSvc *submission.Service,
 	enrichmentSvc *enrichment.Service,
+	challengeSvc *challenge.Service,
+	analysisSvc *analysis.Service,
 	asynqClient *asynq.Client,
 	logger zerolog.Logger,
 ) *CompanyHandlers {
@@ -36,6 +43,8 @@ func NewCompanyHandlers(
 		CompanyService:    companySvc,
 		SubmissionService: submissionSvc,
 		EnrichmentService: enrichmentSvc,
+		ChallengeService:  challengeSvc,
+		AnalysisService:   analysisSvc,
 		AsynqClient:       asynqClient,
 		Logger:            logger,
 	}
@@ -63,452 +72,20 @@ func (h *CompanyHandlers) checkCompanyAccess(c *gin.Context, comp *company.Compa
 	return comp.IsUserAllowed(userID)
 }
 
-// ReEnrichCompany handles POST /api/v1/admin/companies/:id/re-enrich
-// Creates a new submission from company data and triggers enrichment
-// Accepts optional JSON body with new_challenge to override the business challenge
-func (h *CompanyHandlers) ReEnrichCompany(c *gin.Context) {
-	companyID := c.Param("id")
-
-	// Parse optional request body for challenge override
-	var req ChallengeOverrideRequest
-	_ = c.ShouldBindJSON(&req) // Ignore error - empty body is valid
-
-	// Parse company UUID
-	companyUUID, err := uuid.Parse(companyID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
-		return
-	}
-
-	// Get company
-	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
-	if err != nil || comp == nil {
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Company not found"})
-		return
-	}
-
-	// Check access
-	if !h.checkCompanyAccess(c, comp) {
-		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Access denied - not admin or authorized user"})
-		return
-	}
-
-	// Get last submission for business_challenge (fallback)
-	lastSub, err := h.CompanyService.GetLastSubmission(c.Request.Context(), companyUUID)
-	if err != nil {
-		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to get last submission")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Database error", Message: "Failed to retrieve last submission"})
-		return
-	}
-	if lastSub == nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "No previous submission", Message: "No previous submission found for this company"})
-		return
-	}
-
-	// Determine which challenge to use: new_challenge if provided, else last submission's
-	challenge := lastSub.BusinessChallenge
-	if req.NewChallenge != "" {
-		challenge = req.NewChallenge
-	}
-
-	// Get user info from auth context
-	userName, _ := c.Get("userName")
-	userEmail, _ := c.Get("userEmail")
-	userIDStr, _ := c.Get("userID")
-
-	contactName := "Admin User"
-	if userName != nil {
-		contactName = userName.(string)
-	}
-	contactEmail := "admin@imensiah.com"
-	if userEmail != nil {
-		contactEmail = userEmail.(string)
-	}
-	var userID *uuid.UUID
-	if userIDStr != nil {
-		if uid, err := uuid.Parse(userIDStr.(string)); err == nil {
-			userID = &uid
-		}
-	}
-
-	// Create submission from company data
-	sub, err := h.SubmissionService.CreateFromCompany(c.Request.Context(), submission.CreateFromCompanyInput{
-		CompanyID:         companyUUID,
-		CompanyName:       comp.Name,
-		CNPJ:              comp.CNPJ,
-		Website:           comp.Website,
-		Industry:          comp.Industry,
-		CompanySize:       comp.CompanySize,
-		Location:          comp.Location,
-		TargetMarket:      comp.TargetMarket,
-		FundingStage:      comp.FundingStage,
-		AnnualRevenueMin:  comp.AnnualRevenueMin,
-		AnnualRevenueMax:  comp.AnnualRevenueMax,
-		LinkedInURL:       comp.LinkedInURL,
-		TwitterHandle:     comp.TwitterHandle,
-		BusinessChallenge: challenge,
-		ContactName:       contactName,
-		ContactEmail:      contactEmail,
-		UserID:            userID,
-	})
-	if err != nil {
-		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to create submission from company")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Creation failed", Message: err.Error()})
-		return
-	}
-
-	// Link submission to company (not primary)
-	if err := h.CompanyService.LinkSubmission(c.Request.Context(), companyUUID, sub.ID, false, userID); err != nil {
-		h.Logger.Warn().Err(err).Str("company_id", companyID).Msg("Failed to link submission to company")
-		// Continue anyway - submission created successfully
-	}
-
-	// Create enrichment record
-	enrich := enrichment.NewEnrichment(sub.ID)
-	if err := h.EnrichmentService.Create(c.Request.Context(), enrich); err != nil {
-		h.Logger.Error().Err(err).Str("submission_id", sub.ID.String()).Msg("Failed to create enrichment")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Enrichment creation failed", Message: err.Error()})
-		return
-	}
-
-	// Enqueue enrichment job
-	payload := map[string]string{
-		"submission_id": sub.ID.String(),
-	}
-	payloadBytes, _ := json.Marshal(payload)
-	task := asynq.NewTask("enrichment_job", payloadBytes)
-	if _, err := h.AsynqClient.Enqueue(task); err != nil {
-		h.Logger.Error().Err(err).Msg("Failed to enqueue enrichment job")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Enqueue failed", Message: "Failed to start enrichment"})
-		return
-	}
-
-	h.Logger.Info().
-		Str("company_id", companyID).
-		Str("submission_id", sub.ID.String()).
-		Str("enrichment_id", enrich.ID.String()).
-		Bool("new_challenge_provided", req.NewChallenge != "").
-		Msg("Re-enrichment started from company data")
-
-	c.JSON(http.StatusOK, MessageResponse{
-		Message: "Re-enrichment started",
-		Data: map[string]interface{}{
-			"submission_id":          sub.ID.String(),
-			"enrichment_id":          enrich.ID.String(),
-			"company_id":             companyID,
-			"new_challenge_provided": req.NewChallenge != "",
-		},
-	})
-}
-
-// ReAnalyzeCompany handles POST /api/v1/admin/companies/:id/re-analyze
-// Creates a new submission, copies last enrichment, triggers analysis
-// Accepts optional JSON body with new_challenge to override the business challenge
-func (h *CompanyHandlers) ReAnalyzeCompany(c *gin.Context) {
-	companyID := c.Param("id")
-
-	// Parse optional request body for challenge override
-	var req ChallengeOverrideRequest
-	_ = c.ShouldBindJSON(&req) // Ignore error - empty body is valid
-
-	// Parse company UUID
-	companyUUID, err := uuid.Parse(companyID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
-		return
-	}
-
-	// Get company
-	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
-	if err != nil || comp == nil {
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Company not found"})
-		return
-	}
-
-	// Check access
-	if !h.checkCompanyAccess(c, comp) {
-		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Access denied - not admin or authorized user"})
-		return
-	}
-
-	// Get last submission for business_challenge (fallback)
-	lastSub, err := h.CompanyService.GetLastSubmission(c.Request.Context(), companyUUID)
-	if err != nil {
-		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to get last submission")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Database error", Message: "Failed to retrieve last submission"})
-		return
-	}
-	if lastSub == nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "No previous submission", Message: "No previous submission found for this company"})
-		return
-	}
-
-	// Determine which challenge to use: new_challenge if provided, else last submission's
-	challenge := lastSub.BusinessChallenge
-	if req.NewChallenge != "" {
-		challenge = req.NewChallenge
-	}
-
-	// Get last completed enrichment
-	lastEnrich, err := h.CompanyService.GetLastCompletedEnrichment(c.Request.Context(), companyUUID)
-	if err != nil {
-		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to get last completed enrichment")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Database error", Message: "Failed to retrieve last enrichment"})
-		return
-	}
-	if lastEnrich == nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "No completed enrichment", Message: "No completed enrichment found for this company"})
-		return
-	}
-
-	// Get user info from auth context
-	userName, _ := c.Get("userName")
-	userEmail, _ := c.Get("userEmail")
-	userIDStr, _ := c.Get("userID")
-
-	contactName := "Admin User"
-	if userName != nil {
-		contactName = userName.(string)
-	}
-	contactEmail := "admin@imensiah.com"
-	if userEmail != nil {
-		contactEmail = userEmail.(string)
-	}
-	var userID *uuid.UUID
-	if userIDStr != nil {
-		if uid, err := uuid.Parse(userIDStr.(string)); err == nil {
-			userID = &uid
-		}
-	}
-
-	// Create submission from company data
-	sub, err := h.SubmissionService.CreateFromCompany(c.Request.Context(), submission.CreateFromCompanyInput{
-		CompanyID:         companyUUID,
-		CompanyName:       comp.Name,
-		CNPJ:              comp.CNPJ,
-		Website:           comp.Website,
-		Industry:          comp.Industry,
-		CompanySize:       comp.CompanySize,
-		Location:          comp.Location,
-		TargetMarket:      comp.TargetMarket,
-		FundingStage:      comp.FundingStage,
-		AnnualRevenueMin:  comp.AnnualRevenueMin,
-		AnnualRevenueMax:  comp.AnnualRevenueMax,
-		LinkedInURL:       comp.LinkedInURL,
-		TwitterHandle:     comp.TwitterHandle,
-		BusinessChallenge: challenge,
-		ContactName:       contactName,
-		ContactEmail:      contactEmail,
-		UserID:            userID,
-	})
-	if err != nil {
-		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to create submission from company")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Creation failed", Message: err.Error()})
-		return
-	}
-
-	// Link submission to company (not primary)
-	if err := h.CompanyService.LinkSubmission(c.Request.Context(), companyUUID, sub.ID, false, userID); err != nil {
-		h.Logger.Warn().Err(err).Str("company_id", companyID).Msg("Failed to link submission to company")
-	}
-
-	// Copy enrichment data (creates new enrichment with status=completed)
-	newEnrich, err := h.EnrichmentService.CopyEnrichment(c.Request.Context(), lastEnrich.EnrichmentID, sub.ID)
-	if err != nil {
-		h.Logger.Error().Err(err).Str("source_enrichment_id", lastEnrich.EnrichmentID.String()).Msg("Failed to copy enrichment")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Enrichment copy failed", Message: err.Error()})
-		return
-	}
-
-	// Enqueue analysis job (worker will create the analysis record)
-	payload := map[string]string{
-		"submission_id": sub.ID.String(),
-		"enrichment_id": newEnrich.ID.String(),
-	}
-	payloadBytes, _ := json.Marshal(payload)
-	task := asynq.NewTask("analysis_job", payloadBytes)
-
-	// Enqueue with explicit options for better visibility
-	taskInfo, err := h.AsynqClient.Enqueue(task,
-		asynq.MaxRetry(3),
-		asynq.Queue("default"),
-		asynq.Retention(24*time.Hour),
-	)
-	if err != nil {
-		h.Logger.Error().Err(err).Msg("Failed to enqueue analysis job")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Enqueue failed", Message: "Failed to start analysis"})
-		return
-	}
-
-	h.Logger.Info().
-		Str("task_id", taskInfo.ID).
-		Str("queue", taskInfo.Queue).
-		Str("submission_id", sub.ID.String()).
-		Msg("Analysis job enqueued successfully")
-
-	h.Logger.Info().
-		Str("company_id", companyID).
-		Str("submission_id", sub.ID.String()).
-		Str("enrichment_id", newEnrich.ID.String()).
-		Bool("new_challenge_provided", req.NewChallenge != "").
-		Msg("Re-analysis started from company data (enrichment copied)")
-
-	c.JSON(http.StatusOK, MessageResponse{
-		Message: "Re-analysis started",
-		Data: map[string]interface{}{
-			"submission_id":          sub.ID.String(),
-			"enrichment_id":          newEnrich.ID.String(),
-			"company_id":             companyID,
-			"new_challenge_provided": req.NewChallenge != "",
-		},
-	})
-}
-
-// EnrichAndAnalyzeCompany handles POST /api/v1/admin/companies/:id/enrich-and-analyze
-// Creates a new submission, runs enrichment with auto_trigger_analysis flag
-// Accepts optional JSON body with new_challenge to override the business challenge
-func (h *CompanyHandlers) EnrichAndAnalyzeCompany(c *gin.Context) {
-	companyID := c.Param("id")
-
-	// Parse optional request body for challenge override
-	var req ChallengeOverrideRequest
-	_ = c.ShouldBindJSON(&req) // Ignore error - empty body is valid
-
-	// Parse company UUID
-	companyUUID, err := uuid.Parse(companyID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
-		return
-	}
-
-	// Get company
-	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
-	if err != nil || comp == nil {
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Company not found"})
-		return
-	}
-
-	// Check access
-	if !h.checkCompanyAccess(c, comp) {
-		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Access denied - not admin or authorized user"})
-		return
-	}
-
-	// Get last submission for business_challenge (fallback)
-	lastSub, err := h.CompanyService.GetLastSubmission(c.Request.Context(), companyUUID)
-	if err != nil {
-		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to get last submission")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Database error", Message: "Failed to retrieve last submission"})
-		return
-	}
-	if lastSub == nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "No previous submission", Message: "No previous submission found for this company"})
-		return
-	}
-
-	// Determine which challenge to use: new_challenge if provided, else last submission's
-	challenge := lastSub.BusinessChallenge
-	if req.NewChallenge != "" {
-		challenge = req.NewChallenge
-	}
-
-	// Get user info from auth context
-	userName, _ := c.Get("userName")
-	userEmail, _ := c.Get("userEmail")
-	userIDStr, _ := c.Get("userID")
-
-	contactName := "Admin User"
-	if userName != nil {
-		contactName = userName.(string)
-	}
-	contactEmail := "admin@imensiah.com"
-	if userEmail != nil {
-		contactEmail = userEmail.(string)
-	}
-	var userID *uuid.UUID
-	if userIDStr != nil {
-		if uid, err := uuid.Parse(userIDStr.(string)); err == nil {
-			userID = &uid
-		}
-	}
-
-	// Create submission from company data
-	sub, err := h.SubmissionService.CreateFromCompany(c.Request.Context(), submission.CreateFromCompanyInput{
-		CompanyID:         companyUUID,
-		CompanyName:       comp.Name,
-		CNPJ:              comp.CNPJ,
-		Website:           comp.Website,
-		Industry:          comp.Industry,
-		CompanySize:       comp.CompanySize,
-		Location:          comp.Location,
-		TargetMarket:      comp.TargetMarket,
-		FundingStage:      comp.FundingStage,
-		AnnualRevenueMin:  comp.AnnualRevenueMin,
-		AnnualRevenueMax:  comp.AnnualRevenueMax,
-		LinkedInURL:       comp.LinkedInURL,
-		TwitterHandle:     comp.TwitterHandle,
-		BusinessChallenge: challenge,
-		ContactName:       contactName,
-		ContactEmail:      contactEmail,
-		UserID:            userID,
-	})
-	if err != nil {
-		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to create submission from company")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Creation failed", Message: err.Error()})
-		return
-	}
-
-	// Link submission to company (not primary)
-	if err := h.CompanyService.LinkSubmission(c.Request.Context(), companyUUID, sub.ID, false, userID); err != nil {
-		h.Logger.Warn().Err(err).Str("company_id", companyID).Msg("Failed to link submission to company")
-	}
-
-	// Create enrichment record with auto_trigger_analysis = true
-	enrich, err := h.EnrichmentService.CreateWithAutoAnalyze(c.Request.Context(), sub.ID)
-	if err != nil {
-		h.Logger.Error().Err(err).Str("submission_id", sub.ID.String()).Msg("Failed to create enrichment with auto-analyze")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Enrichment creation failed", Message: err.Error()})
-		return
-	}
-
-	// Enqueue enrichment job (analysis will auto-trigger after approval)
-	payload := map[string]string{
-		"submission_id": sub.ID.String(),
-	}
-	payloadBytes, _ := json.Marshal(payload)
-	task := asynq.NewTask("enrichment_job", payloadBytes)
-	if _, err := h.AsynqClient.Enqueue(task); err != nil {
-		h.Logger.Error().Err(err).Msg("Failed to enqueue enrichment job")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Enqueue failed", Message: "Failed to start enrichment"})
-		return
-	}
-
-	h.Logger.Info().
-		Str("company_id", companyID).
-		Str("submission_id", sub.ID.String()).
-		Str("enrichment_id", enrich.ID.String()).
-		Bool("auto_trigger_analysis", true).
-		Bool("new_challenge_provided", req.NewChallenge != "").
-		Msg("Enrich-and-analyze started from company data")
-
-	c.JSON(http.StatusOK, MessageResponse{
-		Message: "Enrichment started, analysis will auto-trigger after approval",
-		Data: map[string]interface{}{
-			"submission_id":          sub.ID.String(),
-			"enrichment_id":          enrich.ID.String(),
-			"company_id":             companyID,
-			"new_challenge_provided": req.NewChallenge != "",
-		},
-	})
-}
-
 // ========================================================================
 // USER-FACING HANDLERS
 // ========================================================================
 
-// GetMyCompanies handles GET /api/v1/companies
-// Returns all companies where the user is owner or in allowed_users
-func (h *CompanyHandlers) GetMyCompanies(c *gin.Context) {
+// CreateCompany handles POST /api/v1/companies
+// Creates a company directly (triggers enrichment automatically)
+func (h *CompanyHandlers) CreateCompany(c *gin.Context) {
+	var req CreateCompanyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request", Message: err.Error()})
+		return
+	}
+
+	// Get user ID from context
 	userIDStr, exists := c.Get("userID")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Unauthorized", Message: "User not authenticated"})
@@ -517,20 +94,38 @@ func (h *CompanyHandlers) GetMyCompanies(c *gin.Context) {
 
 	userID, err := uuid.Parse(userIDStr.(string))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid user", Message: "Invalid user ID"})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Internal error", Message: "Invalid user ID"})
 		return
 	}
 
-	companies, err := h.CompanyService.GetUserCompanies(c.Request.Context(), userID)
+	// Build input for direct creation (no submission link)
+	input := company.CreateFromSubmissionInput{
+		CompanyName: req.Name,
+		OwnerID:     &userID,
+	}
+
+	// Set optional fields (req fields are already pointers)
+	input.CNPJ = req.CNPJ
+	input.Website = req.Website
+	input.Industry = req.Industry
+	input.CompanySize = req.CompanySize
+	input.Location = req.Location
+	input.TargetMarket = req.TargetMarket
+	input.FundingStage = req.FundingStage
+
+	// Create company directly (no submission link, no FK constraint issue)
+	comp, err := h.CompanyService.CreateDirect(c.Request.Context(), input)
 	if err != nil {
-		h.Logger.Error().Err(err).Str("user_id", userID.String()).Msg("Failed to get user companies")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Database error", Message: "Failed to retrieve companies"})
+		h.Logger.Error().Err(err).Str("user_id", userID.String()).Msg("Failed to create company")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Creation failed", Message: err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"companies": companies,
-		"count":     len(companies),
+	h.Logger.Info().Str("company_id", comp.ID.String()).Str("owner_id", userID.String()).Msg("Company created successfully")
+
+	c.JSON(http.StatusCreated, gin.H{
+		"company": comp,
+		"message": "Company created successfully. Enrichment will be triggered automatically.",
 	})
 }
 
@@ -567,218 +162,206 @@ func (h *CompanyHandlers) GetCompany(c *gin.Context) {
 	})
 }
 
-// UpdateCompanyUser handles PUT /api/v1/companies/:id
-// Allows company owners to update their company fields with auto-verification
-func (h *CompanyHandlers) UpdateCompanyUser(c *gin.Context) {
+// GetCompanyAdmin handles GET /api/v1/admin/companies/:id
+// Returns company details with full admin view
+func (h *CompanyHandlers) GetCompanyAdmin(c *gin.Context) {
 	companyID := c.Param("id")
 
 	companyUUID, err := uuid.Parse(companyID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "ID inválido", Message: "Formato de ID inválido"})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
 		return
 	}
 
-	// Parse request body
+	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
+	if err != nil {
+		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to get company")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Database error", Message: "Failed to retrieve company"})
+		return
+	}
+	if comp == nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Company not found"})
+		return
+	}
+
+	// Get additional data for admin view
+	analysesHistory, _ := h.CompanyService.GetAnalysesHistory(c.Request.Context(), companyUUID)
+
+	c.JSON(http.StatusOK, gin.H{
+		"company":          comp,
+		"analyses_history": analysesHistory,
+	})
+}
+
+// ChallengeWithAnalysis extends Challenge with latest analysis info
+type ChallengeWithAnalysis struct {
+	*challenge.Challenge
+	LatestAnalysis *analysis.Analysis `json:"latest_analysis,omitempty"`
+	AnalysisCount  int                `json:"analysis_count"`
+}
+
+// GetCompanyChallenges handles GET /api/v1/companies/:id/challenges
+// Returns all challenges for a company with their latest analysis status
+func (h *CompanyHandlers) GetCompanyChallenges(c *gin.Context) {
+	companyID := c.Param("id")
+
+	companyUUID, err := uuid.Parse(companyID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
+		return
+	}
+
+	// Get company to verify access
+	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
+	if err != nil || comp == nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Company not found"})
+		return
+	}
+
+	// Check access
+	if !h.checkCompanyAccess(c, comp) {
+		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Access denied to this company"})
+		return
+	}
+
+	// Get challenges for this company
+	challenges, err := h.ChallengeService.ListByCompany(c.Request.Context(), companyUUID)
+	if err != nil {
+		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to list challenges")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Database error", Message: "Failed to retrieve challenges"})
+		return
+	}
+
+	// Enrich each challenge with latest analysis
+	enrichedChallenges := make([]ChallengeWithAnalysis, 0, len(challenges))
+	for _, ch := range challenges {
+		enriched := ChallengeWithAnalysis{
+			Challenge:     ch,
+			AnalysisCount: 0,
+		}
+
+		// Try to get the latest analysis for this challenge
+		if h.AnalysisService != nil {
+			latestAnalysis, err := h.AnalysisService.GetByChallengeID(c.Request.Context(), ch.ID)
+			if err == nil && latestAnalysis != nil {
+				enriched.LatestAnalysis = latestAnalysis
+				enriched.AnalysisCount = 1 // At least one exists
+			}
+		}
+
+		enrichedChallenges = append(enrichedChallenges, enriched)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"challenges": enrichedChallenges,
+		"count":      len(enrichedChallenges),
+	})
+}
+
+// CreateChallenge handles POST /api/v1/challenges
+// Creates a new challenge for an existing company
+func (h *CompanyHandlers) CreateChallenge(c *gin.Context) {
 	var req struct {
-		Fields map[string]interface{} `json:"fields"`
+		CompanyID         string `json:"company_id" binding:"required"`
+		ChallengeCategory string `json:"challenge_category" binding:"required"`
+		ChallengeType     string `json:"challenge_type" binding:"required"`
+		BusinessChallenge string `json:"business_challenge" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Requisição inválida", Message: err.Error()})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request", Message: err.Error()})
 		return
 	}
 
-	if len(req.Fields) == 0 {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Requisição inválida", Message: "Nenhum campo fornecido"})
+	// Validate challenge category and type
+	if !challenge.IsValidCategory(req.ChallengeCategory) {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid category",
+			Message: "challenge_category must be one of: growth, transform, transition, compete, funding",
+		})
+		return
+	}
+	if !challenge.IsValidType(req.ChallengeCategory, req.ChallengeType) {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid type",
+			Message: "challenge_type is not valid for the given category",
+		})
 		return
 	}
 
-	// Get user ID from context
+	// Parse company ID
+	companyUUID, err := uuid.Parse(req.CompanyID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
+		return
+	}
+
+	// Get company to verify access
+	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
+	if err != nil || comp == nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Company not found"})
+		return
+	}
+
+	// Check access
+	if !h.checkCompanyAccess(c, comp) {
+		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Access denied to this company"})
+		return
+	}
+
+	// Create the challenge
+	newChallenge := challenge.NewChallenge(
+		companyUUID,
+		challenge.ChallengeCategory(req.ChallengeCategory),
+		challenge.ChallengeType(req.ChallengeType),
+		req.BusinessChallenge,
+	)
+
+	createdChallenge, err := h.ChallengeService.Create(c.Request.Context(), newChallenge)
+	if err != nil {
+		h.Logger.Error().Err(err).Str("company_id", req.CompanyID).Msg("Failed to create challenge")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Creation failed", Message: err.Error()})
+		return
+	}
+
+	h.Logger.Info().
+		Str("challenge_id", createdChallenge.ID.String()).
+		Str("company_id", req.CompanyID).
+		Str("category", req.ChallengeCategory).
+		Str("type", req.ChallengeType).
+		Msg("Challenge created successfully")
+
+	c.JSON(http.StatusCreated, gin.H{
+		"challenge": createdChallenge,
+	})
+}
+
+// GetMyCompanies handles GET /api/v1/companies
+// Returns all companies where the user is owner or in allowed_users
+func (h *CompanyHandlers) GetMyCompanies(c *gin.Context) {
 	userIDStr, exists := c.Get("userID")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Não autorizado", Message: "Usuário não autenticado"})
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Unauthorized", Message: "User not authenticated"})
 		return
 	}
 
 	userID, err := uuid.Parse(userIDStr.(string))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Erro interno", Message: "ID de usuário inválido"})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid user", Message: "Invalid user ID"})
 		return
 	}
 
-	// Get company to check ownership
-	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
-	if err != nil || comp == nil {
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Não encontrado", Message: "Empresa não encontrada"})
-		return
-	}
-
-	// Check if user is the owner
-	if comp.OwnerID == nil || *comp.OwnerID != userID {
-		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Acesso negado", Message: "Apenas o proprietário pode editar os dados da empresa"})
-		return
-	}
-
-	// Update company fields with auto-verification
-	updatedCompany, err := h.CompanyService.UpdateFieldsWithAutoVerification(c.Request.Context(), companyUUID, req.Fields, userID)
+	companies, err := h.CompanyService.GetUserCompanies(c.Request.Context(), userID)
 	if err != nil {
-		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to update company")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Falha na atualização", Message: err.Error()})
+		h.Logger.Error().Err(err).Str("user_id", userID.String()).Msg("Failed to get user companies")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Database error", Message: "Failed to retrieve companies"})
 		return
 	}
-
-	h.Logger.Info().
-		Str("company_id", companyID).
-		Str("user_id", userID.String()).
-		Int("fields_updated", len(req.Fields)).
-		Msg("Company fields updated by owner")
 
 	c.JSON(http.StatusOK, gin.H{
-		"company": updatedCompany,
-		"message": "Empresa atualizada com sucesso",
+		"companies": companies,
+		"count":     len(companies),
 	})
 }
-
-// ChallengeOverrideRequest allows specifying a new business challenge for analysis
-// If NewChallenge is empty, falls back to the last submission's challenge
-type ChallengeOverrideRequest struct {
-	NewChallenge string `json:"new_challenge"`
-}
-
-// AddUserRequest represents the request body for adding a user
-type AddUserRequest struct {
-	UserID string `json:"user_id" binding:"required"`
-}
-
-// AddUserToCompany handles POST /api/v1/companies/:id/users
-// Allows owner to add a user to allowed_users
-func (h *CompanyHandlers) AddUserToCompany(c *gin.Context) {
-	companyID := c.Param("id")
-
-	companyUUID, err := uuid.Parse(companyID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
-		return
-	}
-
-	var req AddUserRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request", Message: "user_id is required"})
-		return
-	}
-
-	newUserID, err := uuid.Parse(req.UserID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid user_id", Message: "Invalid user ID format"})
-		return
-	}
-
-	// Get company
-	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
-	if err != nil || comp == nil {
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Company not found"})
-		return
-	}
-
-	// Check if user is owner (or admin)
-	role, _ := c.Get("userRole")
-	isAdmin := role == "admin" || role == "super_admin" || role == "service_role"
-
-	userIDStr, exists := c.Get("userID")
-	if !exists && !isAdmin {
-		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Unauthorized", Message: "User not authenticated"})
-		return
-	}
-
-	if !isAdmin {
-		userID, _ := uuid.Parse(userIDStr.(string))
-		if !comp.CanManageUsers(userID) {
-			c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Only the owner can add users"})
-			return
-		}
-	}
-
-	// Add user
-	if err := h.CompanyService.AddUserToCompany(c.Request.Context(), companyUUID, newUserID); err != nil {
-		h.Logger.Error().Err(err).Str("company_id", companyID).Str("new_user_id", req.UserID).Msg("Failed to add user to company")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Update failed", Message: err.Error()})
-		return
-	}
-
-	h.Logger.Info().Str("company_id", companyID).Str("added_user_id", req.UserID).Msg("User added to company")
-
-	c.JSON(http.StatusOK, MessageResponse{
-		Message: "User added to company",
-		Data: map[string]interface{}{
-			"company_id": companyID,
-			"user_id":    req.UserID,
-		},
-	})
-}
-
-// RemoveUserFromCompany handles DELETE /api/v1/companies/:id/users/:userId
-// Allows owner to remove a user from allowed_users
-func (h *CompanyHandlers) RemoveUserFromCompany(c *gin.Context) {
-	companyID := c.Param("id")
-	userToRemoveID := c.Param("userId")
-
-	companyUUID, err := uuid.Parse(companyID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
-		return
-	}
-
-	removeUserID, err := uuid.Parse(userToRemoveID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid user ID", Message: "Invalid user ID format"})
-		return
-	}
-
-	// Get company
-	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
-	if err != nil || comp == nil {
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Company not found"})
-		return
-	}
-
-	// Check if user is owner (or admin)
-	role, _ := c.Get("userRole")
-	isAdmin := role == "admin" || role == "super_admin" || role == "service_role"
-
-	userIDStr, exists := c.Get("userID")
-	if !exists && !isAdmin {
-		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Unauthorized", Message: "User not authenticated"})
-		return
-	}
-
-	if !isAdmin {
-		userID, _ := uuid.Parse(userIDStr.(string))
-		if !comp.CanManageUsers(userID) {
-			c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Only the owner can remove users"})
-			return
-		}
-	}
-
-	// Remove user
-	if err := h.CompanyService.RemoveUserFromCompany(c.Request.Context(), companyUUID, removeUserID); err != nil {
-		h.Logger.Error().Err(err).Str("company_id", companyID).Str("remove_user_id", userToRemoveID).Msg("Failed to remove user from company")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Update failed", Message: err.Error()})
-		return
-	}
-
-	h.Logger.Info().Str("company_id", companyID).Str("removed_user_id", userToRemoveID).Msg("User removed from company")
-
-	c.JSON(http.StatusOK, MessageResponse{
-		Message: "User removed from company",
-		Data: map[string]interface{}{
-			"company_id": companyID,
-			"user_id":    userToRemoveID,
-		},
-	})
-}
-
-// ========================================================================
-// ADMIN HANDLERS
-// ========================================================================
 
 // ListAllCompanies handles GET /api/v1/admin/companies
 // Returns all companies with pagination (admin only)
@@ -812,9 +395,348 @@ func (h *CompanyHandlers) ListAllCompanies(c *gin.Context) {
 	})
 }
 
-// GetCompanyAdmin handles GET /api/v1/admin/companies/:id
-// Returns company details with full admin view
-func (h *CompanyHandlers) GetCompanyAdmin(c *gin.Context) {
+// NOTE: UpdateCompany and UpdateCompanyUser removed - edit company in Supabase directly
+
+// ========================================================================
+// ADMIN HANDLERS - RE-ANALYSIS WORKFLOW
+// ========================================================================
+
+// ReAnalyzeRequest contains the challenge info required for a new analysis
+type ReAnalyzeRequest struct {
+	// Required fields for challenge creation
+	ChallengeCategory string `json:"challenge_category"` // growth, transform, transition, compete, funding
+	ChallengeType     string `json:"challenge_type"`     // Specific type within category
+	BusinessChallenge string `json:"business_challenge"` // Free-text context
+}
+
+// ReAnalyzeCompany handles POST /api/v1/admin/companies/:id/re-analyze
+// Creates a new challenge and triggers analysis for an existing company
+// Requires challenge_category, challenge_type, and business_challenge in request body
+func (h *CompanyHandlers) ReAnalyzeCompany(c *gin.Context) {
+	companyID := c.Param("id")
+
+	// Parse request body for challenge info
+	var req ReAnalyzeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid request",
+			Message: "Request body must contain challenge_category, challenge_type, and business_challenge",
+		})
+		return
+	}
+
+	// Validate required fields
+	if req.ChallengeCategory == "" || req.ChallengeType == "" || req.BusinessChallenge == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Missing fields",
+			Message: "challenge_category, challenge_type, and business_challenge are all required",
+		})
+		return
+	}
+
+	// Validate challenge category and type
+	if !challenge.IsValidCategory(req.ChallengeCategory) {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid category",
+			Message: "challenge_category must be one of: growth, transform, transition, compete, funding",
+		})
+		return
+	}
+	if !challenge.IsValidType(req.ChallengeCategory, req.ChallengeType) {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid type",
+			Message: "challenge_type is not valid for the given category",
+		})
+		return
+	}
+
+	// Parse company UUID
+	companyUUID, err := uuid.Parse(companyID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
+		return
+	}
+
+	// Get company
+	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
+	if err != nil || comp == nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Company not found"})
+		return
+	}
+
+	// Check access
+	if !h.checkCompanyAccess(c, comp) {
+		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Access denied - not admin or authorized user"})
+		return
+	}
+
+	// Check company enrichment status
+	if comp.EnrichmentStatus != "completed" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Enrichment not completed",
+			Message: "Company enrichment must be completed before running analysis",
+		})
+		return
+	}
+
+	// Get user info from auth context
+	userName, _ := c.Get("userName")
+	userEmail, _ := c.Get("userEmail")
+	userIDStr, _ := c.Get("userID")
+
+	contactName := "Admin User"
+	if userName != nil {
+		contactName = userName.(string)
+	}
+	contactEmail := "admin@imensiah.com"
+	if userEmail != nil {
+		contactEmail = userEmail.(string)
+	}
+	var userID *uuid.UUID
+	if userIDStr != nil {
+		if uid, err := uuid.Parse(userIDStr.(string)); err == nil {
+			userID = &uid
+		}
+	}
+
+	// Create new challenge for this company
+	newChallenge := challenge.NewChallenge(
+		companyUUID,
+		challenge.ChallengeCategory(req.ChallengeCategory),
+		challenge.ChallengeType(req.ChallengeType),
+		req.BusinessChallenge,
+	)
+	createdChallenge, err := h.ChallengeService.Create(c.Request.Context(), newChallenge)
+	if err != nil {
+		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to create challenge")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Challenge creation failed", Message: err.Error()})
+		return
+	}
+
+	// Create submission from company data (for tracking/history)
+	sub, err := h.SubmissionService.CreateFromCompany(c.Request.Context(), submission.CreateFromCompanyInput{
+		CompanyID:        companyUUID,
+		CompanyName:      comp.Name,
+		CNPJ:             comp.CNPJ,
+		Website:          comp.Website,
+		Industry:         comp.Industry,
+		CompanySize:      comp.CompanySize,
+		Location:         comp.Location,
+		TargetMarket:     comp.TargetMarket,
+		FundingStage:     comp.FundingStage,
+		AnnualRevenueMin: comp.AnnualRevenueMin,
+		AnnualRevenueMax: comp.AnnualRevenueMax,
+		LinkedInURL:      comp.LinkedInURL,
+		TwitterHandle:    comp.TwitterHandle,
+		ContactName:      contactName,
+		ContactEmail:     contactEmail,
+		UserID:           userID,
+	})
+	if err != nil {
+		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to create submission from company")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Creation failed", Message: err.Error()})
+		return
+	}
+
+	// Link submission to company (not primary)
+	if err := h.CompanyService.LinkSubmission(c.Request.Context(), companyUUID, sub.ID, false, userID); err != nil {
+		h.Logger.Warn().Err(err).Str("company_id", companyID).Msg("Failed to link submission to company")
+	}
+
+	// Enqueue analysis job with challenge_id
+	payload := map[string]string{
+		"submission_id": sub.ID.String(),
+		"company_id":    companyID,
+		"challenge_id":  createdChallenge.ID.String(),
+	}
+	payloadBytes, _ := json.Marshal(payload)
+	task := asynq.NewTask("analysis_job", payloadBytes)
+
+	// Enqueue with explicit options for better visibility
+	taskInfo, err := h.AsynqClient.Enqueue(task,
+		asynq.MaxRetry(3),
+		asynq.Queue("default"),
+		asynq.Retention(24*time.Hour),
+	)
+	if err != nil {
+		h.Logger.Error().Err(err).Msg("Failed to enqueue analysis job")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Enqueue failed", Message: "Failed to start analysis"})
+		return
+	}
+
+	h.Logger.Info().
+		Str("task_id", taskInfo.ID).
+		Str("queue", taskInfo.Queue).
+		Str("submission_id", sub.ID.String()).
+		Str("challenge_id", createdChallenge.ID.String()).
+		Msg("Analysis job enqueued successfully")
+
+	h.Logger.Info().
+		Str("company_id", companyID).
+		Str("submission_id", sub.ID.String()).
+		Str("challenge_id", createdChallenge.ID.String()).
+		Str("challenge_category", req.ChallengeCategory).
+		Str("challenge_type", req.ChallengeType).
+		Msg("Re-analysis started with new challenge")
+
+	c.JSON(http.StatusOK, MessageResponse{
+		Message: "Re-analysis started",
+		Data: map[string]interface{}{
+			"submission_id":      sub.ID.String(),
+			"company_id":         companyID,
+			"challenge_id":       createdChallenge.ID.String(),
+			"challenge_category": req.ChallengeCategory,
+			"challenge_type":     req.ChallengeType,
+		},
+	})
+}
+
+
+// AnalyzeChallenge handles POST /api/v1/admin/challenges/:id/analyze
+// Triggers analysis for an existing challenge (no new challenge creation)
+func (h *CompanyHandlers) AnalyzeChallenge(c *gin.Context) {
+	challengeID := c.Param("id")
+
+	// Parse challenge UUID
+	challengeUUID, err := uuid.Parse(challengeID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid challenge ID format"})
+		return
+	}
+
+	// Get the challenge
+	existingChallenge, err := h.ChallengeService.GetByID(c.Request.Context(), challengeUUID)
+	if err != nil || existingChallenge == nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Challenge not found"})
+		return
+	}
+
+	// Get the company
+	comp, err := h.CompanyService.GetByID(c.Request.Context(), existingChallenge.CompanyID)
+	if err != nil || comp == nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Company not found"})
+		return
+	}
+
+	// Check access (admin only for now)
+	if !h.checkCompanyAccess(c, comp) {
+		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Access denied - not admin or authorized user"})
+		return
+	}
+
+	// Check company enrichment status
+	if comp.EnrichmentStatus != "completed" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Enrichment not completed",
+			Message: "Company enrichment must be completed before running analysis",
+		})
+		return
+	}
+
+	// Get user info from auth context
+	userName, _ := c.Get("userName")
+	userEmail, _ := c.Get("userEmail")
+	userIDStr, _ := c.Get("userID")
+
+	contactName := "Admin User"
+	if userName != nil {
+		contactName = userName.(string)
+	}
+	contactEmail := "admin@imensiah.com"
+	if userEmail != nil {
+		contactEmail = userEmail.(string)
+	}
+	var userID *uuid.UUID
+	if userIDStr != nil {
+		if uid, err := uuid.Parse(userIDStr.(string)); err == nil {
+			userID = &uid
+		}
+	}
+
+	// Create submission from company data (for tracking/history)
+	sub, err := h.SubmissionService.CreateFromCompany(c.Request.Context(), submission.CreateFromCompanyInput{
+		CompanyID:        comp.ID,
+		CompanyName:      comp.Name,
+		CNPJ:             comp.CNPJ,
+		Website:          comp.Website,
+		Industry:         comp.Industry,
+		CompanySize:      comp.CompanySize,
+		Location:         comp.Location,
+		TargetMarket:     comp.TargetMarket,
+		FundingStage:     comp.FundingStage,
+		AnnualRevenueMin: comp.AnnualRevenueMin,
+		AnnualRevenueMax: comp.AnnualRevenueMax,
+		LinkedInURL:      comp.LinkedInURL,
+		TwitterHandle:    comp.TwitterHandle,
+		ContactName:      contactName,
+		ContactEmail:     contactEmail,
+		UserID:           userID,
+	})
+	if err != nil {
+		h.Logger.Error().Err(err).Str("challenge_id", challengeID).Msg("Failed to create submission for challenge analysis")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Creation failed", Message: err.Error()})
+		return
+	}
+
+	// Link submission to company (not primary)
+	if err := h.CompanyService.LinkSubmission(c.Request.Context(), comp.ID, sub.ID, false, userID); err != nil {
+		h.Logger.Warn().Err(err).Str("company_id", comp.ID.String()).Msg("Failed to link submission to company")
+	}
+
+	// Enqueue analysis job with existing challenge_id
+	payload := map[string]string{
+		"submission_id": sub.ID.String(),
+		"company_id":    comp.ID.String(),
+		"challenge_id":  challengeID,
+	}
+	payloadBytes, _ := json.Marshal(payload)
+	task := asynq.NewTask("analysis_job", payloadBytes)
+
+	// Generate unique task ID to prevent deduplication with previous runs
+	taskID := uuid.New().String()
+
+	h.Logger.Info().
+		Str("task_id", taskID).
+		Str("task_type", "analysis_job").
+		Str("payload", string(payloadBytes)).
+		Msg("🔔 ABOUT TO ENQUEUE analysis job - check if worker picks it up")
+
+	// Enqueue with explicit options including unique TaskID
+	taskInfo, err := h.AsynqClient.Enqueue(task,
+		asynq.TaskID(taskID),
+		asynq.MaxRetry(3),
+		asynq.Queue("default"),
+		asynq.Retention(24*time.Hour),
+	)
+	if err != nil {
+		h.Logger.Error().Err(err).Msg("Failed to enqueue analysis job for challenge")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Enqueue failed", Message: "Failed to start analysis"})
+		return
+	}
+
+	h.Logger.Info().
+		Str("task_id", taskInfo.ID).
+		Str("queue", taskInfo.Queue).
+		Str("submission_id", sub.ID.String()).
+		Str("challenge_id", challengeID).
+		Str("company_id", comp.ID.String()).
+		Msg("Analysis job enqueued for existing challenge")
+
+	c.JSON(http.StatusOK, MessageResponse{
+		Message: "Analysis started for challenge",
+		Data: map[string]interface{}{
+			"submission_id":      sub.ID.String(),
+			"company_id":         comp.ID.String(),
+			"challenge_id":       challengeID,
+			"challenge_category": string(existingChallenge.ChallengeCategory),
+			"challenge_type":     string(existingChallenge.ChallengeType),
+		},
+	})
+}
+// RetryEnrichment handles POST /api/v1/admin/companies/:id/retry-enrichment
+// Re-runs enrichment for a company using "fill gaps only" logic
+// Only fills in NULL/empty fields - preserves any manually edited values
+func (h *CompanyHandlers) RetryEnrichment(c *gin.Context) {
 	companyID := c.Param("id")
 
 	companyUUID, err := uuid.Parse(companyID)
@@ -823,6 +745,7 @@ func (h *CompanyHandlers) GetCompanyAdmin(c *gin.Context) {
 		return
 	}
 
+	// Get company to verify it exists and check access
 	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
 	if err != nil {
 		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to get company")
@@ -834,185 +757,54 @@ func (h *CompanyHandlers) GetCompanyAdmin(c *gin.Context) {
 		return
 	}
 
-	// Get additional data for admin view
-	submissions, _ := h.CompanyService.GetSubmissions(c.Request.Context(), companyUUID)
-	history, _ := h.CompanyService.GetHistory(c.Request.Context(), companyUUID)
-	enrichmentStatus, _ := h.CompanyService.GetLatestEnrichmentStatus(c.Request.Context(), companyUUID)
-	enrichmentsHistory, _ := h.CompanyService.GetEnrichmentsHistory(c.Request.Context(), companyUUID)
-	analysesHistory, _ := h.CompanyService.GetAnalysesHistory(c.Request.Context(), companyUUID)
-
-	c.JSON(http.StatusOK, gin.H{
-		"company":             comp,
-		"submissions":         submissions,
-		"history":             history,
-		"enrichment_status":   enrichmentStatus,
-		"enrichments_history": enrichmentsHistory,
-		"analyses_history":    analysesHistory,
-	})
-}
-
-// UpdateCompany handles PUT /api/v1/admin/companies/:id
-// Updates company fields and auto-verifies them (admin only)
-func (h *CompanyHandlers) UpdateCompany(c *gin.Context) {
-	companyID := c.Param("id")
-
-	companyUUID, err := uuid.Parse(companyID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
-		return
-	}
-
-	// Parse request body
-	var req struct {
-		Fields map[string]interface{} `json:"fields"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request", Message: err.Error()})
-		return
-	}
-
-	if len(req.Fields) == 0 {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request", Message: "No fields provided"})
-		return
-	}
-
-	// Get user ID from context
-	userIDStr, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Unauthorized", Message: "User not authenticated"})
-		return
-	}
-
-	userID, err := uuid.Parse(userIDStr.(string))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Internal error", Message: "Invalid user ID"})
-		return
-	}
-
-	// Update company fields with auto-verification
-	updatedCompany, err := h.CompanyService.UpdateFieldsWithAutoVerification(c.Request.Context(), companyUUID, req.Fields, userID)
-	if err != nil {
-		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to update company")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Update failed", Message: err.Error()})
+	// Check access (admin only for retry)
+	if !h.checkCompanyAccess(c, comp) {
+		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Access denied - admin only"})
 		return
 	}
 
 	h.Logger.Info().
 		Str("company_id", companyID).
-		Int("fields_updated", len(req.Fields)).
-		Msg("Company fields updated and verified")
+		Str("company_name", comp.Name).
+		Str("current_status", comp.EnrichmentStatus).
+		Msg("Admin triggered enrichment retry")
 
-	c.JSON(http.StatusOK, gin.H{
-		"company": updatedCompany,
-		"message": "Company updated successfully",
-	})
-}
+	// Run enrichment asynchronously (fire-and-forget)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				h.Logger.Error().
+					Interface("panic", r).
+					Str("company_id", companyID).
+					Msg("Enrichment retry goroutine panicked")
+			}
+		}()
 
-// VerifyCompany handles POST /api/v1/admin/companies/:id/verify
-// Marks a company as verified (locks CNPJ uniqueness)
-func (h *CompanyHandlers) VerifyCompany(c *gin.Context) {
-	companyID := c.Param("id")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
 
-	companyUUID, err := uuid.Parse(companyID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
-		return
-	}
-
-	comp, err := h.CompanyService.VerifyCompany(c.Request.Context(), companyUUID)
-	if err != nil {
-		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to verify company")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Verification failed", Message: err.Error()})
-		return
-	}
-
-	h.Logger.Info().Str("company_id", companyID).Msg("Company verified")
+		if err := h.CompanyService.RetryEnrichment(ctx, companyUUID); err != nil {
+			h.Logger.Error().
+				Err(err).
+				Str("company_id", companyID).
+				Msg("Enrichment retry failed")
+		}
+	}()
 
 	c.JSON(http.StatusOK, MessageResponse{
-		Message: "Company verified",
+		Message: "Enrichment retry started (fill gaps only)",
 		Data: map[string]interface{}{
-			"company_id":  companyID,
-			"is_verified": comp.IsVerified,
-			"cnpj":        comp.CNPJ,
+			"company_id":      companyID,
+			"company_name":    comp.Name,
+			"previous_status": comp.EnrichmentStatus,
+			"mode":            "fill_gaps_only",
 		},
 	})
 }
 
-// UnverifyCompany handles POST /api/v1/admin/companies/:id/unverify
-// Removes verified status from a company
-func (h *CompanyHandlers) UnverifyCompany(c *gin.Context) {
-	companyID := c.Param("id")
-
-	companyUUID, err := uuid.Parse(companyID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
-		return
-	}
-
-	comp, err := h.CompanyService.UnverifyCompany(c.Request.Context(), companyUUID)
-	if err != nil {
-		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to unverify company")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Unverification failed", Message: err.Error()})
-		return
-	}
-
-	h.Logger.Info().Str("company_id", companyID).Msg("Company unverified")
-
-	c.JSON(http.StatusOK, MessageResponse{
-		Message: "Company unverified",
-		Data: map[string]interface{}{
-			"company_id":  companyID,
-			"is_verified": comp.IsVerified,
-		},
-	})
-}
-
-// TransferOwnershipRequest represents the request body for transferring ownership
-type TransferOwnershipRequest struct {
-	NewOwnerID string `json:"new_owner_id" binding:"required"`
-}
-
-// TransferOwnership handles POST /api/v1/admin/companies/:id/transfer-ownership
-// Transfers company ownership to a new user (admin only)
-func (h *CompanyHandlers) TransferOwnership(c *gin.Context) {
-	companyID := c.Param("id")
-
-	companyUUID, err := uuid.Parse(companyID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
-		return
-	}
-
-	var req TransferOwnershipRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request", Message: "new_owner_id is required"})
-		return
-	}
-
-	newOwnerID, err := uuid.Parse(req.NewOwnerID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid new_owner_id", Message: "Invalid user ID format"})
-		return
-	}
-
-	comp, err := h.CompanyService.TransferOwnership(c.Request.Context(), companyUUID, newOwnerID)
-	if err != nil {
-		h.Logger.Error().Err(err).Str("company_id", companyID).Str("new_owner_id", req.NewOwnerID).Msg("Failed to transfer ownership")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Transfer failed", Message: err.Error()})
-		return
-	}
-
-	h.Logger.Info().Str("company_id", companyID).Str("new_owner_id", req.NewOwnerID).Msg("Company ownership transferred")
-
-	c.JSON(http.StatusOK, MessageResponse{
-		Message: "Ownership transferred",
-		Data: map[string]interface{}{
-			"company_id":   companyID,
-			"new_owner_id": req.NewOwnerID,
-			"owner_id":     comp.OwnerID,
-		},
-	})
-}
+// ========================================================================
+// HELPER FUNCTIONS
+// ========================================================================
 
 // parseIntParam safely parses an integer parameter with bounds
 func parseIntParam(s string, min, max int) (int, error) {
@@ -1028,561 +820,4 @@ func parseIntParam(s string, min, max int) (int, error) {
 		return max, nil
 	}
 	return val, nil
-}
-
-// ================================================================================
-// FIELD VERIFICATION HANDLERS
-// These endpoints manage field-level verification for company data
-// Verified fields are protected from being overwritten by re-enrichment
-// ================================================================================
-
-// GetFieldVerifications handles GET /api/v1/admin/companies/:id/verifications
-// Returns all verified fields for a company
-func (h *CompanyHandlers) GetFieldVerifications(c *gin.Context) {
-	companyID := c.Param("id")
-
-	companyUUID, err := uuid.Parse(companyID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
-		return
-	}
-
-	// Get company (also validates it exists)
-	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
-	if err != nil || comp == nil {
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Company not found"})
-		return
-	}
-
-	// Check access
-	if !h.checkCompanyAccess(c, comp) {
-		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Access denied"})
-		return
-	}
-
-	// Get field verifications
-	verifications, err := h.CompanyService.GetFieldVerifications(c.Request.Context(), companyUUID)
-	if err != nil {
-		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to get field verifications")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Database error", Message: "Failed to retrieve verifications"})
-		return
-	}
-
-	// Return list of verifiable fields with verification status
-	verifiedSet := make(map[string]bool)
-	for _, v := range verifications {
-		verifiedSet[v.FieldName] = true
-	}
-
-	fields := make([]map[string]interface{}, 0, len(company.VerifiableFields))
-	for _, fieldName := range company.VerifiableFields {
-		field := map[string]interface{}{
-			"field_name": fieldName,
-			"verified":   verifiedSet[fieldName],
-		}
-		// Add verification details if verified
-		for _, v := range verifications {
-			if v.FieldName == fieldName {
-				field["verified_at"] = v.VerifiedAt
-				field["verified_by"] = v.VerifiedBy
-				break
-			}
-		}
-		fields = append(fields, field)
-	}
-
-	c.JSON(http.StatusOK, MessageResponse{
-		Message: "Field verifications retrieved",
-		Data: map[string]interface{}{
-			"company_id":       companyID,
-			"fields":           fields,
-			"total_verifiable": len(company.VerifiableFields),
-			"total_verified":   len(verifications),
-		},
-	})
-}
-
-// VerifyFieldRequest is the request body for field verification
-type VerifyFieldRequest struct {
-	FieldName string `json:"field_name" binding:"required"`
-}
-
-// VerifyField handles POST /api/v1/admin/companies/:id/verifications
-// Marks a specific field as verified (protected from re-enrichment)
-func (h *CompanyHandlers) VerifyField(c *gin.Context) {
-	companyID := c.Param("id")
-
-	companyUUID, err := uuid.Parse(companyID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
-		return
-	}
-
-	// Parse request body
-	var req VerifyFieldRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request", Message: "field_name is required"})
-		return
-	}
-
-	// Get company (validates exists)
-	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
-	if err != nil || comp == nil {
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Company not found"})
-		return
-	}
-
-	// Check access (admin only for verification)
-	role, _ := c.Get("userRole")
-	if role != "admin" && role != "super_admin" && role != "service_role" {
-		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Only admins can verify fields"})
-		return
-	}
-
-	// Get verified_by user ID
-	var verifiedBy *uuid.UUID
-	if userIDStr, exists := c.Get("userID"); exists {
-		if uid, err := uuid.Parse(userIDStr.(string)); err == nil {
-			verifiedBy = &uid
-		}
-	}
-
-	// Verify the field
-	if err := h.CompanyService.VerifyField(c.Request.Context(), companyUUID, req.FieldName, verifiedBy); err != nil {
-		h.Logger.Error().Err(err).
-			Str("company_id", companyID).
-			Str("field_name", req.FieldName).
-			Msg("Failed to verify field")
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Verification failed", Message: err.Error()})
-		return
-	}
-
-	h.Logger.Info().
-		Str("company_id", companyID).
-		Str("field_name", req.FieldName).
-		Msg("Field verified successfully")
-
-	c.JSON(http.StatusOK, MessageResponse{
-		Message: "Field verified",
-		Data: map[string]interface{}{
-			"company_id": companyID,
-			"field_name": req.FieldName,
-			"verified":   true,
-		},
-	})
-}
-
-// UnverifyField handles DELETE /api/v1/admin/companies/:id/verifications/:field_name
-// Removes verification from a field (allows future re-enrichment)
-func (h *CompanyHandlers) UnverifyField(c *gin.Context) {
-	companyID := c.Param("id")
-	fieldName := c.Param("field_name")
-
-	companyUUID, err := uuid.Parse(companyID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
-		return
-	}
-
-	if fieldName == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request", Message: "field_name is required"})
-		return
-	}
-
-	// Get company (validates exists)
-	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
-	if err != nil || comp == nil {
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Company not found"})
-		return
-	}
-
-	// Check access (admin only)
-	role, _ := c.Get("userRole")
-	if role != "admin" && role != "super_admin" && role != "service_role" {
-		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Only admins can unverify fields"})
-		return
-	}
-
-	// Unverify the field
-	if err := h.CompanyService.UnverifyField(c.Request.Context(), companyUUID, fieldName); err != nil {
-		h.Logger.Error().Err(err).
-			Str("company_id", companyID).
-			Str("field_name", fieldName).
-			Msg("Failed to unverify field")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Unverification failed", Message: err.Error()})
-		return
-	}
-
-	h.Logger.Info().
-		Str("company_id", companyID).
-		Str("field_name", fieldName).
-		Msg("Field unverified successfully")
-
-	c.JSON(http.StatusOK, MessageResponse{
-		Message: "Field unverified",
-		Data: map[string]interface{}{
-			"company_id": companyID,
-			"field_name": fieldName,
-			"verified":   false,
-		},
-	})
-}
-
-// VerifyFieldsRequest is the request body for bulk field verification
-type VerifyFieldsRequest struct {
-	FieldNames []string `json:"field_names" binding:"required"`
-}
-
-// VerifyFields handles POST /api/v1/admin/companies/:id/verifications/bulk
-// Marks multiple fields as verified
-func (h *CompanyHandlers) VerifyFields(c *gin.Context) {
-	companyID := c.Param("id")
-
-	companyUUID, err := uuid.Parse(companyID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
-		return
-	}
-
-	// Parse request body
-	var req VerifyFieldsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request", Message: "field_names array is required"})
-		return
-	}
-
-	if len(req.FieldNames) == 0 {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request", Message: "At least one field_name is required"})
-		return
-	}
-
-	// Get company (validates exists)
-	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
-	if err != nil || comp == nil {
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Company not found"})
-		return
-	}
-
-	// Check access (admin only)
-	role, _ := c.Get("userRole")
-	if role != "admin" && role != "super_admin" && role != "service_role" {
-		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Only admins can verify fields"})
-		return
-	}
-
-	// Get verified_by user ID
-	var verifiedBy *uuid.UUID
-	if userIDStr, exists := c.Get("userID"); exists {
-		if uid, err := uuid.Parse(userIDStr.(string)); err == nil {
-			verifiedBy = &uid
-		}
-	}
-
-	// Verify multiple fields
-	if err := h.CompanyService.VerifyFields(c.Request.Context(), companyUUID, req.FieldNames, verifiedBy); err != nil {
-		h.Logger.Error().Err(err).
-			Str("company_id", companyID).
-			Int("field_count", len(req.FieldNames)).
-			Msg("Failed to verify fields")
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Verification failed", Message: err.Error()})
-		return
-	}
-
-	h.Logger.Info().
-		Str("company_id", companyID).
-		Int("field_count", len(req.FieldNames)).
-		Msg("Fields verified successfully")
-
-	c.JSON(http.StatusOK, MessageResponse{
-		Message: "Fields verified",
-		Data: map[string]interface{}{
-			"company_id":      companyID,
-			"field_names":     req.FieldNames,
-			"fields_verified": len(req.FieldNames),
-		},
-	})
-}
-
-// VerifyAllFields handles POST /api/v1/admin/companies/:id/verifications/all
-// Marks all fields as verified
-func (h *CompanyHandlers) VerifyAllFields(c *gin.Context) {
-	companyID := c.Param("id")
-
-	companyUUID, err := uuid.Parse(companyID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
-		return
-	}
-
-	// Get company (validates exists)
-	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
-	if err != nil || comp == nil {
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Company not found"})
-		return
-	}
-
-	// Check access (admin only)
-	role, _ := c.Get("userRole")
-	if role != "admin" && role != "super_admin" && role != "service_role" {
-		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Only admins can verify fields"})
-		return
-	}
-
-	// Get verified_by user ID
-	var verifiedBy *uuid.UUID
-	if userIDStr, exists := c.Get("userID"); exists {
-		if uid, err := uuid.Parse(userIDStr.(string)); err == nil {
-			verifiedBy = &uid
-		}
-	}
-
-	// Verify all fields
-	if err := h.CompanyService.VerifyAllFields(c.Request.Context(), companyUUID, verifiedBy); err != nil {
-		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to verify all fields")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Verification failed", Message: err.Error()})
-		return
-	}
-
-	h.Logger.Info().
-		Str("company_id", companyID).
-		Int("field_count", len(company.VerifiableFields)).
-		Msg("All fields verified successfully")
-
-	c.JSON(http.StatusOK, MessageResponse{
-		Message: "All fields verified",
-		Data: map[string]interface{}{
-			"company_id":      companyID,
-			"fields_verified": len(company.VerifiableFields),
-		},
-	})
-}
-
-// UnverifyAllFields handles DELETE /api/v1/admin/companies/:id/verifications/all
-// Removes verification from all fields
-func (h *CompanyHandlers) UnverifyAllFields(c *gin.Context) {
-	companyID := c.Param("id")
-
-	companyUUID, err := uuid.Parse(companyID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
-		return
-	}
-
-	// Get company (validates exists)
-	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
-	if err != nil || comp == nil {
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Company not found"})
-		return
-	}
-
-	// Check access (admin only)
-	role, _ := c.Get("userRole")
-	if role != "admin" && role != "super_admin" && role != "service_role" {
-		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Only admins can unverify fields"})
-		return
-	}
-
-	// Unverify all fields
-	if err := h.CompanyService.UnverifyAllFields(c.Request.Context(), companyUUID); err != nil {
-		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to unverify all fields")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Unverification failed", Message: err.Error()})
-		return
-	}
-
-	h.Logger.Info().Str("company_id", companyID).Msg("All fields unverified successfully")
-
-	c.JSON(http.StatusOK, MessageResponse{
-		Message: "All fields unverified",
-		Data: map[string]interface{}{
-			"company_id":        companyID,
-			"fields_unverified": len(company.VerifiableFields),
-		},
-	})
-}
-
-// ============================================================================
-// USER-LEVEL VERIFICATION ENDPOINTS
-// These allow users (owner or in allowed_users) to verify their own company data
-// ============================================================================
-
-// GetFieldVerificationsUser handles GET /api/v1/companies/:id/verifications
-// Returns field verification status for user's company
-func (h *CompanyHandlers) GetFieldVerificationsUser(c *gin.Context) {
-	companyID := c.Param("id")
-
-	companyUUID, err := uuid.Parse(companyID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
-		return
-	}
-
-	// Get company (validates exists)
-	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
-	if err != nil || comp == nil {
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Company not found"})
-		return
-	}
-
-	// Check access - user must be owner or in allowed_users
-	if !h.checkCompanyAccess(c, comp) {
-		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Access denied"})
-		return
-	}
-
-	// Get field verifications
-	verifications, err := h.CompanyService.GetFieldVerifications(c.Request.Context(), companyUUID)
-	if err != nil {
-		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to get field verifications")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Database error", Message: "Failed to retrieve verifications"})
-		return
-	}
-
-	// Build response with verification status for each field
-	verifiedSet := make(map[string]bool)
-	for _, v := range verifications {
-		verifiedSet[v.FieldName] = true
-	}
-
-	fields := make([]map[string]interface{}, 0, len(company.VerifiableFields))
-	for _, fieldName := range company.VerifiableFields {
-		field := map[string]interface{}{
-			"field_name": fieldName,
-			"verified":   verifiedSet[fieldName],
-		}
-		for _, v := range verifications {
-			if v.FieldName == fieldName {
-				field["verified_at"] = v.VerifiedAt
-				field["verified_by"] = v.VerifiedBy
-				break
-			}
-		}
-		fields = append(fields, field)
-	}
-
-	c.JSON(http.StatusOK, MessageResponse{
-		Message: "Field verifications retrieved",
-		Data: map[string]interface{}{
-			"company_id":       companyID,
-			"fields":           fields,
-			"total_verifiable": len(company.VerifiableFields),
-			"total_verified":   len(verifications),
-		},
-	})
-}
-
-// VerifyFieldUser handles POST /api/v1/companies/:id/verifications
-// Allows user to verify a field on their own company
-func (h *CompanyHandlers) VerifyFieldUser(c *gin.Context) {
-	companyID := c.Param("id")
-
-	companyUUID, err := uuid.Parse(companyID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
-		return
-	}
-
-	// Parse request body
-	var req VerifyFieldRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request", Message: "field_name is required"})
-		return
-	}
-
-	// Get company (validates exists)
-	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
-	if err != nil || comp == nil {
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Company not found"})
-		return
-	}
-
-	// Check access - user must be owner or in allowed_users
-	if !h.checkCompanyAccess(c, comp) {
-		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Access denied"})
-		return
-	}
-
-	// Get verified_by user ID
-	var verifiedBy *uuid.UUID
-	if userIDStr, exists := c.Get("userID"); exists {
-		if uid, err := uuid.Parse(userIDStr.(string)); err == nil {
-			verifiedBy = &uid
-		}
-	}
-
-	// Verify the field
-	if err := h.CompanyService.VerifyField(c.Request.Context(), companyUUID, req.FieldName, verifiedBy); err != nil {
-		h.Logger.Error().Err(err).
-			Str("company_id", companyID).
-			Str("field_name", req.FieldName).
-			Msg("Failed to verify field")
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Verification failed", Message: err.Error()})
-		return
-	}
-
-	h.Logger.Info().
-		Str("company_id", companyID).
-		Str("field_name", req.FieldName).
-		Msg("Field verified by user")
-
-	c.JSON(http.StatusOK, MessageResponse{
-		Message: "Field verified",
-		Data: map[string]interface{}{
-			"company_id": companyID,
-			"field_name": req.FieldName,
-			"verified":   true,
-		},
-	})
-}
-
-// VerifyAllFieldsUser handles POST /api/v1/companies/:id/verifications/all
-// Allows user to verify all fields on their own company
-func (h *CompanyHandlers) VerifyAllFieldsUser(c *gin.Context) {
-	companyID := c.Param("id")
-
-	companyUUID, err := uuid.Parse(companyID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
-		return
-	}
-
-	// Get company (validates exists)
-	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
-	if err != nil || comp == nil {
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Company not found"})
-		return
-	}
-
-	// Check access - user must be owner or in allowed_users
-	if !h.checkCompanyAccess(c, comp) {
-		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Access denied"})
-		return
-	}
-
-	// Get verified_by user ID
-	var verifiedBy *uuid.UUID
-	if userIDStr, exists := c.Get("userID"); exists {
-		if uid, err := uuid.Parse(userIDStr.(string)); err == nil {
-			verifiedBy = &uid
-		}
-	}
-
-	// Verify all fields
-	if err := h.CompanyService.VerifyAllFields(c.Request.Context(), companyUUID, verifiedBy); err != nil {
-		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to verify all fields")
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Verification failed", Message: err.Error()})
-		return
-	}
-
-	h.Logger.Info().
-		Str("company_id", companyID).
-		Int("field_count", len(company.VerifiableFields)).
-		Msg("All fields verified by user")
-
-	c.JSON(http.StatusOK, MessageResponse{
-		Message: "All fields verified",
-		Data: map[string]interface{}{
-			"company_id":      companyID,
-			"fields_verified": len(company.VerifiableFields),
-		},
-	})
 }

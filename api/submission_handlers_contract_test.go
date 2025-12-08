@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"backend_v3/domain/analysis"
-	"backend_v3/domain/enrichment"
-	"backend_v3/domain/report"
+	"backend_v3/domain/challenge"
+	"backend_v3/domain/company"
 	"backend_v3/domain/submission"
 
 	"github.com/gin-gonic/gin"
@@ -38,13 +38,7 @@ func (f *fakeSubmissionRepo) Update(ctx context.Context, s *submission.Submissio
 	panic("not used")
 }
 func (f *fakeSubmissionRepo) Delete(ctx context.Context, id uuid.UUID) error     { panic("not used") }
-func (f *fakeSubmissionRepo) GetTotalCount(ctx context.Context) (int, error)     { panic("not used") }
-func (f *fakeSubmissionRepo) GetActiveCount(ctx context.Context) (int, error)    { panic("not used") }
-func (f *fakeSubmissionRepo) GetCompletedCount(ctx context.Context) (int, error) { panic("not used") }
-func (f *fakeSubmissionRepo) GetEnrichmentStatus(ctx context.Context, submissionID uuid.UUID) (*submission.EnrichmentStatusRow, error) {
-	panic("not used")
-}
-func (f *fakeSubmissionRepo) ReserveEnrichment(ctx context.Context, submissionID uuid.UUID) (bool, error) {
+func (f *fakeSubmissionRepo) GetByCompanyID(ctx context.Context, companyID uuid.UUID) (*submission.Submission, error) {
 	panic("not used")
 }
 func (f *fakeSubmissionRepo) GetAnonymousByEmail(ctx context.Context, email string) ([]*submission.Submission, error) {
@@ -53,22 +47,31 @@ func (f *fakeSubmissionRepo) GetAnonymousByEmail(ctx context.Context, email stri
 func (f *fakeSubmissionRepo) UpdateUserID(ctx context.Context, submissionID, userID uuid.UUID) error {
 	panic("not used")
 }
-
-type noopEnrichmentGetter struct{}
-
-func (noopEnrichmentGetter) GetBySubmissionID(ctx context.Context, submissionID uuid.UUID) (*enrichment.Enrichment, error) {
-	return nil, nil
+func (f *fakeSubmissionRepo) BeginTx(ctx context.Context) (submission.Repository, error) {
+	panic("not used")
+}
+func (f *fakeSubmissionRepo) Commit() error {
+	panic("not used")
+}
+func (f *fakeSubmissionRepo) Rollback() error {
+	panic("not used")
 }
 
 type noopAnalysisGetter struct{}
 
-func (noopAnalysisGetter) GetBySubmissionID(ctx context.Context, submissionID string) (*analysis.Analysis, error) {
+func (noopAnalysisGetter) GetByChallengeID(ctx context.Context, challengeID uuid.UUID) (*analysis.Analysis, error) {
 	return nil, nil
 }
 
-type noopReportGetter struct{}
+type noopCompanyGetter struct{}
 
-func (noopReportGetter) GetBySubmissionID(ctx context.Context, submissionID string) (*report.Report, error) {
+func (noopCompanyGetter) GetBySubmissionID(ctx context.Context, submissionID uuid.UUID) (*company.Company, error) {
+	return nil, nil
+}
+
+type noopChallengeGetter struct{}
+
+func (noopChallengeGetter) ListByCompany(ctx context.Context, companyID uuid.UUID) ([]*challenge.Challenge, error) {
 	return nil, nil
 }
 
@@ -82,32 +85,31 @@ func TestGetSubmissionContractShape(t *testing.T) {
 	now := time.Now().UTC()
 
 	sub := &submission.Submission{
-		ID:              subID,
-		CompanyName:     "Test Co",
-		CNPJ:            stringToPtr("12.345.678/0001-90"),
-		CompanyWebsite:  stringToPtr("https://test.co"),
+		ID:           subID,
+		CompanyName:  "Test Co",
+		CNPJ:         stringToPtr("12.345.678/0001-90"),
+		CompanyWebsite: stringToPtr("https://test.co"),
 		CompanyIndustry: stringToPtr("Tech"),
-		CompanySize:     stringToPtr("10-50"),
+		CompanySize:  stringToPtr("10-50"),
 		CompanyLocation: stringToPtr("NYC"),
-		ContactName:     "Alice",
-		ContactEmail:    "alice@test.co",
-		Status:          submission.StatusReceived,
-		UserID:          &userID,
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		ContactName:  "Alice",
+		ContactEmail: "alice@test.co",
+		UserID:       &userID,
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}
 
 	repo := &fakeSubmissionRepo{sub: sub}
-	subSvc := submission.NewService(repo, nil)
+	subSvc := submission.NewService(repo)
 
 	builder := NewSubmissionResponseBuilder(
-		noopEnrichmentGetter{}, noopAnalysisGetter{}, noopReportGetter{},
+		noopAnalysisGetter{},
+		noopCompanyGetter{},
+		noopChallengeGetter{},
 	)
 
 	handler := &SubmissionHandlers{
 		SubmissionService:         subSvc,
-		EnrichmentService:         nil,
-		AsynqClient:               nil,
 		Logger:                    zerolog.Nop(),
 		SubmissionResponseBuilder: builder,
 	}
@@ -134,7 +136,7 @@ func TestGetSubmissionContractShape(t *testing.T) {
 	if err := json.Unmarshal(payload["submission"], &submissionResp); err != nil {
 		t.Fatalf("invalid submission payload: %v", err)
 	}
-	if submissionResp.ID != subID.String() || submissionResp.CompanyName != "Test Co" || submissionResp.Status != string(submission.StatusReceived) {
+	if submissionResp.ID != subID.String() || submissionResp.CompanyName != "Test Co" {
 		t.Fatalf("unexpected submission payload: %+v", submissionResp)
 	}
 	if submissionResp.ContactName != "Alice" || submissionResp.ContactEmail != "alice@test.co" {

@@ -59,9 +59,9 @@ func (l *Logger) WithComponent(component string) *Logger {
 	return &Logger{Logger: l.Logger.With().Str("component", component).Logger()}
 }
 
-// WithEnrichmentID returns a new logger with enrichment_id field
-func (l *Logger) WithEnrichmentID(enrichmentID string) *Logger {
-	return &Logger{Logger: l.Logger.With().Str("enrichment_id", enrichmentID).Logger()}
+// WithCompanyID returns a new logger with company_id field
+func (l *Logger) WithCompanyID(companyID string) *Logger {
+	return &Logger{Logger: l.Logger.With().Str("company_id", companyID).Logger()}
 }
 
 // WithAnalysisID returns a new logger with analysis_id field

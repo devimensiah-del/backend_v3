@@ -146,36 +146,18 @@ func TestExponentialBackoff(t *testing.T) {
 	}
 }
 
-// TestEnrichmentJobPayloadSerialization tests payload marshaling/unmarshaling
-func TestEnrichmentJobPayloadSerialization(t *testing.T) {
-	submissionID := uuid.New()
-
-	payload := EnrichmentJobPayload{
-		SubmissionID: submissionID.String(),
-	}
-
-	// Test serialization
-	task, err := NewEnrichmentTask(payload)
-	require.NoError(t, err)
-	assert.NotNil(t, task)
-	assert.Equal(t, jobtypes.TypeEnrichment, task.Type())
-
-	// Test deserialization
-	var deserializedPayload EnrichmentJobPayload
-	err = json.Unmarshal(task.Payload(), &deserializedPayload)
-	require.NoError(t, err)
-
-	assert.Equal(t, payload.SubmissionID, deserializedPayload.SubmissionID)
-}
+// NOTE: EnrichmentJobPayload and related functions have been removed as part of
+// the Challenge refactor. Enrichment is now performed inline during company creation,
+// not as a background job.
 
 // TestAnalysisJobPayloadSerialization tests payload marshaling/unmarshaling
 func TestAnalysisJobPayloadSerialization(t *testing.T) {
 	submissionID := uuid.New()
-	enrichmentID := uuid.New()
+	companyID := uuid.New()
 
 	payload := AnalysisJobPayload{
 		SubmissionID: submissionID.String(),
-		EnrichmentID: enrichmentID.String(),
+		CompanyID:    companyID.String(),
 	}
 
 	// Test serialization
@@ -190,50 +172,35 @@ func TestAnalysisJobPayloadSerialization(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, payload.SubmissionID, deserializedPayload.SubmissionID)
-	assert.Equal(t, payload.EnrichmentID, deserializedPayload.EnrichmentID)
+	assert.Equal(t, payload.CompanyID, deserializedPayload.CompanyID)
 }
 
 // TestJobPayloadValidation tests invalid payload handling
 func TestJobPayloadValidation(t *testing.T) {
-	t.Run("Enrichment - Invalid JSON", func(t *testing.T) {
-		invalidJSON := []byte(`{invalid json`)
-		var payload EnrichmentJobPayload
-		err := json.Unmarshal(invalidJSON, &payload)
-		assert.Error(t, err)
-	})
 
-	t.Run("Enrichment - Invalid UUID", func(t *testing.T) {
-		invalidPayload := EnrichmentJobPayload{
-			SubmissionID: "not-a-uuid",
-		}
-		_, err := uuid.Parse(invalidPayload.SubmissionID)
-		assert.Error(t, err)
-	})
-
-	t.Run("Analysis - Missing EnrichmentID", func(t *testing.T) {
+	t.Run("Analysis - Missing CompanyID", func(t *testing.T) {
 		payload := AnalysisJobPayload{
 			SubmissionID: uuid.New().String(),
-			EnrichmentID: "", // Empty
+			CompanyID:    "", // Empty
 		}
-		_, err := uuid.Parse(payload.EnrichmentID)
+		_, err := uuid.Parse(payload.CompanyID)
 		assert.Error(t, err)
 	})
 
 	t.Run("Analysis - Valid Payload", func(t *testing.T) {
 		payload := AnalysisJobPayload{
 			SubmissionID: uuid.New().String(),
-			EnrichmentID: uuid.New().String(),
+			CompanyID:    uuid.New().String(),
 		}
 		_, err := uuid.Parse(payload.SubmissionID)
 		require.NoError(t, err)
-		_, err = uuid.Parse(payload.EnrichmentID)
+		_, err = uuid.Parse(payload.CompanyID)
 		require.NoError(t, err)
 	})
 }
 
 // TestJobConstants verifies job type constants
 func TestJobConstants(t *testing.T) {
-	assert.Equal(t, "enrichment_job", jobtypes.TypeEnrichment)
 	assert.Equal(t, "analysis_job", jobtypes.TypeAnalysis)
 }
 
@@ -283,10 +250,10 @@ func TestRetryDelayFormula(t *testing.T) {
 
 // TestDLQKeyFormat tests Dead Letter Queue key naming
 func TestDLQKeyFormat(t *testing.T) {
-	taskType := jobtypes.TypeEnrichment
+	taskType := jobtypes.TypeAnalysis
 	timestamp := time.Now().Unix()
 
-	expectedKeyFormat := "dlq:enrichment_job:"
+	expectedKeyFormat := "dlq:analysis_job:"
 	actualKey := "dlq:" + taskType + ":" + string(rune(timestamp))
 
 	assert.Contains(t, actualKey, expectedKeyFormat)

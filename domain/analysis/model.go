@@ -6,7 +6,40 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/lib/pq"
+	"github.com/rs/zerolog"
 )
+
+// FrameworkResultsJSONB is a custom type for handling PostgreSQL JSONB with sqlx
+// Implements sql.Scanner and driver.Valuer interfaces
+type FrameworkResultsJSONB map[string]json.RawMessage
+
+// Value implements driver.Valuer for PostgreSQL
+func (f FrameworkResultsJSONB) Value() (driver.Value, error) {
+	if f == nil {
+		return nil, nil
+	}
+	b, err := json.Marshal(f)
+	if err != nil {
+		return nil, err
+	}
+	return string(b), nil
+}
+
+// Scan implements sql.Scanner for PostgreSQL JSONB
+func (f *FrameworkResultsJSONB) Scan(value interface{}) error {
+	if value == nil {
+		*f = nil
+		return nil
+	}
+	b, ok := value.([]byte)
+	if !ok {
+		return errors.New("type assertion to []byte failed for FrameworkResultsJSONB")
+	}
+	return json.Unmarshal(b, f)
+}
 
 // Status constants for Analysis
 // Flow: pending → processing → completed/failed
@@ -24,45 +57,41 @@ const (
 )
 
 type Analysis struct {
-	ID           string  `db:"id" json:"id"`
-	SubmissionID string  `db:"submission_id" json:"submission_id"`
-	CompanyID    *string `db:"company_id" json:"company_id,omitempty"` // Direct link to company (migration 026)
-	EnrichmentID string  `db:"enrichment_id" json:"enrichment_id"`
+	ID          string    `db:"id" json:"id"`
+	CompanyID   *string   `db:"company_id" json:"company_id,omitempty"` // Direct link to company
+	ChallengeID uuid.UUID `db:"challenge_id" json:"challenge_id"`       // REQUIRED: Link to challenge
 
 	// Status and processing
-	Status           string     `db:"status" json:"status"`
-	ErrorMessage     *string    `db:"error_message" json:"error_message,omitempty"` // Error details if analysis failed
-	ProcessingTimeMs int64      `db:"processing_time_ms" json:"processing_time_ms"`
-	CreatedAt        time.Time  `db:"created_at" json:"created_at"`
-	UpdatedAt        time.Time  `db:"updated_at" json:"updated_at"`
-	CompletedAt      *time.Time `db:"completed_at" json:"completed_at"`
-
-	// PDF storage (moved from reports table - migration 028)
-	PdfUrl         *string    `db:"pdf_url" json:"pdf_url,omitempty"`
-	PdfGeneratedAt *time.Time `db:"pdf_generated_at" json:"pdf_generated_at,omitempty"`
+	Status       string     `db:"status" json:"status"`
+	ErrorMessage *string    `db:"error_message" json:"error_message,omitempty"` // Error details if analysis failed
+	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time  `db:"updated_at" json:"updated_at"`
+	CompletedAt  *time.Time `db:"completed_at" json:"completed_at"`
 
 	// Visibility control - Admin must explicitly make analysis visible to user
 	IsVisibleToUser bool `db:"is_visible_to_user" json:"is_visible_to_user"`
-
-	// Blur control - When true, premium frameworks are blurred for users
-	// Independent of visibility (can be visible but blurred)
-	IsBlurred bool `db:"is_blurred" json:"is_blurred"`
 
 	// Public access control - When true, report is accessible via access code without login
 	// When false, access code requires authentication
 	IsPublic bool `db:"is_public" json:"is_public"`
 
 	// Public sharing via access code
-	AccessCode          *string    `db:"access_code" json:"access_code,omitempty"`
-	AccessCodeCreatedAt *time.Time `db:"access_code_created_at" json:"access_code_created_at,omitempty"`
+	AccessCode *string `db:"access_code" json:"access_code,omitempty"`
 
 	// Soft delete support
 	DeletedAt *time.Time `db:"deleted_at" json:"deleted_at,omitempty"`
 
-	// Framework Results - All framework outputs stored in single JSONB column (migration 034-036)
-	// Replaces 11 individual JSONB columns for better flexibility and maintainability
+	// Versioning
+	Version int `db:"version" json:"version"`
+
+	// Wizard mode fields
+	CurrentStep    int             `db:"current_step" json:"current_step"`
+	WizardMode     bool            `db:"wizard_mode" json:"wizard_mode"`
+	StepsCompleted pq.StringArray  `db:"steps_completed" json:"steps_completed,omitempty"` // pq.StringArray handles NULL
+
+	// Framework Results - All framework outputs stored in single JSONB column
 	// Use GetFramework/SetFramework helpers for typed access to framework data
-	FrameworkResults map[string]json.RawMessage `db:"framework_results" json:"framework_results,omitempty"`
+	FrameworkResults FrameworkResultsJSONB `db:"framework_results" json:"framework_results,omitempty"`
 }
 
 // --- Framework Structs ---
@@ -370,9 +399,8 @@ type AnalysisSynthesis struct {
 
 // ContextContainer used during processing
 type ContextContainer struct {
-	SubmissionID   string
-	SubmissionData map[string]interface{} // User's company data from submission
-	EnrichmentData map[string]interface{} // External intelligence data
+	SubmissionData map[string]interface{} // User's business challenge data from submission
+	CompanyData    map[string]interface{} // Company data from companies table
 	// Pointers to hold interim results
 	PESTEL         *PESTELAnalysis
 	Porter         *PorterAnalysis
@@ -386,6 +414,45 @@ type ContextContainer struct {
 	BSC            *BalancedScorecardAnalysis
 	DecisionMatrix *DecisionMatrixAnalysis
 }
+
+// AnalysisStep tracks individual framework steps in the wizard (migration 038)
+type AnalysisStep struct {
+	ID            string          `db:"id" json:"id"`
+	AnalysisID    string          `db:"analysis_id" json:"analysis_id"`
+	StepNumber    int             `db:"step_number" json:"step_number"`
+	FrameworkCode string          `db:"framework_code" json:"framework_code"`
+	Status        string          `db:"status" json:"status"` // pending, generating, generated, approved, failed
+	Output        json.RawMessage `db:"output" json:"output,omitempty"`
+
+	// Human refinement
+	HumanContext    string          `db:"human_context" json:"human_context,omitempty"`
+	RefinementNotes string          `db:"refinement_notes" json:"refinement_notes,omitempty"`
+
+	// Clarifying questions and answers
+	ClarifyingQuestions json.RawMessage `db:"clarifying_questions" json:"clarifying_questions,omitempty"`
+	HumanAnswers        json.RawMessage `db:"human_answers" json:"human_answers,omitempty"`
+
+	// Iteration tracking
+	IterationCount int `db:"iteration_count" json:"iteration_count"`
+
+	// Error tracking
+	ErrorMessage *string `db:"error_message" json:"error_message,omitempty"`
+
+	// Processing time
+	ProcessingTimeMs int `db:"processing_time_ms" json:"processing_time_ms,omitempty"`
+
+	// Timestamps
+	GeneratedAt *time.Time `db:"generated_at" json:"generated_at,omitempty"`
+	ApprovedAt  *time.Time `db:"approved_at" json:"approved_at,omitempty"`
+	ApprovedBy  *uuid.UUID `db:"approved_by" json:"approved_by,omitempty"`
+	CreatedAt   time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt   time.Time  `db:"updated_at" json:"updated_at"`
+
+	// Step-level versioning (migration v2_013)
+	// Stores previous outputs when refinements are made
+	PreviousOutputs json.RawMessage `db:"previous_outputs" json:"previous_outputs,omitempty"`
+}
+
 
 // Status management methods for Analysis
 
@@ -410,14 +477,6 @@ func (a *Analysis) Fail(errorMsg string) {
 	a.UpdatedAt = time.Now()
 }
 
-// SetPdf records the PDF URL and generation timestamp
-func (a *Analysis) SetPdf(pdfUrl string) {
-	a.PdfUrl = &pdfUrl
-	now := time.Now()
-	a.PdfGeneratedAt = &now
-	a.UpdatedAt = now
-}
-
 // MakeVisible makes the analysis visible to the user
 func (a *Analysis) MakeVisible() {
 	a.IsVisibleToUser = true
@@ -430,21 +489,10 @@ func (a *Analysis) MakeInvisible() {
 	a.UpdatedAt = time.Now()
 }
 
-// SetBlurred enables premium content blurring
-func (a *Analysis) SetBlurred(blurred bool) {
-	a.IsBlurred = blurred
-	a.UpdatedAt = time.Now()
-}
-
 // SetPublic controls whether the report is accessible without login
 func (a *Analysis) SetPublic(public bool) {
 	a.IsPublic = public
 	a.UpdatedAt = time.Now()
-}
-
-// HasPdf returns true if a PDF has been generated
-func (a *Analysis) HasPdf() bool {
-	return a.PdfUrl != nil && *a.PdfUrl != ""
 }
 
 // IsCompleted returns true if analysis completed successfully
@@ -760,4 +808,120 @@ func (a *Analysis) HasFramework(code string) bool {
 	}
 	_, ok := a.FrameworkResults[code]
 	return ok
+}
+
+// --- Content Validator (merged from validator.go) ---
+
+// ContentValidator enforces content limits on framework outputs
+type ContentValidator struct {
+	logger zerolog.Logger
+}
+
+// NewContentValidator creates a new validator instance
+func NewContentValidator(logger zerolog.Logger) *ContentValidator {
+	return &ContentValidator{logger: logger}
+}
+
+// ValidateAndNormalize enforces content limits on all frameworks
+func (v *ContentValidator) ValidateAndNormalize(analysis *Analysis) {
+	// Validate PESTEL framework
+	var pestel PESTELAnalysis
+	if err := analysis.GetFramework("pestel", &pestel); err == nil {
+		v.trimStringArray(&pestel.Political, 10, "PESTEL.Political")
+		v.trimStringArray(&pestel.Economic, 10, "PESTEL.Economic")
+		v.trimStringArray(&pestel.Social, 10, "PESTEL.Social")
+		v.trimStringArray(&pestel.Technological, 10, "PESTEL.Technological")
+		v.trimStringArray(&pestel.Environmental, 10, "PESTEL.Environmental")
+		v.trimStringArray(&pestel.Legal, 10, "PESTEL.Legal")
+		analysis.SetFramework("pestel", pestel)
+	}
+
+	// Validate SWOT framework
+	var swot SWOTAnalysis
+	if err := analysis.GetFramework("swot", &swot); err == nil {
+		v.trimSWOTItemArray(&swot.Strengths, 10, "SWOT.Strengths")
+		v.trimSWOTItemArray(&swot.Weaknesses, 10, "SWOT.Weaknesses")
+		v.trimSWOTItemArray(&swot.Opportunities, 10, "SWOT.Opportunities")
+		v.trimSWOTItemArray(&swot.Threats, 10, "SWOT.Threats")
+		analysis.SetFramework("swot", swot)
+	}
+
+	// Validate Blue Ocean framework
+	var blueOcean BlueOceanAnalysis
+	if err := analysis.GetFramework("blue_ocean", &blueOcean); err == nil {
+		v.trimStringArray(&blueOcean.Eliminate, 10, "BlueOcean.Eliminate")
+		v.trimStringArray(&blueOcean.Reduce, 10, "BlueOcean.Reduce")
+		v.trimStringArray(&blueOcean.Raise, 10, "BlueOcean.Raise")
+		v.trimStringArray(&blueOcean.Create, 10, "BlueOcean.Create")
+		analysis.SetFramework("blue_ocean", blueOcean)
+	}
+
+	// Validate BSC framework
+	var bsc BalancedScorecardAnalysis
+	if err := analysis.GetFramework("bsc", &bsc); err == nil {
+		v.trimStringArray(&bsc.Financial, 10, "BSC.Financial")
+		v.trimStringArray(&bsc.Customer, 10, "BSC.Customer")
+		v.trimStringArray(&bsc.Internal, 10, "BSC.Internal")
+		v.trimStringArray(&bsc.LearningGrowth, 10, "BSC.LearningGrowth")
+		analysis.SetFramework("bsc", bsc)
+	}
+
+	// Validate OKRs framework
+	var okrs OKRAnalysis
+	if err := analysis.GetFramework("okrs", &okrs); err == nil {
+		if len(okrs.Plan90Days) > 3 {
+			v.logger.Warn().Msg("Plan90Days exceeded 3 months, trimming")
+			okrs.Plan90Days = okrs.Plan90Days[:3]
+		}
+		if len(okrs.Quarters) > 4 {
+			v.logger.Warn().Msg("OKRs exceeded 4 quarters, trimming")
+			okrs.Quarters = okrs.Quarters[:4]
+		}
+		analysis.SetFramework("okrs", okrs)
+	}
+
+	// Validate Benchmarking framework
+	var benchmarking BenchmarkingAnalysis
+	if err := analysis.GetFramework("benchmarking", &benchmarking); err == nil {
+		v.trimStringArray(&benchmarking.PerformanceGaps, 10, "Benchmarking.Gaps")
+		v.trimStringArray(&benchmarking.BestPractices, 10, "Benchmarking.Practices")
+		analysis.SetFramework("benchmarking", benchmarking)
+	}
+
+	// Validate Growth Hacking framework
+	var growthHacking GrowthHackingAnalysis
+	if err := analysis.GetFramework("growth_hacking", &growthHacking); err == nil {
+		if len(growthHacking.LeapLoop.Steps) > 8 {
+			v.logger.Warn().Msg("LEAP Loop exceeded 8 steps, trimming")
+			growthHacking.LeapLoop.Steps = growthHacking.LeapLoop.Steps[:8]
+		}
+		if len(growthHacking.ScaleLoop.Steps) > 8 {
+			v.logger.Warn().Msg("SCALE Loop exceeded 8 steps, trimming")
+			growthHacking.ScaleLoop.Steps = growthHacking.ScaleLoop.Steps[:8]
+		}
+		analysis.SetFramework("growth_hacking", growthHacking)
+	}
+
+	// Validate Scenarios framework
+	var scenarios ScenarioAnalysis
+	if err := analysis.GetFramework("scenarios", &scenarios); err == nil {
+		v.trimStringArray(&scenarios.EarlyWarningSignals, 10, "Scenarios.EarlyWarningSignals")
+		analysis.SetFramework("scenarios", scenarios)
+	}
+}
+
+func (v *ContentValidator) trimStringArray(arr *[]string, maxItems int, fieldName string) {
+	if arr == nil || len(*arr) <= maxItems {
+		return
+	}
+	v.logger.Warn().Str("field", fieldName).Int("original", len(*arr)).Int("trimmed_to", maxItems).Msg("Content exceeded limits")
+	*arr = (*arr)[:maxItems]
+}
+
+func (v *ContentValidator) trimSWOTItemArray(arr *[]SWOTItem, maxItems int, fieldName string) {
+	if arr == nil || len(*arr) <= maxItems {
+		return
+	}
+	v.logger.Warn().Str("field", fieldName).Int("original", len(*arr)).Int("trimmed_to", maxItems).Msg("Content exceeded limits")
+	*arr = (*arr)[:maxItems]
 }

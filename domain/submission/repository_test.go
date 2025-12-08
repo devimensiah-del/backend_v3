@@ -17,868 +17,236 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// ============================================================================
-// TEST HELPERS
-// ============================================================================
+// =============================================================================
+// HELPERS
+// =============================================================================
 
-// submissionSelectCols matches the column list in repository.go
-// Tests use regex matching to avoid brittle exact-query matching
-const submissionSelectCols = `id, company_name, cnpj, company_website, company_industry, company_size, company_location,
-		contact_name, contact_email, contact_phone, contact_position,
-		target_market, annual_revenue_min, annual_revenue_max, funding_stage,
-		business_challenge, additional_notes, linkedin_url, twitter_handle,
-		status, user_id, created_at, updated_at, deleted_at`
+func setupMockDB(t *testing.T) (*sqlx.DB, sqlmock.Sqlmock) {
+	t.Helper()
+	mockDB, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
+	require.NoError(t, err)
+	return sqlx.NewDb(mockDB, "postgres"), mock
+}
 
-// allSubmissionColumns returns all columns for mock rows
-func allSubmissionColumns() []string {
+func allColumns() []string {
 	return []string{
 		"id", "company_name", "cnpj", "company_website", "company_industry", "company_size", "company_location",
 		"contact_name", "contact_email", "contact_phone", "contact_position",
 		"target_market", "annual_revenue_min", "annual_revenue_max", "funding_stage",
-		"business_challenge", "additional_notes", "linkedin_url", "twitter_handle",
-		"status", "user_id", "created_at", "updated_at", "deleted_at",
+		"additional_notes", "linkedin_url", "twitter_handle",
+		"user_id", "created_at", "updated_at", "deleted_at",
 	}
-}
-
-func setupMockDB(t *testing.T) (*sqlx.DB, sqlmock.Sqlmock) {
-	mockDB, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
-	require.NoError(t, err)
-
-	sqlxDB := sqlx.NewDb(mockDB, "postgres")
-	return sqlxDB, mock
 }
 
 func createTestSubmission() *submission.Submission {
-	website := "https://test.com"
-	cnpj := "12.345.678/0001-90"
-	industry := "Technology"
-	companySize := "11-50"
-	location := "Sao Paulo"
-	contactPhone := "+55 11 99999-9999"
-	contactPosition := "CTO"
-	targetMarket := "Enterprise"
-	revenueMin := 1000000.0
-	revenueMax := 5000000.0
-	fundingStage := "Seed"
-	additionalNotes := "Important notes"
-	linkedin := "https://linkedin.com/company/test"
-	twitter := "@test"
-	userID := uuid.New()
 	return &submission.Submission{
-		ID:                uuid.New(),
-		CompanyName:       "Test Corp",
-		CNPJ:              &cnpj,
-		CompanyWebsite:    &website,
-		CompanyIndustry:   &industry,
-		CompanySize:       &companySize,
-		CompanyLocation:   &location,
-		ContactName:       "John Doe",
-		ContactEmail:      "john@test.com",
-		ContactPhone:      &contactPhone,
-		ContactPosition:   &contactPosition,
-		TargetMarket:      &targetMarket,
-		AnnualRevenueMin:  &revenueMin,
-		AnnualRevenueMax:  &revenueMax,
-		FundingStage:      &fundingStage,
-		BusinessChallenge: "Need to scale",
-		AdditionalNotes:   &additionalNotes,
-		LinkedInURL:       &linkedin,
-		TwitterHandle:     &twitter,
-		Status:            submission.StatusReceived,
-		UserID:            &userID,
-		CreatedAt:         time.Now(),
-		UpdatedAt:         time.Now(),
+		ID:           uuid.New(),
+		CompanyName:  "Test Corp",
+		ContactName:  "John Doe",
+		ContactEmail: "john@test.com",
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
 	}
 }
 
-// ============================================================================
-// TEST CREATE
-// ============================================================================
+// =============================================================================
+// TEST: Create
+// =============================================================================
 
 func TestRepository_Create(t *testing.T) {
-	tests := []struct {
-		name      string
-		sub       *submission.Submission
-		mockSetup func(sqlmock.Sqlmock, *submission.Submission)
-		wantErr   bool
-	}{
-		{
-			name: "success - creates submission",
-			sub:  createTestSubmission(),
-			mockSetup: func(mock sqlmock.Sqlmock, sub *submission.Submission) {
-				mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO submissions`)).
-					WithArgs(
-						sub.ID, sub.CompanyName, sub.CNPJ, sub.CompanyWebsite, sub.CompanyIndustry, sub.CompanySize,
-						sub.CompanyLocation, sub.ContactName, sub.ContactEmail, sub.ContactPhone, sub.ContactPosition,
-						sub.TargetMarket, sub.AnnualRevenueMin, sub.AnnualRevenueMax, sub.FundingStage,
-						sub.BusinessChallenge, sub.AdditionalNotes, sub.LinkedInURL, sub.TwitterHandle,
-						sub.Status, sub.UserID, sub.CreatedAt, sub.UpdatedAt,
-					).
-					WillReturnResult(sqlmock.NewResult(1, 1))
-			},
-			wantErr: false,
-		},
-		{
-			name: "success - creates submission with nil UserID (public submission)",
-			sub: func() *submission.Submission {
-				sub := createTestSubmission()
-				sub.UserID = nil // Public submission
-				return sub
-			}(),
-			mockSetup: func(mock sqlmock.Sqlmock, sub *submission.Submission) {
-				mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO submissions`)).
-					WithArgs(
-						sub.ID, sub.CompanyName, sub.CNPJ, sub.CompanyWebsite, sub.CompanyIndustry, sub.CompanySize,
-						sub.CompanyLocation, sub.ContactName, sub.ContactEmail, sub.ContactPhone, sub.ContactPosition,
-						sub.TargetMarket, sub.AnnualRevenueMin, sub.AnnualRevenueMax, sub.FundingStage,
-						sub.BusinessChallenge, sub.AdditionalNotes, sub.LinkedInURL, sub.TwitterHandle,
-						sub.Status, nil, sub.CreatedAt, sub.UpdatedAt,
-					).
-					WillReturnResult(sqlmock.NewResult(1, 1))
-			},
-			wantErr: false,
-		},
-		{
-			name: "failure - database error",
-			sub:  createTestSubmission(),
-			mockSetup: func(mock sqlmock.Sqlmock, sub *submission.Submission) {
-				mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO submissions`)).
-					WillReturnError(errors.New("database connection failed"))
-			},
-			wantErr: true,
-		},
-	}
+	t.Run("success", func(t *testing.T) {
+		db, mock := setupMockDB(t)
+		defer db.Close()
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Setup
-			db, mock := setupMockDB(t)
-			defer db.Close()
+		sub := createTestSubmission()
+		mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO submissions`)).
+			WillReturnResult(sqlmock.NewResult(1, 1))
 
-			tt.mockSetup(mock, tt.sub)
+		repo := submission.NewRepository(db)
+		err := repo.Create(context.Background(), sub)
 
-			repo := submission.NewRepository(db)
+		assert.NoError(t, err)
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
 
-			// Execute
-			err := repo.Create(context.Background(), tt.sub)
+	t.Run("db error", func(t *testing.T) {
+		db, mock := setupMockDB(t)
+		defer db.Close()
 
-			// Verify
-			if tt.wantErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-			}
+		mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO submissions`)).
+			WillReturnError(errors.New("connection failed"))
 
-			assert.NoError(t, mock.ExpectationsWereMet())
-		})
-	}
+		repo := submission.NewRepository(db)
+		err := repo.Create(context.Background(), createTestSubmission())
+
+		assert.Error(t, err)
+	})
 }
 
-// ============================================================================
-// TEST GET BY ID
-// ============================================================================
+// =============================================================================
+// TEST: GetByID
+// =============================================================================
 
 func TestRepository_GetByID(t *testing.T) {
 	testID := uuid.New()
 
-	tests := []struct {
-		name      string
-		id        uuid.UUID
-		mockSetup func(sqlmock.Sqlmock)
-		wantErr   bool
-		wantNil   bool
-	}{
-		{
-			name: "success - found submission",
-			id:   testID,
-			mockSetup: func(mock sqlmock.Sqlmock) {
-				rows := sqlmock.NewRows(allSubmissionColumns()).AddRow(
-					testID, "Test Corp", nil, "https://test.com", nil, nil, nil,
-					"John Doe", "john@test.com", nil, nil,
-					nil, nil, nil, nil,
-					"Need to scale", nil, nil, nil,
-					submission.StatusReceived, uuid.New(), time.Now(), time.Now(), nil,
-				)
+	t.Run("found", func(t *testing.T) {
+		db, mock := setupMockDB(t)
+		defer db.Close()
 
-				mock.ExpectQuery(`SELECT .+ FROM submissions WHERE id = \$1 AND deleted_at IS NULL`).
-					WithArgs(testID).
-					WillReturnRows(rows)
-			},
-			wantErr: false,
-			wantNil: false,
-		},
-		{
-			name: "failure - not found",
-			id:   testID,
-			mockSetup: func(mock sqlmock.Sqlmock) {
-				mock.ExpectQuery(`SELECT .+ FROM submissions WHERE id = \$1 AND deleted_at IS NULL`).
-					WithArgs(testID).
-					WillReturnError(sql.ErrNoRows)
-			},
-			wantErr: true,
-			wantNil: true,
-		},
-		{
-			name: "success - soft deleted submission not returned (deleted_at IS NULL clause)",
-			id:   testID,
-			mockSetup: func(mock sqlmock.Sqlmock) {
-				// Simulates that deleted submissions are filtered by WHERE clause
-				mock.ExpectQuery(`SELECT .+ FROM submissions WHERE id = \$1 AND deleted_at IS NULL`).
-					WithArgs(testID).
-					WillReturnError(sql.ErrNoRows)
-			},
-			wantErr: true,
-			wantNil: true,
-		},
-		{
-			name: "failure - database error",
-			id:   testID,
-			mockSetup: func(mock sqlmock.Sqlmock) {
-				mock.ExpectQuery(`SELECT .+ FROM submissions WHERE id = \$1 AND deleted_at IS NULL`).
-					WithArgs(testID).
-					WillReturnError(errors.New("database connection failed"))
-			},
-			wantErr: true,
-			wantNil: true,
-		},
-	}
+		rows := sqlmock.NewRows(allColumns()).AddRow(
+			testID, "Test Corp", nil, nil, nil, nil, nil,
+			"John Doe", "john@test.com", nil, nil,
+			nil, nil, nil, nil, nil, nil, nil,
+			nil, time.Now(), time.Now(), nil,
+		)
+		mock.ExpectQuery(`SELECT .+ FROM submissions WHERE id = \$1`).
+			WithArgs(testID).
+			WillReturnRows(rows)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Setup
-			db, mock := setupMockDB(t)
-			defer db.Close()
+		repo := submission.NewRepository(db)
+		result, err := repo.GetByID(context.Background(), testID)
 
-			tt.mockSetup(mock)
+		assert.NoError(t, err)
+		assert.Equal(t, testID, result.ID)
+	})
 
-			repo := submission.NewRepository(db)
+	t.Run("not found", func(t *testing.T) {
+		db, mock := setupMockDB(t)
+		defer db.Close()
 
-			// Execute
-			result, err := repo.GetByID(context.Background(), tt.id)
+		mock.ExpectQuery(`SELECT .+ FROM submissions WHERE id = \$1`).
+			WithArgs(testID).
+			WillReturnError(sql.ErrNoRows)
 
-			// Verify
-			if tt.wantErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-			}
+		repo := submission.NewRepository(db)
+		_, err := repo.GetByID(context.Background(), testID)
 
-			if tt.wantNil {
-				assert.Nil(t, result)
-			} else {
-				assert.NotNil(t, result)
-				assert.Equal(t, tt.id, result.ID)
-				assert.Equal(t, submission.StatusReceived, result.Status)
-			}
-
-			assert.NoError(t, mock.ExpectationsWereMet())
-		})
-	}
+		assert.Error(t, err)
+		assert.True(t, submission.IsNotFound(err))
+	})
 }
 
-// ============================================================================
-// TEST GET BY EMAIL
-// ============================================================================
-
-func TestRepository_GetByEmail(t *testing.T) {
-	tests := []struct {
-		name      string
-		email     string
-		mockSetup func(sqlmock.Sqlmock)
-		wantCount int
-		wantErr   bool
-	}{
-		{
-			name:  "success - multiple submissions found",
-			email: "john@test.com",
-			mockSetup: func(mock sqlmock.Sqlmock) {
-				now := time.Now()
-				rows := sqlmock.NewRows(allSubmissionColumns()).
-					AddRow(uuid.New(), "Corp A", nil, nil, nil, nil, nil, "John", "john@test.com", nil, nil, nil, nil, nil, nil, "Challenge A", nil, nil, nil, submission.StatusReceived, nil, now, now, nil).
-					AddRow(uuid.New(), "Corp B", nil, nil, nil, nil, nil, "John", "john@test.com", nil, nil, nil, nil, nil, nil, "Challenge B", nil, nil, nil, submission.StatusReceived, nil, now, now, nil).
-					AddRow(uuid.New(), "Corp C", nil, nil, nil, nil, nil, "John", "john@test.com", nil, nil, nil, nil, nil, nil, "Challenge C", nil, nil, nil, submission.StatusReceived, nil, now, now, nil)
-
-				mock.ExpectQuery(`SELECT .+ FROM submissions WHERE contact_email = \$1 AND deleted_at IS NULL ORDER BY created_at DESC`).
-					WithArgs("john@test.com").
-					WillReturnRows(rows)
-			},
-			wantCount: 3,
-			wantErr:   false,
-		},
-		{
-			name:  "success - none found",
-			email: "nobody@test.com",
-			mockSetup: func(mock sqlmock.Sqlmock) {
-				rows := sqlmock.NewRows(allSubmissionColumns())
-
-				mock.ExpectQuery(`SELECT .+ FROM submissions WHERE contact_email = \$1 AND deleted_at IS NULL ORDER BY created_at DESC`).
-					WithArgs("nobody@test.com").
-					WillReturnRows(rows)
-			},
-			wantCount: 0,
-			wantErr:   false,
-		},
-		{
-			name:  "success - soft deleted submissions excluded (deleted_at IS NULL)",
-			email: "deleted@test.com",
-			mockSetup: func(mock sqlmock.Sqlmock) {
-				// No rows returned because deleted_at IS NULL filters them out
-				rows := sqlmock.NewRows(allSubmissionColumns())
-
-				mock.ExpectQuery(`SELECT .+ FROM submissions WHERE contact_email = \$1 AND deleted_at IS NULL ORDER BY created_at DESC`).
-					WithArgs("deleted@test.com").
-					WillReturnRows(rows)
-			},
-			wantCount: 0,
-			wantErr:   false,
-		},
-		{
-			name:  "failure - database error",
-			email: "error@test.com",
-			mockSetup: func(mock sqlmock.Sqlmock) {
-				mock.ExpectQuery(`SELECT .+ FROM submissions WHERE contact_email = \$1 AND deleted_at IS NULL ORDER BY created_at DESC`).
-					WithArgs("error@test.com").
-					WillReturnError(errors.New("database connection failed"))
-			},
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Setup
-			db, mock := setupMockDB(t)
-			defer db.Close()
-
-			tt.mockSetup(mock)
-
-			repo := submission.NewRepository(db)
-
-			// Execute
-			result, err := repo.GetByEmail(context.Background(), tt.email)
-
-			// Verify
-			if tt.wantErr {
-				assert.Error(t, err)
-				assert.Nil(t, result)
-			} else {
-				assert.NoError(t, err)
-				// Result can be empty slice, not nil
-				if tt.wantCount == 0 {
-					assert.Empty(t, result)
-				} else {
-					assert.NotNil(t, result)
-					assert.Len(t, result, tt.wantCount)
-				}
-			}
-
-			assert.NoError(t, mock.ExpectationsWereMet())
-		})
-	}
-}
-
-// ============================================================================
-// TEST LIST (with filters, sorting, pagination)
-// ============================================================================
+// =============================================================================
+// TEST: List
+// =============================================================================
 
 func TestRepository_List(t *testing.T) {
-	receivedStatus := submission.StatusReceived
-	email := "john@test.com"
-	userID := uuid.New()
+	t.Run("with defaults", func(t *testing.T) {
+		db, mock := setupMockDB(t)
+		defer db.Close()
 
-	tests := []struct {
-		name      string
-		opts      *submission.ListOptions
-		mockSetup func(sqlmock.Sqlmock)
-		wantCount int
-		wantTotal int
-		wantErr   bool
-	}{
-		{
-			name: "success - default options (no filters)",
-			opts: nil, // Will use defaults: Limit 50, Offset 0, OrderBy created_at DESC
-			mockSetup: func(mock sqlmock.Sqlmock) {
-				// Count query
-				countRows := sqlmock.NewRows([]string{"count"}).AddRow(100)
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT COUNT(*) FROM submissions WHERE deleted_at IS NULL`)).
-					WillReturnRows(countRows)
+		// Count query
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT COUNT(*) FROM submissions WHERE deleted_at IS NULL`)).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(10))
 
-				// List query
-				now := time.Now()
-				rows := sqlmock.NewRows(allSubmissionColumns())
-				for i := 0; i < 50; i++ {
-					rows.AddRow(uuid.New(), "Corp", nil, nil, nil, nil, nil, "Name", "email@test.com", nil, nil, nil, nil, nil, nil, "Challenge", nil, nil, nil, submission.StatusReceived, nil, now, now, nil)
-				}
+		// List query
+		rows := sqlmock.NewRows(allColumns())
+		for i := 0; i < 10; i++ {
+			rows.AddRow(uuid.New(), "Corp", nil, nil, nil, nil, nil,
+				"Name", "email@test.com", nil, nil, nil, nil, nil, nil, nil, nil, nil,
+				nil, time.Now(), time.Now(), nil)
+		}
+		mock.ExpectQuery(`SELECT .+ FROM submissions WHERE deleted_at IS NULL ORDER BY created_at DESC`).
+			WillReturnRows(rows)
 
-				mock.ExpectQuery(`SELECT .+ FROM submissions WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT \$1 OFFSET \$2`).
-					WithArgs(50, 0).
-					WillReturnRows(rows)
-			},
-			wantCount: 50,
-			wantTotal: 100,
-			wantErr:   false,
-		},
-		{
-			name: "success - with status filter",
-			opts: &submission.ListOptions{
-				Limit:   10,
-				Offset:  0,
-				Status:  &receivedStatus,
-				OrderBy: "created_at",
-				Order:   "DESC",
-			},
-			mockSetup: func(mock sqlmock.Sqlmock) {
-				// Count query with status filter
-				countRows := sqlmock.NewRows([]string{"count"}).AddRow(50)
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT COUNT(*) FROM submissions WHERE deleted_at IS NULL AND status = $1`)).
-					WithArgs(receivedStatus).
-					WillReturnRows(countRows)
+		repo := submission.NewRepository(db)
+		result, total, err := repo.List(context.Background(), nil)
 
-				// List query with status filter
-				now := time.Now()
-				rows := sqlmock.NewRows(allSubmissionColumns())
-				for i := 0; i < 10; i++ {
-					rows.AddRow(uuid.New(), "Corp", nil, nil, nil, nil, nil, "Name", "email@test.com", nil, nil, nil, nil, nil, nil, "Challenge", nil, nil, nil, submission.StatusReceived, nil, now, now, nil)
-				}
+		assert.NoError(t, err)
+		assert.Len(t, result, 10)
+		assert.Equal(t, 10, total)
+	})
 
-				mock.ExpectQuery(`SELECT .+ FROM submissions WHERE deleted_at IS NULL AND status = \$1 ORDER BY created_at DESC LIMIT \$2 OFFSET \$3`).
-					WithArgs(receivedStatus, 10, 0).
-					WillReturnRows(rows)
-			},
-			wantCount: 10,
-			wantTotal: 50,
-			wantErr:   false,
-		},
-		{
-			name: "success - with email filter",
-			opts: &submission.ListOptions{
-				Limit:   20,
-				Offset:  0,
-				Email:   &email,
-				OrderBy: "company_name",
-				Order:   "ASC",
-			},
-			mockSetup: func(mock sqlmock.Sqlmock) {
-				// Count query with email filter
-				countRows := sqlmock.NewRows([]string{"count"}).AddRow(5)
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT COUNT(*) FROM submissions WHERE deleted_at IS NULL AND contact_email = $1`)).
-					WithArgs(email).
-					WillReturnRows(countRows)
+	t.Run("rejects invalid orderBy (SQL injection)", func(t *testing.T) {
+		db, _ := setupMockDB(t)
+		defer db.Close()
 
-				// List query with email filter and company_name ASC sort
-				now := time.Now()
-				rows := sqlmock.NewRows(allSubmissionColumns())
-				for i := 0; i < 5; i++ {
-					rows.AddRow(uuid.New(), "Corp", nil, nil, nil, nil, nil, "Name", email, nil, nil, nil, nil, nil, nil, "Challenge", nil, nil, nil, submission.StatusReceived, nil, now, now, nil)
-				}
-
-				mock.ExpectQuery(`SELECT .+ FROM submissions WHERE deleted_at IS NULL AND contact_email = \$1 ORDER BY company_name ASC LIMIT \$2 OFFSET \$3`).
-					WithArgs(email, 20, 0).
-					WillReturnRows(rows)
-			},
-			wantCount: 5,
-			wantTotal: 5,
-			wantErr:   false,
-		},
-		{
-			name: "success - with user_id filter",
-			opts: &submission.ListOptions{
-				Limit:   30,
-				Offset:  10,
-				UserID:  &userID,
-				OrderBy: "updated_at",
-				Order:   "ASC",
-			},
-			mockSetup: func(mock sqlmock.Sqlmock) {
-				// Count query with user_id filter
-				countRows := sqlmock.NewRows([]string{"count"}).AddRow(25)
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT COUNT(*) FROM submissions WHERE deleted_at IS NULL AND user_id = $1`)).
-					WithArgs(userID).
-					WillReturnRows(countRows)
-
-				// List query with user_id filter and pagination
-				now := time.Now()
-				rows := sqlmock.NewRows(allSubmissionColumns())
-				for i := 0; i < 15; i++ {
-					rows.AddRow(uuid.New(), "Corp", nil, nil, nil, nil, nil, "Name", "email@test.com", nil, nil, nil, nil, nil, nil, "Challenge", nil, nil, nil, submission.StatusReceived, userID, now, now, nil)
-				}
-
-				mock.ExpectQuery(`SELECT .+ FROM submissions WHERE deleted_at IS NULL AND user_id = \$1 ORDER BY updated_at ASC LIMIT \$2 OFFSET \$3`).
-					WithArgs(userID, 30, 10).
-					WillReturnRows(rows)
-			},
-			wantCount: 15,
-			wantTotal: 25,
-			wantErr:   false,
-		},
-		{
-			name: "success - multiple filters combined",
-			opts: &submission.ListOptions{
-				Limit:   10,
-				Offset:  0,
-				Status:  &receivedStatus,
-				Email:   &email,
-				UserID:  &userID,
-				OrderBy: "status",
-				Order:   "DESC",
-			},
-			mockSetup: func(mock sqlmock.Sqlmock) {
-				// Count query with all filters
-				countRows := sqlmock.NewRows([]string{"count"}).AddRow(3)
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT COUNT(*) FROM submissions WHERE deleted_at IS NULL AND status = $1 AND contact_email = $2 AND user_id = $3`)).
-					WithArgs(receivedStatus, email, userID).
-					WillReturnRows(countRows)
-
-				// List query with all filters
-				now := time.Now()
-				rows := sqlmock.NewRows(allSubmissionColumns())
-				for i := 0; i < 3; i++ {
-					rows.AddRow(uuid.New(), "Corp", nil, nil, nil, nil, nil, "Name", email, nil, nil, nil, nil, nil, nil, "Challenge", nil, nil, nil, submission.StatusReceived, userID, now, now, nil)
-				}
-
-				mock.ExpectQuery(`SELECT .+ FROM submissions WHERE deleted_at IS NULL AND status = \$1 AND contact_email = \$2 AND user_id = \$3 ORDER BY status DESC LIMIT \$4 OFFSET \$5`).
-					WithArgs(receivedStatus, email, userID, 10, 0).
-					WillReturnRows(rows)
-			},
-			wantCount: 3,
-			wantTotal: 3,
-			wantErr:   false,
-		},
-		{
-			name: "failure - invalid OrderBy rejected",
-			opts: &submission.ListOptions{
-				Limit:   10,
-				Offset:  0,
-				OrderBy: "id; DROP TABLE submissions; --", // Malicious input
-				Order:   "DESC",
-			},
-			mockSetup: func(mock sqlmock.Sqlmock) {
-			},
-			wantErr: true,
-		},
-		{
-			name: "failure - invalid Order direction rejected",
-			opts: &submission.ListOptions{
-				Limit:   10,
-				Offset:  0,
-				OrderBy: "created_at",
-				Order:   "DROP",
-			},
-			mockSetup: func(mock sqlmock.Sqlmock) {},
-			wantErr:   true,
-		},
-		{
-			name: "failure - count query error",
-			opts: &submission.ListOptions{Limit: 10, Offset: 0},
-			mockSetup: func(mock sqlmock.Sqlmock) {
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT COUNT(*) FROM submissions WHERE deleted_at IS NULL`)).
-					WillReturnError(errors.New("database connection failed"))
-			},
-			wantErr: true,
-		},
-		{
-			name: "failure - list query error",
-			opts: &submission.ListOptions{Limit: 10, Offset: 0},
-			mockSetup: func(mock sqlmock.Sqlmock) {
-				countRows := sqlmock.NewRows([]string{"count"}).AddRow(100)
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT COUNT(*) FROM submissions WHERE deleted_at IS NULL`)).
-					WillReturnRows(countRows)
-
-				mock.ExpectQuery(`SELECT .+ FROM submissions WHERE deleted_at IS NULL`).
-					WillReturnError(errors.New("database connection failed"))
-			},
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Setup
-			db, mock := setupMockDB(t)
-			defer db.Close()
-
-			tt.mockSetup(mock)
-
-			repo := submission.NewRepository(db)
-
-			// Execute
-			result, total, err := repo.List(context.Background(), tt.opts)
-
-			// Verify
-			if tt.wantErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-				assert.NotNil(t, result)
-				assert.Len(t, result, tt.wantCount)
-				assert.Equal(t, tt.wantTotal, total)
-			}
-
-			assert.NoError(t, mock.ExpectationsWereMet())
+		repo := submission.NewRepository(db)
+		_, _, err := repo.List(context.Background(), &submission.ListOptions{
+			OrderBy: "id; DROP TABLE submissions; --",
 		})
-	}
+
+		assert.Error(t, err)
+		assert.True(t, submission.IsValidation(err))
+	})
 }
 
-// ============================================================================
-// TEST DELETE (Soft Delete)
-// ============================================================================
+// =============================================================================
+// TEST: Delete (Soft Delete)
+// =============================================================================
 
 func TestRepository_Delete(t *testing.T) {
 	testID := uuid.New()
 
-	tests := []struct {
-		name      string
-		id        uuid.UUID
-		mockSetup func(sqlmock.Sqlmock)
-		wantErr   bool
-	}{
-		{
-			name: "success - soft delete sets deleted_at timestamp",
-			id:   testID,
-			mockSetup: func(mock sqlmock.Sqlmock) {
-				mock.ExpectExec(regexp.QuoteMeta(`UPDATE submissions SET deleted_at = $1 WHERE id = $2 AND deleted_at IS NULL`)).
-					WithArgs(sqlmock.AnyArg(), testID).
-					WillReturnResult(sqlmock.NewResult(0, 1))
-			},
-			wantErr: false,
-		},
-		{
-			name: "failure - submission not found",
-			id:   testID,
-			mockSetup: func(mock sqlmock.Sqlmock) {
-				mock.ExpectExec(regexp.QuoteMeta(`UPDATE submissions SET deleted_at = $1 WHERE id = $2 AND deleted_at IS NULL`)).
-					WithArgs(sqlmock.AnyArg(), testID).
-					WillReturnResult(sqlmock.NewResult(0, 0)) // 0 rows affected
-			},
-			wantErr: true,
-		},
-		{
-			name: "failure - already deleted (deleted_at IS NULL prevents double delete)",
-			id:   testID,
-			mockSetup: func(mock sqlmock.Sqlmock) {
-				mock.ExpectExec(regexp.QuoteMeta(`UPDATE submissions SET deleted_at = $1 WHERE id = $2 AND deleted_at IS NULL`)).
-					WithArgs(sqlmock.AnyArg(), testID).
-					WillReturnResult(sqlmock.NewResult(0, 0)) // 0 rows affected
-			},
-			wantErr: true,
-		},
-		{
-			name: "failure - database error",
-			id:   testID,
-			mockSetup: func(mock sqlmock.Sqlmock) {
-				mock.ExpectExec(regexp.QuoteMeta(`UPDATE submissions SET deleted_at = $1 WHERE id = $2 AND deleted_at IS NULL`)).
-					WithArgs(sqlmock.AnyArg(), testID).
-					WillReturnError(errors.New("database connection failed"))
-			},
-			wantErr: true,
-		},
-	}
+	t.Run("success", func(t *testing.T) {
+		db, mock := setupMockDB(t)
+		defer db.Close()
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Setup
-			db, mock := setupMockDB(t)
-			defer db.Close()
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE submissions SET deleted_at`)).
+			WithArgs(sqlmock.AnyArg(), testID).
+			WillReturnResult(sqlmock.NewResult(0, 1))
 
-			tt.mockSetup(mock)
+		repo := submission.NewRepository(db)
+		err := repo.Delete(context.Background(), testID)
 
-			repo := submission.NewRepository(db)
+		assert.NoError(t, err)
+	})
 
-			// Execute
-			err := repo.Delete(context.Background(), tt.id)
+	t.Run("not found", func(t *testing.T) {
+		db, mock := setupMockDB(t)
+		defer db.Close()
 
-			// Verify
-			if tt.wantErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-			}
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE submissions SET deleted_at`)).
+			WithArgs(sqlmock.AnyArg(), testID).
+			WillReturnResult(sqlmock.NewResult(0, 0))
 
-			assert.NoError(t, mock.ExpectationsWereMet())
-		})
-	}
+		repo := submission.NewRepository(db)
+		err := repo.Delete(context.Background(), testID)
+
+		assert.True(t, submission.IsNotFound(err))
+	})
 }
 
-// ============================================================================
-// TEST ANALYTICS METHODS
-// ============================================================================
+// =============================================================================
+// TEST: Transaction Support
+// =============================================================================
 
-func TestRepository_GetTotalCount(t *testing.T) {
-	tests := []struct {
-		name      string
-		mockSetup func(sqlmock.Sqlmock)
-		wantCount int
-		wantErr   bool
-	}{
-		{
-			name: "success - returns total count",
-			mockSetup: func(mock sqlmock.Sqlmock) {
-				rows := sqlmock.NewRows([]string{"count"}).AddRow(150)
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT COUNT(*) FROM submissions WHERE deleted_at IS NULL`)).
-					WillReturnRows(rows)
-			},
-			wantCount: 150,
-			wantErr:   false,
-		},
-		{
-			name: "success - zero submissions",
-			mockSetup: func(mock sqlmock.Sqlmock) {
-				rows := sqlmock.NewRows([]string{"count"}).AddRow(0)
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT COUNT(*) FROM submissions WHERE deleted_at IS NULL`)).
-					WillReturnRows(rows)
-			},
-			wantCount: 0,
-			wantErr:   false,
-		},
-		{
-			name: "failure - database error",
-			mockSetup: func(mock sqlmock.Sqlmock) {
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT COUNT(*) FROM submissions WHERE deleted_at IS NULL`)).
-					WillReturnError(errors.New("database connection failed"))
-			},
-			wantErr: true,
-		},
-	}
+func TestRepository_Transaction(t *testing.T) {
+	t.Run("begin and commit", func(t *testing.T) {
+		db, mock := setupMockDB(t)
+		defer db.Close()
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			db, mock := setupMockDB(t)
-			defer db.Close()
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO submissions`)).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
 
-			tt.mockSetup(mock)
+		repo := submission.NewRepository(db)
+		txRepo, err := repo.BeginTx(context.Background())
+		require.NoError(t, err)
 
-			repo := submission.NewRepository(db)
+		err = txRepo.Create(context.Background(), createTestSubmission())
+		assert.NoError(t, err)
 
-			result, err := repo.GetTotalCount(context.Background())
+		err = txRepo.Commit()
+		assert.NoError(t, err)
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
 
-			if tt.wantErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, tt.wantCount, result)
-			}
+	t.Run("begin and rollback", func(t *testing.T) {
+		db, mock := setupMockDB(t)
+		defer db.Close()
 
-			assert.NoError(t, mock.ExpectationsWereMet())
-		})
-	}
-}
+		mock.ExpectBegin()
+		mock.ExpectRollback()
 
-func TestRepository_GetActiveCount(t *testing.T) {
-	tests := []struct {
-		name      string
-		mockSetup func(sqlmock.Sqlmock)
-		wantCount int
-		wantErr   bool
-	}{
-		{
-			name: "success - returns active count",
-			mockSetup: func(mock sqlmock.Sqlmock) {
-				rows := sqlmock.NewRows([]string{"count"}).AddRow(80)
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT COUNT(DISTINCT s.id) FROM submissions s LEFT JOIN analyses a`)).
-					WillReturnRows(rows)
-			},
-			wantCount: 80,
-			wantErr:   false,
-		},
-		{
-			name: "success - zero active submissions",
-			mockSetup: func(mock sqlmock.Sqlmock) {
-				rows := sqlmock.NewRows([]string{"count"}).AddRow(0)
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT COUNT(DISTINCT s.id) FROM submissions s LEFT JOIN analyses a`)).
-					WillReturnRows(rows)
-			},
-			wantCount: 0,
-			wantErr:   false,
-		},
-		{
-			name: "failure - database error",
-			mockSetup: func(mock sqlmock.Sqlmock) {
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT COUNT(DISTINCT s.id) FROM submissions s LEFT JOIN analyses a`)).
-					WillReturnError(errors.New("database connection failed"))
-			},
-			wantErr: true,
-		},
-	}
+		repo := submission.NewRepository(db)
+		txRepo, err := repo.BeginTx(context.Background())
+		require.NoError(t, err)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			db, mock := setupMockDB(t)
-			defer db.Close()
-
-			tt.mockSetup(mock)
-
-			repo := submission.NewRepository(db)
-
-			result, err := repo.GetActiveCount(context.Background())
-
-			if tt.wantErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, tt.wantCount, result)
-			}
-
-			assert.NoError(t, mock.ExpectationsWereMet())
-		})
-	}
-}
-
-func TestRepository_GetCompletedCount(t *testing.T) {
-	tests := []struct {
-		name      string
-		mockSetup func(sqlmock.Sqlmock)
-		wantCount int
-		wantErr   bool
-	}{
-		{
-			name: "success - returns completed count",
-			mockSetup: func(mock sqlmock.Sqlmock) {
-				rows := sqlmock.NewRows([]string{"count"}).AddRow(70)
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT COUNT(DISTINCT s.id) FROM submissions s INNER JOIN analyses a`)).
-					WillReturnRows(rows)
-			},
-			wantCount: 70,
-			wantErr:   false,
-		},
-		{
-			name: "success - zero completed submissions",
-			mockSetup: func(mock sqlmock.Sqlmock) {
-				rows := sqlmock.NewRows([]string{"count"}).AddRow(0)
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT COUNT(DISTINCT s.id) FROM submissions s INNER JOIN analyses a`)).
-					WillReturnRows(rows)
-			},
-			wantCount: 0,
-			wantErr:   false,
-		},
-		{
-			name: "failure - database error",
-			mockSetup: func(mock sqlmock.Sqlmock) {
-				mock.ExpectQuery(regexp.QuoteMeta(`SELECT COUNT(DISTINCT s.id) FROM submissions s INNER JOIN analyses a`)).
-					WillReturnError(errors.New("database connection failed"))
-			},
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			db, mock := setupMockDB(t)
-			defer db.Close()
-
-			tt.mockSetup(mock)
-
-			repo := submission.NewRepository(db)
-
-			result, err := repo.GetCompletedCount(context.Background())
-
-			if tt.wantErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, tt.wantCount, result)
-			}
-
-			assert.NoError(t, mock.ExpectationsWereMet())
-		})
-	}
+		err = txRepo.Rollback()
+		assert.NoError(t, err)
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
 }

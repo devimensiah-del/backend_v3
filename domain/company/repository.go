@@ -3,8 +3,11 @@ package company
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
+
+	"backend_v3/domain/enrichment"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -17,41 +20,23 @@ type Repository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*Company, error)
 	GetBySubmissionID(ctx context.Context, submissionID uuid.UUID) (*Company, error)
 	Update(ctx context.Context, company *Company) error
+	Delete(ctx context.Context, id uuid.UUID) error // Soft delete for saga rollback
 
 	// User companies
 	GetUserCompanies(ctx context.Context, userID uuid.UUID) ([]*Company, error)
 	ListAll(ctx context.Context, limit, offset int) ([]*Company, int, error)
 
-	// CNPJ verification (company-level)
-	GetVerifiedByCNPJ(ctx context.Context, cnpj string) (*Company, error)
-	IsVerifiedCNPJExists(ctx context.Context, cnpj string) (bool, error)
-
-	// Field-level verification
-	GetFieldVerifications(ctx context.Context, companyID uuid.UUID) ([]*FieldVerification, error)
-	VerifyField(ctx context.Context, companyID uuid.UUID, fieldName string, verifiedBy *uuid.UUID) error
-	UnverifyField(ctx context.Context, companyID uuid.UUID, fieldName string) error
-	VerifyAllFields(ctx context.Context, companyID uuid.UUID, verifiedBy *uuid.UUID) error
-	UnverifyAllFields(ctx context.Context, companyID uuid.UUID) error
-	GetVerifiedFieldNames(ctx context.Context, companyID uuid.UUID) ([]string, error)
-	ExpireFieldVerifications(ctx context.Context, companyID *uuid.UUID) (int, error)
-
-	// History tracking
-	RecordHistory(ctx context.Context, entry *DataHistoryEntry) error
-	GetHistory(ctx context.Context, companyID uuid.UUID) ([]*DataHistoryEntry, error)
-	GetFieldHistory(ctx context.Context, companyID uuid.UUID, fieldName string) ([]*DataHistoryEntry, error)
-
 	// Submission links
 	LinkSubmission(ctx context.Context, link *CompanySubmission) error
-	GetSubmissions(ctx context.Context, companyID uuid.UUID) ([]*CompanySubmission, error)
-
-	// Re-enrich/Re-analyze support
-	GetLastSubmissionForCompany(ctx context.Context, companyID uuid.UUID) (*LastSubmissionInfo, error)
-	GetLastCompletedEnrichmentForCompany(ctx context.Context, companyID uuid.UUID) (*LastEnrichmentInfo, error)
-	GetLatestEnrichmentStatus(ctx context.Context, companyID uuid.UUID) (*EnrichmentStatus, error)
-	GetEnrichmentsHistory(ctx context.Context, companyID uuid.UUID) ([]*EnrichmentStatus, error)
+	UnlinkSubmissions(ctx context.Context, companyID uuid.UUID) error // For saga rollback
 
 	// Analysis history (for admin dashboard)
 	GetAnalysesHistory(ctx context.Context, companyID uuid.UUID) ([]*AnalysisHistoryItem, error)
+
+	// Enrichment status updates
+	SetEnrichmentProcessing(ctx context.Context, id uuid.UUID) error
+	SetEnrichmentCompleted(ctx context.Context, id uuid.UUID, data *enrichment.EnrichedCompanyData) error
+	SetEnrichmentFailed(ctx context.Context, id uuid.UUID, errMsg string) error
 
 	// Transaction support
 	WithTx(ctx context.Context, fn func(Repository) error) error
@@ -87,7 +72,8 @@ func (r *PostgresRepository) Create(ctx context.Context, company *Company) error
 			employees_range, revenue_estimate, business_model, competitors, market_share_status,
 			digital_maturity, strengths, weaknesses,
 			linkedin_url, twitter_handle,
-			is_verified, allowed_users, owner_id,
+			enrichment_status, enrichment_completed_at, enrichment_error,
+			allowed_users, owner_id,
 			created_at, updated_at
 		) VALUES (
 			$1, $2, $3, $4,
@@ -98,7 +84,8 @@ func (r *PostgresRepository) Create(ctx context.Context, company *Company) error
 			$23, $24, $25,
 			$26, $27,
 			$28, $29, $30,
-			$31, $32
+			$31, $32,
+			$33, $34
 		)
 	`
 
@@ -110,7 +97,8 @@ func (r *PostgresRepository) Create(ctx context.Context, company *Company) error
 		company.EmployeesRange, company.RevenueEstimate, company.BusinessModel, company.Competitors, company.MarketShareStatus,
 		company.DigitalMaturity, company.Strengths, company.Weaknesses,
 		company.LinkedInURL, company.TwitterHandle,
-		company.IsVerified, company.AllowedUsers, company.OwnerID,
+		company.EnrichmentStatus, company.EnrichmentCompletedAt, company.EnrichmentError,
+		company.AllowedUsers, company.OwnerID,
 		company.CreatedAt, company.UpdatedAt,
 	)
 	if err != nil {
@@ -130,7 +118,8 @@ func (r *PostgresRepository) GetByID(ctx context.Context, id uuid.UUID) (*Compan
 			employees_range, revenue_estimate, business_model, competitors, market_share_status,
 			digital_maturity, strengths, weaknesses,
 			linkedin_url, twitter_handle,
-			is_verified, allowed_users, owner_id,
+			enrichment_status, enrichment_completed_at, enrichment_error,
+			allowed_users, owner_id,
 			created_at, updated_at
 		FROM companies
 		WHERE id = $1
@@ -158,7 +147,8 @@ func (r *PostgresRepository) GetBySubmissionID(ctx context.Context, submissionID
 			c.employees_range, c.revenue_estimate, c.business_model, c.competitors, c.market_share_status,
 			c.digital_maturity, c.strengths, c.weaknesses,
 			c.linkedin_url, c.twitter_handle,
-			c.is_verified, c.allowed_users, c.owner_id,
+			c.enrichment_status, c.enrichment_completed_at, c.enrichment_error,
+			c.allowed_users, c.owner_id,
 			c.created_at, c.updated_at
 		FROM companies c
 		JOIN company_submissions cs ON cs.company_id = c.id
@@ -190,8 +180,9 @@ func (r *PostgresRepository) Update(ctx context.Context, company *Company) error
 			employees_range = $18, revenue_estimate = $19, business_model = $20, competitors = $21, market_share_status = $22,
 			digital_maturity = $23, strengths = $24, weaknesses = $25,
 			linkedin_url = $26, twitter_handle = $27,
-			is_verified = $28, allowed_users = $29, owner_id = $30,
-			updated_at = $31
+			enrichment_status = $28, enrichment_completed_at = $29, enrichment_error = $30,
+			allowed_users = $31, owner_id = $32,
+			updated_at = $33
 		WHERE id = $1
 	`
 
@@ -203,77 +194,14 @@ func (r *PostgresRepository) Update(ctx context.Context, company *Company) error
 		company.EmployeesRange, company.RevenueEstimate, company.BusinessModel, company.Competitors, company.MarketShareStatus,
 		company.DigitalMaturity, company.Strengths, company.Weaknesses,
 		company.LinkedInURL, company.TwitterHandle,
-		company.IsVerified, company.AllowedUsers, company.OwnerID,
+		company.EnrichmentStatus, company.EnrichmentCompletedAt, company.EnrichmentError,
+		company.AllowedUsers, company.OwnerID,
 		company.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update company: %w", err)
 	}
 	return nil
-}
-
-// RecordHistory inserts a data history entry
-func (r *PostgresRepository) RecordHistory(ctx context.Context, entry *DataHistoryEntry) error {
-	if entry.ID == uuid.Nil {
-		entry.ID = uuid.New()
-	}
-	if entry.ChangedAt.IsZero() {
-		entry.ChangedAt = time.Now()
-	}
-
-	query := `
-		INSERT INTO company_data_history (
-			id, company_id, field_name, old_value, new_value,
-			source, source_id, changed_by, changed_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-	`
-
-	_, err := r.querier().ExecContext(ctx, query,
-		entry.ID, entry.CompanyID, entry.FieldName, entry.OldValue, entry.NewValue,
-		entry.Source, entry.SourceID, entry.ChangedBy, entry.ChangedAt,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to record history: %w", err)
-	}
-	return nil
-}
-
-// GetHistory retrieves all history entries for a company
-func (r *PostgresRepository) GetHistory(ctx context.Context, companyID uuid.UUID) ([]*DataHistoryEntry, error) {
-	query := `
-		SELECT
-			id, company_id, field_name, old_value, new_value,
-			source, source_id, changed_by, changed_at
-		FROM company_data_history
-		WHERE company_id = $1
-		ORDER BY changed_at DESC
-	`
-
-	var entries []*DataHistoryEntry
-	err := sqlx.SelectContext(ctx, r.querier(), &entries, query, companyID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get company history: %w", err)
-	}
-	return entries, nil
-}
-
-// GetFieldHistory retrieves history for a specific field
-func (r *PostgresRepository) GetFieldHistory(ctx context.Context, companyID uuid.UUID, fieldName string) ([]*DataHistoryEntry, error) {
-	query := `
-		SELECT
-			id, company_id, field_name, old_value, new_value,
-			source, source_id, changed_by, changed_at
-		FROM company_data_history
-		WHERE company_id = $1 AND field_name = $2
-		ORDER BY changed_at DESC
-	`
-
-	var entries []*DataHistoryEntry
-	err := sqlx.SelectContext(ctx, r.querier(), &entries, query, companyID, fieldName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get field history: %w", err)
-	}
-	return entries, nil
 }
 
 // LinkSubmission creates a link between a company and a submission
@@ -300,61 +228,40 @@ func (r *PostgresRepository) LinkSubmission(ctx context.Context, link *CompanySu
 	return nil
 }
 
-// GetSubmissions retrieves all submission links for a company
-func (r *PostgresRepository) GetSubmissions(ctx context.Context, companyID uuid.UUID) ([]*CompanySubmission, error) {
-	query := `
-		SELECT company_id, submission_id, is_primary, linked_at, linked_by
-		FROM company_submissions
-		WHERE company_id = $1
-		ORDER BY linked_at DESC
-	`
-
-	var links []*CompanySubmission
-	err := sqlx.SelectContext(ctx, r.querier(), &links, query, companyID)
+// UnlinkSubmissions removes all submission links for a company (for saga rollback)
+func (r *PostgresRepository) UnlinkSubmissions(ctx context.Context, companyID uuid.UUID) error {
+	query := `DELETE FROM company_submissions WHERE company_id = $1`
+	_, err := r.querier().ExecContext(ctx, query, companyID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get company submissions: %w", err)
+		return fmt.Errorf("failed to unlink submissions: %w", err)
 	}
-	return links, nil
+	return nil
 }
 
-// GetVerifiedByCNPJ retrieves a verified company by its CNPJ
-func (r *PostgresRepository) GetVerifiedByCNPJ(ctx context.Context, cnpj string) (*Company, error) {
-	query := `
-		SELECT
-			id, name, cnpj, website,
-			industry, company_size, location, target_market, funding_stage,
-			annual_revenue_min, annual_revenue_max,
-			foundation_year, legal_name, headquarters, sector, target_audience, value_proposition,
-			employees_range, revenue_estimate, business_model, competitors, market_share_status,
-			digital_maturity, strengths, weaknesses,
-			linkedin_url, twitter_handle,
-			is_verified, allowed_users, owner_id,
-			created_at, updated_at
-		FROM companies
-		WHERE cnpj = $1 AND is_verified = true
-	`
-
-	var company Company
-	err := sqlx.GetContext(ctx, r.querier(), &company, query, cnpj)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("failed to get verified company by CNPJ: %w", err)
+// Delete performs a hard delete of a company (for saga rollback)
+// Note: This is a hard delete because saga rollback needs to fully undo the creation.
+// For normal operations, companies should not be deleted (edit in Supabase if needed).
+func (r *PostgresRepository) Delete(ctx context.Context, id uuid.UUID) error {
+	// First unlink any submissions to avoid FK constraint
+	if err := r.UnlinkSubmissions(ctx, id); err != nil {
+		return fmt.Errorf("failed to unlink submissions before delete: %w", err)
 	}
-	return &company, nil
-}
 
-// IsVerifiedCNPJExists checks if a verified company with the given CNPJ exists
-func (r *PostgresRepository) IsVerifiedCNPJExists(ctx context.Context, cnpj string) (bool, error) {
-	query := `SELECT EXISTS(SELECT 1 FROM companies WHERE cnpj = $1 AND is_verified = true)`
-
-	var exists bool
-	err := sqlx.GetContext(ctx, r.querier(), &exists, query, cnpj)
+	query := `DELETE FROM companies WHERE id = $1`
+	result, err := r.querier().ExecContext(ctx, query, id)
 	if err != nil {
-		return false, fmt.Errorf("failed to check verified CNPJ existence: %w", err)
+		return fmt.Errorf("failed to delete company: %w", err)
 	}
-	return exists, nil
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("company not found: %s", id)
+	}
+
+	return nil
 }
 
 // WithTx executes the given function within a transaction
@@ -380,146 +287,8 @@ func (r *PostgresRepository) WithTx(ctx context.Context, fn func(Repository) err
 	return nil
 }
 
-// GetLastSubmissionForCompany retrieves the most recent submission linked to this company
-func (r *PostgresRepository) GetLastSubmissionForCompany(ctx context.Context, companyID uuid.UUID) (*LastSubmissionInfo, error) {
-	query := `
-		SELECT
-			cs.submission_id,
-			s.business_challenge,
-			cs.linked_at
-		FROM company_submissions cs
-		JOIN submissions s ON s.id = cs.submission_id
-		WHERE cs.company_id = $1
-		ORDER BY cs.linked_at DESC
-		LIMIT 1
-	`
-
-	var info LastSubmissionInfo
-	err := sqlx.GetContext(ctx, r.querier(), &info, query, companyID)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("failed to get last submission for company: %w", err)
-	}
-	return &info, nil
-}
-
-// GetLastCompletedEnrichmentForCompany retrieves the most recent completed enrichment for this company
-// With new status model: pending → completed → failed (no more 'approved')
-func (r *PostgresRepository) GetLastCompletedEnrichmentForCompany(ctx context.Context, companyID uuid.UUID) (*LastEnrichmentInfo, error) {
-	// First try direct company_id link (new schema)
-	query := `
-		SELECT
-			e.id as enrichment_id,
-			e.submission_id,
-			COALESCE(e.completed_at, e.updated_at) as completed_at
-		FROM enrichments e
-		WHERE e.company_id = $1
-		  AND e.status = 'completed'
-		ORDER BY COALESCE(e.completed_at, e.updated_at) DESC
-		LIMIT 1
-	`
-
-	var info LastEnrichmentInfo
-	err := sqlx.GetContext(ctx, r.querier(), &info, query, companyID)
-	if err == nil {
-		return &info, nil
-	}
-	if err != sql.ErrNoRows {
-		return nil, fmt.Errorf("failed to get last completed enrichment for company: %w", err)
-	}
-
-	// Fallback: try via company_submissions link (old data before migration 027)
-	fallbackQuery := `
-		SELECT
-			e.id as enrichment_id,
-			e.submission_id,
-			COALESCE(e.completed_at, e.updated_at) as completed_at
-		FROM enrichments e
-		JOIN company_submissions cs ON cs.submission_id = e.submission_id
-		WHERE cs.company_id = $1
-		  AND e.status = 'completed'
-		ORDER BY COALESCE(e.completed_at, e.updated_at) DESC
-		LIMIT 1
-	`
-
-	err = sqlx.GetContext(ctx, r.querier(), &info, fallbackQuery, companyID)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("failed to get last completed enrichment for company: %w", err)
-	}
-	return &info, nil
-}
-
-// GetLatestEnrichmentStatus retrieves the most recent enrichment status for this company
-// Shows latest enrichment regardless of status (pending, completed, failed)
-// Uses a single query that checks both direct company_id link and company_submissions join
-func (r *PostgresRepository) GetLatestEnrichmentStatus(ctx context.Context, companyID uuid.UUID) (*EnrichmentStatus, error) {
-	// Combined query: first try direct link, then via company_submissions
-	// This handles both new enrichments (with company_id) and old ones (via join table)
-	query := `
-		SELECT
-			e.id as enrichment_id,
-			e.submission_id,
-			e.status,
-			e.progress,
-			COALESCE(e.current_step, '') as current_step,
-			e.started_at,
-			e.completed_at,
-			COALESCE(e.error_message, '') as error_message,
-			e.created_at,
-			e.updated_at
-		FROM enrichments e
-		LEFT JOIN company_submissions cs ON cs.submission_id = e.submission_id
-		WHERE e.company_id = $1 OR cs.company_id = $1
-		ORDER BY e.created_at DESC
-		LIMIT 1
-	`
-
-	var status EnrichmentStatus
-	err := sqlx.GetContext(ctx, r.querier(), &status, query, companyID)
-	if err == nil {
-		return &status, nil
-	}
-	if err == sql.ErrNoRows {
-		return nil, nil // No enrichment found
-	}
-	return nil, fmt.Errorf("failed to get latest enrichment status: %w", err)
-}
-
-// GetEnrichmentsHistory retrieves all enrichments for a company (for admin dashboard history)
-// Returns enrichments ordered by created_at DESC (newest first)
-func (r *PostgresRepository) GetEnrichmentsHistory(ctx context.Context, companyID uuid.UUID) ([]*EnrichmentStatus, error) {
-	query := `
-		SELECT
-			e.id as enrichment_id,
-			e.submission_id,
-			e.status,
-			e.progress,
-			COALESCE(e.current_step, '') as current_step,
-			e.started_at,
-			e.completed_at,
-			COALESCE(e.error_message, '') as error_message,
-			e.created_at,
-			e.updated_at
-		FROM enrichments e
-		LEFT JOIN company_submissions cs ON cs.submission_id = e.submission_id
-		WHERE e.company_id = $1 OR cs.company_id = $1
-		ORDER BY e.created_at DESC
-	`
-
-	var enrichments []*EnrichmentStatus
-	err := sqlx.SelectContext(ctx, r.querier(), &enrichments, query, companyID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get enrichments history: %w", err)
-	}
-	return enrichments, nil
-}
-
-// GetUserCompanies retrieves all companies where user is owner OR in allowed_users
+// GetUserCompanies retrieves companies where user is owner OR in allowed_users
+// Limited to MaxUserCompanies (100) to prevent memory issues with power users
 func (r *PostgresRepository) GetUserCompanies(ctx context.Context, userID uuid.UUID) ([]*Company, error) {
 	query := `
 		SELECT
@@ -530,15 +299,17 @@ func (r *PostgresRepository) GetUserCompanies(ctx context.Context, userID uuid.U
 			employees_range, revenue_estimate, business_model, competitors, market_share_status,
 			digital_maturity, strengths, weaknesses,
 			linkedin_url, twitter_handle,
-			is_verified, allowed_users, owner_id,
+			enrichment_status, enrichment_completed_at, enrichment_error,
+			allowed_users, owner_id,
 			created_at, updated_at
 		FROM companies
 		WHERE owner_id = $1 OR $1 = ANY(allowed_users)
 		ORDER BY updated_at DESC
+		LIMIT $2
 	`
 
 	var companies []*Company
-	err := sqlx.SelectContext(ctx, r.querier(), &companies, query, userID)
+	err := sqlx.SelectContext(ctx, r.querier(), &companies, query, userID, MaxUserCompanies)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user companies: %w", err)
 	}
@@ -565,7 +336,8 @@ func (r *PostgresRepository) ListAll(ctx context.Context, limit, offset int) ([]
 			employees_range, revenue_estimate, business_model, competitors, market_share_status,
 			digital_maturity, strengths, weaknesses,
 			linkedin_url, twitter_handle,
-			is_verified, allowed_users, owner_id,
+			enrichment_status, enrichment_completed_at, enrichment_error,
+			allowed_users, owner_id,
 			created_at, updated_at
 		FROM companies
 		ORDER BY updated_at DESC
@@ -586,9 +358,9 @@ func (r *PostgresRepository) GetAnalysesHistory(ctx context.Context, companyID u
 	query := `
 		SELECT
 			a.id as analysis_id,
-			a.submission_id,
+			COALESCE(a.submission_id, '00000000-0000-0000-0000-000000000000'::uuid) as submission_id,
 			a.status,
-			s.business_challenge,
+			COALESCE(ch.business_challenge, '') as business_challenge,
 			a.is_blurred,
 			a.is_visible_to_user,
 			a.is_public,
@@ -598,9 +370,8 @@ func (r *PostgresRepository) GetAnalysesHistory(ctx context.Context, companyID u
 			a.created_at,
 			a.updated_at
 		FROM analyses a
-		JOIN submissions s ON s.id = a.submission_id
-		LEFT JOIN company_submissions cs ON cs.submission_id = a.submission_id
-		WHERE a.company_id = $1 OR cs.company_id = $1
+		LEFT JOIN challenges ch ON ch.id = a.challenge_id
+		WHERE a.company_id = $1
 		ORDER BY a.created_at DESC
 	`
 
@@ -612,120 +383,96 @@ func (r *PostgresRepository) GetAnalysesHistory(ctx context.Context, companyID u
 	return history, nil
 }
 
-// ============================================
-// Field Verification Methods
-// ============================================
-
-// GetFieldVerifications retrieves all field verifications for a company
-func (r *PostgresRepository) GetFieldVerifications(ctx context.Context, companyID uuid.UUID) ([]*FieldVerification, error) {
+// SetEnrichmentProcessing marks company as currently enriching
+func (r *PostgresRepository) SetEnrichmentProcessing(ctx context.Context, id uuid.UUID) error {
 	query := `
-		SELECT id, company_id, field_name, verified_at, verified_by
-		FROM company_field_verifications
-		WHERE company_id = $1
-		ORDER BY field_name
+		UPDATE companies
+		SET enrichment_status = $2,
+		    enrichment_error = NULL,
+		    updated_at = $3
+		WHERE id = $1
 	`
-
-	var verifications []*FieldVerification
-	err := sqlx.SelectContext(ctx, r.querier(), &verifications, query, companyID)
+	_, err := r.querier().ExecContext(ctx, query, id, EnrichmentProcessing, time.Now())
 	if err != nil {
-		return nil, fmt.Errorf("failed to get field verifications: %w", err)
-	}
-	return verifications, nil
-}
-
-// VerifyField marks a specific field as verified (protected from re-enrichment)
-func (r *PostgresRepository) VerifyField(ctx context.Context, companyID uuid.UUID, fieldName string, verifiedBy *uuid.UUID) error {
-	query := `
-		INSERT INTO company_field_verifications (company_id, field_name, verified_by)
-		VALUES ($1, $2, $3)
-		ON CONFLICT (company_id, field_name) DO UPDATE SET
-			verified_at = NOW(),
-			verified_by = EXCLUDED.verified_by
-	`
-
-	_, err := r.querier().ExecContext(ctx, query, companyID, fieldName, verifiedBy)
-	if err != nil {
-		return fmt.Errorf("failed to verify field %s: %w", fieldName, err)
+		return fmt.Errorf("failed to set enrichment processing: %w", err)
 	}
 	return nil
 }
 
-// UnverifyField removes verification from a specific field (allows re-enrichment)
-func (r *PostgresRepository) UnverifyField(ctx context.Context, companyID uuid.UUID, fieldName string) error {
-	query := `DELETE FROM company_field_verifications WHERE company_id = $1 AND field_name = $2`
+// SetEnrichmentCompleted updates company with enriched data and marks as completed
+func (r *PostgresRepository) SetEnrichmentCompleted(ctx context.Context, id uuid.UUID, data *enrichment.EnrichedCompanyData) error {
+	now := time.Now()
 
-	_, err := r.querier().ExecContext(ctx, query, companyID, fieldName)
-	if err != nil {
-		return fmt.Errorf("failed to unverify field %s: %w", fieldName, err)
-	}
-	return nil
-}
-
-// VerifyAllFields marks all fields as verified for a company
-func (r *PostgresRepository) VerifyAllFields(ctx context.Context, companyID uuid.UUID, verifiedBy *uuid.UUID) error {
-	// Insert each verifiable field individually using upsert
 	query := `
-		INSERT INTO company_field_verifications (company_id, field_name, verified_by)
-		VALUES ($1, $2, $3)
-		ON CONFLICT (company_id, field_name) DO UPDATE SET
-			verified_at = NOW(),
-			verified_by = EXCLUDED.verified_by
+		UPDATE companies SET
+			enrichment_status = $2,
+			enrichment_completed_at = $3,
+			enrichment_error = NULL,
+			cnpj = COALESCE(cnpj, $4),
+			website = COALESCE(website, $5),
+			industry = COALESCE(industry, $6),
+			company_size = COALESCE(company_size, $7),
+			location = COALESCE(location, $8),
+			target_market = COALESCE(target_market, $9),
+			funding_stage = COALESCE(funding_stage, $10),
+			annual_revenue_min = COALESCE(annual_revenue_min, $11),
+			annual_revenue_max = COALESCE(annual_revenue_max, $12),
+			foundation_year = COALESCE(foundation_year, $13),
+			legal_name = COALESCE(legal_name, $14),
+			headquarters = COALESCE(headquarters, $15),
+			sector = COALESCE(sector, $16),
+			target_audience = COALESCE(target_audience, $17),
+			value_proposition = COALESCE(value_proposition, $18),
+			employees_range = COALESCE(employees_range, $19),
+			revenue_estimate = COALESCE(revenue_estimate, $20),
+			business_model = COALESCE(business_model, $21),
+			market_share_status = COALESCE(market_share_status, $22),
+			digital_maturity = COALESCE(digital_maturity, $23),
+			competitors = CASE WHEN competitors IS NULL OR jsonb_array_length(competitors) = 0 THEN $24 ELSE competitors END,
+			strengths = CASE WHEN strengths IS NULL OR jsonb_array_length(strengths) = 0 THEN $25 ELSE strengths END,
+			weaknesses = CASE WHEN weaknesses IS NULL OR jsonb_array_length(weaknesses) = 0 THEN $26 ELSE weaknesses END,
+			linkedin_url = COALESCE(linkedin_url, $27),
+			twitter_handle = COALESCE(twitter_handle, $28),
+			updated_at = $29
+		WHERE id = $1
 	`
 
-	for _, fieldName := range VerifiableFields {
-		_, err := r.querier().ExecContext(ctx, query, companyID, fieldName, verifiedBy)
-		if err != nil {
-			return fmt.Errorf("failed to verify field %s: %w", fieldName, err)
-		}
+	// Convert string slices to JSONB for storage
+	competitorsJSON, _ := json.Marshal(data.Competitors)
+	strengthsJSON, _ := json.Marshal(data.Strengths)
+	weaknessesJSON, _ := json.Marshal(data.Weaknesses)
+
+	_, err := r.querier().ExecContext(ctx, query,
+		id, EnrichmentCompleted, now,
+		data.CNPJ, data.Website, data.Industry, data.CompanySize, data.Location,
+		data.TargetMarket, data.FundingStage, data.AnnualRevenueMin, data.AnnualRevenueMax,
+		data.FoundationYear, data.LegalName, data.Headquarters, data.Sector,
+		data.TargetAudience, data.ValueProposition, data.EmployeesRange,
+		data.RevenueEstimate, data.BusinessModel, data.MarketShareStatus,
+		data.DigitalMaturity,
+		competitorsJSON, strengthsJSON, weaknessesJSON,
+		data.LinkedInURL, data.TwitterHandle,
+		now,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to set enrichment completed: %w", err)
 	}
 	return nil
 }
 
-// UnverifyAllFields removes all field verifications for a company
-func (r *PostgresRepository) UnverifyAllFields(ctx context.Context, companyID uuid.UUID) error {
-	query := `DELETE FROM company_field_verifications WHERE company_id = $1`
-
-	_, err := r.querier().ExecContext(ctx, query, companyID)
-	if err != nil {
-		return fmt.Errorf("failed to unverify all fields: %w", err)
-	}
-	return nil
-}
-
-// GetVerifiedFieldNames retrieves just the field names that are verified (for quick lookup)
-func (r *PostgresRepository) GetVerifiedFieldNames(ctx context.Context, companyID uuid.UUID) ([]string, error) {
-	query := `SELECT field_name FROM company_field_verifications WHERE company_id = $1`
-
-	var fields []string
-	err := sqlx.SelectContext(ctx, r.querier(), &fields, query, companyID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get verified field names: %w", err)
-	}
-	return fields, nil
-}
-
-// ExpireFieldVerifications removes expired field verifications based on deprecation_months config
-// If companyID is nil, checks all companies (for cron job usage)
-func (r *PostgresRepository) ExpireFieldVerifications(ctx context.Context, companyID *uuid.UUID) (int, error) {
-	// Use the database function if it exists, otherwise use direct query
+// SetEnrichmentFailed marks company enrichment as failed with error message
+func (r *PostgresRepository) SetEnrichmentFailed(ctx context.Context, id uuid.UUID, errMsg string) error {
 	query := `
-		WITH expired_fields AS (
-			SELECT cfv.id
-			FROM company_field_verifications cfv
-			JOIN field_deprecation_config fdc ON cfv.field_name = fdc.field_name
-			WHERE fdc.deprecation_months > 0
-			AND cfv.verified_at < NOW() - (fdc.deprecation_months || ' months')::INTERVAL
-			AND ($1::uuid IS NULL OR cfv.company_id = $1)
-		)
-		DELETE FROM company_field_verifications
-		WHERE id IN (SELECT id FROM expired_fields)
+		UPDATE companies
+		SET enrichment_status = $2,
+		    enrichment_error = $3,
+		    updated_at = $4
+		WHERE id = $1
 	`
-
-	result, err := r.querier().ExecContext(ctx, query, companyID)
+	_, err := r.querier().ExecContext(ctx, query, id, EnrichmentFailed, errMsg, time.Now())
 	if err != nil {
-		return 0, fmt.Errorf("failed to expire field verifications: %w", err)
+		return fmt.Errorf("failed to set enrichment failed: %w", err)
 	}
-
-	rowsAffected, _ := result.RowsAffected()
-	return int(rowsAffected), nil
+	return nil
 }
+

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	apperrors "backend_v3/pkg/errors"
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
@@ -32,33 +34,6 @@ func ptrToString(s *string) string {
 		return ""
 	}
 	return *s
-}
-
-// employeeCountToSize converts employee count to a size category string
-func employeeCountToSize(count *int) *string {
-	if count == nil {
-		return nil
-	}
-
-	var size string
-	switch {
-	case *count <= 10:
-		size = "1-10"
-	case *count <= 50:
-		size = "11-50"
-	case *count <= 200:
-		size = "51-200"
-	case *count <= 500:
-		size = "201-500"
-	case *count <= 1000:
-		size = "501-1000"
-	case *count <= 5000:
-		size = "1001-5000"
-	default:
-		size = "5000+"
-	}
-
-	return &size
 }
 
 // buildBusinessChallengeString concatenates strategic fields with " | " separator
@@ -92,5 +67,75 @@ func respondError(c *gin.Context, logger zerolog.Logger, status int, err error, 
 	c.JSON(status, ErrorResponse{
 		Error:   userMsg,
 		Message: userMsg,
+	})
+}
+
+// RespondAppError handles AppError responses with i18n support.
+// Reads Accept-Language header and returns localized error message.
+func RespondAppError(c *gin.Context, logger zerolog.Logger, err error) {
+	// Get language preference from Accept-Language header
+	lang := c.GetHeader("Accept-Language")
+	if lang == "" {
+		lang = "pt-BR" // Default to Portuguese for Brazilian market
+	}
+
+	// Log the error with internal details
+	if err != nil {
+		logger.Error().
+			Err(err).
+			Str("path", c.FullPath()).
+			Str("method", c.Request.Method).
+			Msg("API error")
+	}
+
+	// Check if it's an AppError
+	if appErr, ok := apperrors.AsAppError(err); ok {
+		response := gin.H{
+			"error": gin.H{
+				"code":    appErr.Code,
+				"message": appErr.LocalizedMessage(lang),
+			},
+		}
+
+		// Include details if present
+		if len(appErr.Details) > 0 {
+			response["error"].(gin.H)["details"] = appErr.Details
+		}
+
+		c.JSON(appErr.HTTPStatus, response)
+		return
+	}
+
+	// Fallback for non-AppError
+	c.JSON(500, gin.H{
+		"error": gin.H{
+			"code":    "ERR_INTERNAL",
+			"message": apperrors.ErrInternal.LocalizedMessage(lang),
+		},
+	})
+}
+
+// RespondValidationError returns a validation error with field details
+func RespondValidationError(c *gin.Context, logger zerolog.Logger, field, message string) {
+	lang := c.GetHeader("Accept-Language")
+	if lang == "" {
+		lang = "pt-BR"
+	}
+
+	logger.Warn().
+		Str("field", field).
+		Str("message", message).
+		Str("path", c.FullPath()).
+		Msg("Validation error")
+
+	c.JSON(400, gin.H{
+		"error": gin.H{
+			"code":    "ERR_VALIDATION",
+			"message": apperrors.ErrValidation.LocalizedMessage(lang),
+			"details": gin.H{
+				"field":   field,
+				"message": message,
+			},
+		},
 	})
 }

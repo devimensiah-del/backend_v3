@@ -125,76 +125,9 @@ func TestCORSMiddleware(t *testing.T) {
 	}
 }
 
-func TestAuthRateLimitMiddleware(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	t.Run("Allow requests under limit", func(t *testing.T) {
-		limiter := NewAuthRateLimiter()
-		router := gin.New()
-		router.Use(AuthRateLimitMiddleware(limiter))
-		router.POST("/auth/login", func(c *gin.Context) {
-			c.Status(http.StatusOK)
-		})
-
-		// Make 5 requests (should all succeed)
-		for i := 0; i < 5; i++ {
-			req, _ := http.NewRequest("POST", "/auth/login", nil)
-			req.RemoteAddr = "192.168.1.100:12345"
-			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
-			assert.Equal(t, http.StatusOK, w.Code)
-		}
-	})
-
-	t.Run("Block requests over limit", func(t *testing.T) {
-		limiter := NewAuthRateLimiter()
-		router := gin.New()
-		router.Use(AuthRateLimitMiddleware(limiter))
-		router.POST("/auth/login", func(c *gin.Context) {
-			c.Status(http.StatusOK)
-		})
-
-		// Make 6 requests (6th should be blocked)
-		for i := 0; i < 6; i++ {
-			req, _ := http.NewRequest("POST", "/auth/login", nil)
-			req.RemoteAddr = "192.168.1.100:12345"
-			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
-
-			if i < 5 {
-				assert.Equal(t, http.StatusOK, w.Code)
-			} else {
-				assert.Equal(t, http.StatusTooManyRequests, w.Code)
-				assert.Contains(t, w.Header().Get("Retry-After"), "")
-			}
-		}
-	})
-
-	t.Run("Different IPs have separate limits", func(t *testing.T) {
-		limiter := NewAuthRateLimiter()
-		router := gin.New()
-		router.Use(AuthRateLimitMiddleware(limiter))
-		router.POST("/auth/login", func(c *gin.Context) {
-			c.Status(http.StatusOK)
-		})
-
-		// IP 1: Make 5 requests
-		for i := 0; i < 5; i++ {
-			req, _ := http.NewRequest("POST", "/auth/login", nil)
-			req.RemoteAddr = "192.168.1.100:12345"
-			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
-			assert.Equal(t, http.StatusOK, w.Code)
-		}
-
-		// IP 2: Should still be allowed (different counter)
-		req, _ := http.NewRequest("POST", "/auth/login", nil)
-		req.RemoteAddr = "192.168.1.101:12345"
-		w := httptest.NewRecorder()
-		router.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusOK, w.Code)
-	})
-}
+// NOTE: Auth-specific rate limiting tests were removed when AuthRateLimiter was replaced
+// with standard golang.org/x/time/rate implementation. Global rate limiting now applies
+// to all endpoints including auth routes.
 
 func TestRequestIDMiddleware(t *testing.T) {
 	gin.SetMode(gin.TestMode)

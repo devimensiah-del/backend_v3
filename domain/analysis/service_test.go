@@ -48,8 +48,8 @@ func (m *MockRepository) GetByID(ctx context.Context, id string) (*Analysis, err
 	return args.Get(0).(*Analysis), args.Error(1)
 }
 
-func (m *MockRepository) GetBySubmissionID(ctx context.Context, submissionID string) (*Analysis, error) {
-	args := m.Called(ctx, submissionID)
+func (m *MockRepository) GetByChallengeID(ctx context.Context, challengeID uuid.UUID) (*Analysis, error) {
+	args := m.Called(ctx, challengeID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -123,6 +123,34 @@ func (m *MockRepository) SetFrameworkResult(ctx context.Context, analysisID, fra
 	return args.Error(0)
 }
 
+// Wizard methods
+func (m *MockRepository) GetAnalysisStep(ctx context.Context, analysisID, frameworkCode string) (*AnalysisStep, error) {
+	args := m.Called(ctx, analysisID, frameworkCode)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*AnalysisStep), args.Error(1)
+}
+
+func (m *MockRepository) SaveAnalysisStep(ctx context.Context, step *AnalysisStep) error {
+	args := m.Called(ctx, step)
+	return args.Error(0)
+}
+
+func (m *MockRepository) GetAllAnalysisSteps(ctx context.Context, analysisID string) ([]*AnalysisStep, error) {
+	args := m.Called(ctx, analysisID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*AnalysisStep), args.Error(1)
+}
+
+// IncrementVersion increments the version number for an analysis
+func (m *MockRepository) IncrementVersion(ctx context.Context, analysisID string) error {
+	args := m.Called(ctx, analysisID)
+	return args.Error(0)
+}
+
 type MockSubmissionRepository struct {
 	mock.Mock
 }
@@ -179,17 +207,17 @@ func createTestService() (*Service, *MockRepository, *MockSubmissionRepository, 
 func createTestAnalysis() *Analysis {
 	now := time.Now()
 	analysisID := uuid.New().String()
-	submissionID := uuid.New().String()
-	enrichmentID := uuid.New().String()
+	companyID := uuid.New().String()
+	challengeID := uuid.New()
 
 	analysis := &Analysis{
-		ID:              analysisID,
-		SubmissionID:    submissionID,
-		EnrichmentID:    enrichmentID,
-		Status:          string(StatusCompleted),
-		CreatedAt:       now,
-		UpdatedAt:       now,
-		CompletedAt:     &now,
+		ID:               analysisID,
+		CompanyID:        &companyID,
+		ChallengeID:      challengeID,
+		Status:           string(StatusCompleted),
+		CreatedAt:        now,
+		UpdatedAt:        now,
+		CompletedAt:      &now,
 		FrameworkResults: make(map[string]json.RawMessage),
 	}
 
@@ -277,22 +305,22 @@ func TestService_GetByID_DatabaseError(t *testing.T) {
 }
 
 // =============================================================================
-// TESTS: GetBySubmissionID
+// TESTS: GetByChallengeID
 // =============================================================================
 
-func TestService_GetBySubmissionID_ReturnsAnalysis(t *testing.T) {
+func TestService_GetByChallengeID_ReturnsAnalysis(t *testing.T) {
 	service, mockRepo, _, _ := createTestService()
 	defer service.queueClient.Close()
 
 	testAnalysis := createTestAnalysis()
 
-	mockRepo.On("GetBySubmissionID", mock.Anything, testAnalysis.SubmissionID).Return(testAnalysis, nil)
+	mockRepo.On("GetByChallengeID", mock.Anything, testAnalysis.ChallengeID).Return(testAnalysis, nil)
 
-	result, err := service.GetBySubmissionID(context.Background(), testAnalysis.SubmissionID)
+	result, err := service.GetByChallengeID(context.Background(), testAnalysis.ChallengeID)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
-	assert.Equal(t, testAnalysis.SubmissionID, result.SubmissionID)
+	assert.Equal(t, testAnalysis.ChallengeID, result.ChallengeID)
 	mockRepo.AssertExpectations(t)
 }
 
@@ -402,16 +430,16 @@ func TestService_MarkAsFailed_KeepsPendingStatus(t *testing.T) {
 
 	testAnalysis := createTestAnalysis()
 	testAnalysis.Status = string(StatusPending)
-	submissionID := testAnalysis.SubmissionID
+	analysisID := testAnalysis.ID
 
 	errorMsg := "LLM timeout error"
 
-	mockRepo.On("GetBySubmissionID", mock.Anything, submissionID).Return(testAnalysis, nil)
+	mockRepo.On("GetByID", mock.Anything, analysisID).Return(testAnalysis, nil)
 	mockRepo.On("Update", mock.Anything, mock.MatchedBy(func(a *Analysis) bool {
-		return a.Status == string(StatusPending) && a.ErrorMessage != nil && *a.ErrorMessage == errorMsg
+		return a.Status == string(StatusFailed) && a.ErrorMessage != nil && *a.ErrorMessage == errorMsg
 	})).Return(nil)
 
-	err := service.MarkAsFailed(context.Background(), submissionID, errorMsg)
+	err := service.MarkAsFailed(context.Background(), analysisID, errorMsg)
 
 	assert.NoError(t, err)
 	mockRepo.AssertExpectations(t)
@@ -424,15 +452,16 @@ func TestService_MarkAsFailed_SetsErrorMessage(t *testing.T) {
 	testAnalysis := createTestAnalysis()
 	testAnalysis.Status = string(StatusPending)
 	testAnalysis.ErrorMessage = nil
+	analysisID := testAnalysis.ID
 
 	errorMsg := "Database connection lost during analysis"
 
-	mockRepo.On("GetBySubmissionID", mock.Anything, testAnalysis.SubmissionID).Return(testAnalysis, nil)
+	mockRepo.On("GetByID", mock.Anything, analysisID).Return(testAnalysis, nil)
 	mockRepo.On("Update", mock.Anything, mock.MatchedBy(func(a *Analysis) bool {
 		return a.ErrorMessage != nil && *a.ErrorMessage == errorMsg
 	})).Return(nil)
 
-	err := service.MarkAsFailed(context.Background(), testAnalysis.SubmissionID, errorMsg)
+	err := service.MarkAsFailed(context.Background(), analysisID, errorMsg)
 
 	assert.NoError(t, err)
 	mockRepo.AssertExpectations(t)

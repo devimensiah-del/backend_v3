@@ -5,186 +5,86 @@ package llm
 // OPTIMIZED FOR: PDF Layout Constraints (16 Pages, No Scroll) & Strategic Density.
 
 const (
-	// CRITICAL: Output is fed into UnifiedEnrichmentPrompt as {{PRE_SEARCH_CONTEXT}}
-	// PreSearch does ALL web searching - Gemini synthesis has NO search tool
-	PreSearchPrompt = `Você é um Agente de Inteligência de Mercado com acesso à web.
-Sua missão: Identificar a empresa EXATA e coletar TODOS os dados públicos disponíveis.
-
-DADOS DO USUÁRIO:
-Nome da Empresa: {{COMPANY_NAME}}
-{{USER_CONTEXT}}
-
---- TAREFA: COLETA COMPLETA DE DADOS ---
-
-O nome "{{COMPANY_NAME}}" pode corresponder a múltiplas empresas. BUSQUE:
-- "[{{COMPANY_NAME}}] empresa Brasil site oficial"
-- "[{{COMPANY_NAME}}] CNPJ razão social"
-- "[{{COMPANY_NAME}}] LinkedIn company page"
-- "[{{COMPANY_NAME}}] fundação história"
-- "[Setor] mercado Brasil tendências concorrentes"
-
-COLETE TODOS OS DADOS POSSÍVEIS:
-1. Identificação: Razão social, nome fantasia, CNPJ, website, LinkedIn, Twitter
-2. Localização: Sede (cidade, estado, país)
-3. História: Ano de fundação
-4. Porte: Funcionários estimado, faturamento estimado
-5. Setor: CNAE, setor de atuação
-6. Mercado: Concorrentes, crescimento do setor, tendências, barreiras
-7. Digital: Presença online, maturidade digital
-
-Retorne JSON estrito (PT-BR):
-{
-  "identified_company": {
-    "nome_oficial": "Razão Social Completa",
-    "nome_fantasia": "Nome Fantasia (se diferente)",
-    "website_oficial": "https://...",
-    "cnpj": "XX.XXX.XXX/XXXX-XX ou null",
-    "linkedin_url": "https://linkedin.com/company/...",
-    "twitter_handle": "@handle ou null",
-    "fundacao_ano": "YYYY",
-    "sede": {
-      "cidade": "São Paulo",
-      "estado": "SP",
-      "pais": "Brasil"
-    },
-    "setor_confirmado": "Tecnologia / Agronegócio / etc",
-    "cnae": "Código CNAE se encontrado",
-    "porte": "Micro/Pequena/Média/Grande",
-    "funcionarios_estimativa": "10-50 / 50-200 / etc",
-    "faturamento_estimativa": "R$ X - Y (se encontrado)"
-  },
-  "industry_context": {
-    "sector": "Setor da empresa",
-    "growth_rate": "+X% CAGR",
-    "market_size_estimate": "R$ XXB ou TAM estimado",
-    "key_players": ["Concorrente 1", "Concorrente 2", "Concorrente 3"],
-    "technology_trends": ["Trend 1", "Trend 2"],
-    "regulatory_changes": ["Regulação 1", "Lei 2"],
-    "barriers_to_entry": "Alta/Média/Baixa - descrição"
-  },
-  "digital_assessment": {
-    "website_active": true,
-    "social_presence": ["LinkedIn", "Twitter", "Instagram"],
-    "digital_maturity": "Alta/Média/Baixa",
-    "online_reputation": "Resumo da presença online"
-  },
-  "confidence_score": 85,
-  "disambiguation_notes": "Se houver empresas similares, liste aqui",
-  "sources_used": ["URL1", "URL2", "URL3"]
-}`
-
-	// UnifiedEnrichment: Gemini synthesizes data - NO search tool, NO macro research
-	// All searching was done by Perplexity in PreSearch. Macro comes from DB.
-	UnifiedEnrichmentPrompt = `Você é um Agente de Síntese de Dados Corporativos.
-Sua missão: ORGANIZAR e ESTRUTURAR os dados já coletados em um perfil corporativo unificado.
-
---- FONTES DE DADOS (JÁ COLETADOS - NÃO BUSQUE NOVOS) ---
-
-1. DADOS DO USUÁRIO (AUTORITATIVO - maior prioridade):
-{{USER_CONTEXT}}
-
-2. PRÉ-PESQUISA PERPLEXITY (dados descobertos na web):
-{{PRE_SEARCH_CONTEXT}}
-
-3. DADOS MACROECONÔMICOS (autoritativos do BCB/IBGE):
-{{REAL_TIME_MACRO_DATA}}
-
-4. CAMPOS FALTANTES (para referência):
-{{MISSING_FIELDS}}
-
---- REGRAS DE PRIORIDADE (CRÍTICO) ---
-
-1. **DADOS DO USUÁRIO > DADOS DA PRÉ-PESQUISA**
-   - Se o usuário informou um campo, USE O VALOR DO USUÁRIO
-   - Dados da pré-pesquisa servem para COMPLEMENTAR lacunas, não para contradizer
-   - Exemplo: Se usuário disse "B2B" e pré-pesquisa diz "B2C", use "B2B"
-
-2. **PRÉ-PESQUISA COM ALTA CONFIANÇA**
-   - Se confidence_score > 70, use os dados da pré-pesquisa para campos não informados
-   - Respeite disambiguation_notes se houver empresas similares
-
-3. **DADOS MACRO - USE EXATAMENTE COMO FORNECIDO**
-   - SELIC, IPCA, USD/BRL: copie os valores exatos do {{REAL_TIME_MACRO_DATA}}
-   - NÃO modifique, NÃO estime, NÃO busque novos valores
-   - Se um valor está "Indisponível", mantenha null
-
---- NÃO BUSQUE NA INTERNET ---
-Todos os dados necessários já estão nas fontes acima.
-Sua tarefa é ORGANIZAR e ESTRUTURAR, não pesquisar.
-
---- ESTRUTURA DE RETORNO (JSON) ---
-
-{
-  "submitted_data": {
-    "_comment": "Copie os dados exatos que o usuário forneceu - para referência"
-  },
-  "discovered_data": {
-    "cnpj": "Da pré-pesquisa (ou null)",
-    "website": "Da pré-pesquisa (ou null)",
-    "linkedin_url": "Da pré-pesquisa (ou null)",
-    "twitter_handle": "Da pré-pesquisa (ou null)",
-    "industry": "Da pré-pesquisa (ou null)",
-    "company_size": "Da pré-pesquisa (ou null)",
-    "location": "Da pré-pesquisa (ou null)",
-    "foundation_year": "Da pré-pesquisa (ou null)",
-    "funding_stage": "Da pré-pesquisa (ou null)",
-    "annual_revenue_estimate": "Da pré-pesquisa (ou null)",
-    "target_market": "Da pré-pesquisa (ou null)"
-  },
-  "profile_overview": {
-    "legal_name": "Razão Social (pré-pesquisa ou usuário)",
-    "website": "URL verificada",
-    "foundation_year": "Ano",
-    "headquarters": "Cidade, Estado, País"
-  },
-  "market_position": {
-    "sector": "Setor específico",
-    "target_audience": "Descrição do ICP",
-    "value_proposition": "Proposta de valor"
-  },
-  "financials": {
-    "employees_range": "Ex: 10-50",
-    "revenue_estimate": "Ex: R$ 2M - 5M/ano",
-    "business_model": "Ex: B2B Recorrente"
-  },
-  "competitive_landscape": {
-    "competitors": ["Da pré-pesquisa"],
-    "market_share_status": "Líder/Desafiador/Nicho"
-  },
-  "strategic_assessment": {
-    "digital_maturity": 7,
-    "strengths": ["Baseado na pré-pesquisa"],
-    "weaknesses": ["Baseado na pré-pesquisa"]
-  },
-  "industry_context": {
-    "growth_rate": "Da pré-pesquisa",
-    "technology_trends": ["Da pré-pesquisa"],
-    "regulatory_changes": ["Da pré-pesquisa"],
-    "barriers_to_entry": "Da pré-pesquisa"
-  },
-  "sources_used": ["URLs da pré-pesquisa"]
-}`
-
 	// DataPriorityInstruction is injected into all analysis framework prompts
 	// This ensures AI-discovered data never overwrites user-provided data
 	DataPriorityInstruction = `
 --- REGRA DE PRIORIDADE DE DADOS (CRÍTICO) ---
 FONTES DE DADOS (em ordem de prioridade):
-1. **COMPANY_DATA** = Dados fornecidos DIRETAMENTE pelo cliente (AUTORITATIVO)
-2. **ENRICHMENT_DATA.submitted_data** = Dados do formulário original (AUTORITATIVO)
-3. **ENRICHMENT_DATA.discovered_data** = Dados descobertos por IA (SUPLEMENTAR)
+1. **COMPANY_DATA** = Dados da empresa (campos enriquecidos via IA + dados fornecidos)
+2. **MACRO_CONTEXT** = Indicadores macroeconômicos do banco de dados (SELIC, IPCA, USD/BRL)
 
 REGRAS:
-- Em caso de CONFLITO, SEMPRE priorize dados do cliente (company_data ou submitted_data)
-- Dados descobertos por IA servem para COMPLEMENTAR lacunas, nunca para contradizer o cliente
+- Use COMPANY_DATA para todas as informações sobre a empresa (setor, concorrentes, tamanho, etc.)
 - Para indicadores macro (SELIC, IPCA, USD/BRL), use EXATAMENTE os valores de MACRO_CONTEXT
+- Sempre cite números específicos ao invés de generalizações
 --- FIM REGRA DE PRIORIDADE ---
 `
+
+	// Challenge Refinement - Step 0 of the Human-in-the-Loop Wizard
+	// Validates if the declared challenge is a real problem or just a symptom
+	ChallengeRefinementPrompt = `Você é um Estrategista Sênior focado em diagnóstico empresarial.
+Sua missão: Validar se o desafio declarado é um PROBLEMA REAL ou apenas um SINTOMA.
+
+CONTEXTO DA EMPRESA:
+{{COMPANY_DATA}}
+
+DESAFIO DECLARADO PELO CLIENTE:
+{{CHALLENGE_CONTEXT}}
+
+CATEGORIA DO DESAFIO: {{CHALLENGE_TYPE}}
+
+{{#if human_context}}
+CONTEXTO ADICIONAL DO ADVISOR:
+{{human_context}}
+{{/if}}
+
+--- TAREFA: REFINAMENTO DO DESAFIO ---
+
+Analise o desafio declarado e determine:
+1. Este é o PROBLEMA REAL ou é um SINTOMA de algo mais profundo?
+2. Qual seria a MÉTRICA que comprova este problema?
+3. Qual o HORIZONTE DE TEMPO relevante para resolução?
+4. Qual a CONSEQUÊNCIA FINANCEIRA de não resolver?
+
+REGRAS:
+- Seja direto e específico
+- Use dados da empresa para fundamentar
+- Se for um sintoma, identifique o problema raiz provável
+- Sugira a reformulação do desafio se necessário
+
+Retorne JSON (PT-BR):
+{
+  "challenge_analysis": {
+    "declared_challenge": "O desafio como declarado pelo cliente",
+    "is_real_problem": true/false,
+    "diagnosis": "Análise: problema real ou sintoma de X",
+    "root_cause_hypothesis": "Se sintoma, qual o problema raiz provável",
+    "refined_challenge": "Reformulação sugerida do desafio (mais precisa)"
+  },
+  "measurement": {
+    "primary_metric": "Métrica principal que mede o problema",
+    "current_value": "Valor atual estimado (se disponível)",
+    "target_value": "Meta sugerida",
+    "measurement_method": "Como medir esta métrica"
+  },
+  "timeline": {
+    "urgency_level": "Crítica/Alta/Média/Baixa",
+    "recommended_horizon": "30/60/90/180 dias",
+    "key_milestones": ["Marco 1", "Marco 2", "Marco 3"]
+  },
+  "financial_impact": {
+    "cost_of_inaction": "Consequência de não agir (estimativa)",
+    "potential_upside": "Benefício potencial de resolver",
+    "investment_estimate": "Investimento estimado para resolver"
+  },
+  "summary": "Resumo executivo do refinamento (max 300 chars)",
+  "confidence_score": 85
+}`
 
 	// 1. PESTEL - Modelo SCAN [cite: 416] - CONSTRAINED
 	FrameworkPESTELPrompt = `Realize uma análise PESTEL (Modelo SCAN) priorizada para relatório executivo.
 Contexto: {{COMPANY_DATA}}
-Inteligência: {{ENRICHMENT_DATA}}
+
 Macro-Contexto: {{MACRO_CONTEXT}}
 
 INSTRUÇÕES CRÍTICAS:
@@ -213,7 +113,7 @@ Retorne JSON (valores em PT-BR):
 	// 2. PORTER 7 FORCES (2025+) - Modelo RACE [cite: 131] - CONSTRAINED
 	FrameworkPorterPrompt = `Analise as 7 Forças de Porter (2025+) usando o framework RACE.
 Contexto: {{COMPANY_DATA}}
-Inteligência: {{ENRICHMENT_DATA}}
+
 Macro-Contexto: {{MACRO_CONTEXT}}
 
 INSTRUÇÕES CRÍTICAS - Use Macro-Contexto para fundamentar cada força:
@@ -259,7 +159,7 @@ Retorne JSON (valores em PT-BR):
 	// 3. TAM-SAM-SOM com Estimativa Obrigatória - Modelo RACE/AIM [cite: 658, 690] - CONSTRAINED
 	FrameworkTamSamSomPrompt = `Dimensione o mercado usando ESTIMATIVA OBRIGATÓRIA com o modelo RACE/AIM.
 Contexto: {{COMPANY_DATA}}
-Inteligência: {{ENRICHMENT_DATA}}
+
 Macro-Contexto: {{MACRO_CONTEXT}}
 
 REGRA CRÍTICA: SEMPRE forneça estimativas em FAIXA DE VALORES. NUNCA retorne "Dados insuficientes".
@@ -398,7 +298,7 @@ Retorne JSON (valores em PT-BR):
 	// 5. BENCHMARKING - Modelo COMPARE [cite: 920] - CONSTRAINED
 	FrameworkBenchmarkingPrompt = `Realize um Benchmarking Competitivo (Modelo COMPARE).
 Contexto: {{COMPANY_DATA}}
-Inteligência: {{ENRICHMENT_DATA}}
+
 
 REGRAS:
 1. Liste exatamente 3 Gaps de Performance e 3 Melhores Práticas.
@@ -436,7 +336,7 @@ Retorne JSON (valores em PT-BR):
 	// DEPENDENCIES: SWOT (weaknesses/opportunities), TAM-SAM-SOM (market scale)
 	FrameworkGrowthHackingPrompt = `Crie estratégias de Growth Hacking com LEAP Loop (Aquisição) e SCALE Loop (Monetização).
 Contexto: {{COMPANY_DATA}}
-Inteligência: {{ENRICHMENT_DATA}}
+
 Análise SWOT: {{SWOT_SUMMARY}}
 Fraquezas Identificadas: {{SWOT_WEAKNESSES}}
 Oportunidades Identificadas: {{SWOT_OPPORTUNITIES}}
@@ -847,4 +747,55 @@ Retorne JSON (valores em PT-BR):
     "flags": ["Flag de inconsistência 1 (se houver)", "Flag 2 (se houver)"]
   }
 }`
+
+	// FrameworkRefinementPrompt - Used when human requests changes to a framework output
+	// This wraps the original framework prompt with context about previous output and feedback
+	// Injected context:
+	// - {{PREVIOUS_OUTPUT}} - The JSON output from previous run
+	// - {{HUMAN_FEEDBACK}} - What the human wants changed
+	// - {{COMPANY_DATA}} - Current company context
+	// - {{FRAMEWORK_SPECIFIC_CONTEXT}} - Any dependent framework data (optional)
+	FrameworkRefinementPrompt = `Você é um Estrategista Sênior refinando uma análise existente.
+
+=== OUTPUT ANTERIOR ===
+{{PREVIOUS_OUTPUT}}
+=== FIM OUTPUT ANTERIOR ===
+
+O advisor humano forneceu o seguinte feedback para refinamento:
+
+=== FEEDBACK DO ADVISOR ===
+{{HUMAN_FEEDBACK}}
+=== FIM FEEDBACK ===
+
+CONTEXTO DA EMPRESA:
+{{COMPANY_DATA}}
+
+{{#if FRAMEWORK_SPECIFIC_CONTEXT}}
+CONTEXTO ADICIONAL DO FRAMEWORK:
+{{FRAMEWORK_SPECIFIC_CONTEXT}}
+{{/if}}
+
+--- INSTRUÇÕES DE REFINAMENTO ---
+
+1. **ANALISE** o feedback do advisor cuidadosamente
+2. **IDENTIFIQUE** quais partes do output anterior devem ser mantidas
+3. **IDENTIFIQUE** quais partes devem ser modificadas ou adicionadas
+4. **GERE** um novo output que:
+   - Incorpora o feedback do advisor
+   - Mantém a estrutura JSON esperada
+   - Não perde informações relevantes do output anterior
+   - Adiciona ou corrige conforme solicitado
+
+REGRAS CRÍTICAS:
+- Se o advisor pediu para ADICIONAR algo → ADICIONE sem remover o que já estava bom
+- Se o advisor pediu para CORRIGIR algo → CORRIJA mantendo o resto intacto
+- Se o advisor pediu para REMOVER algo → REMOVA apenas o especificado
+- Se o advisor adicionou CONTEXTO → Use para enriquecer a análise, não substituir
+
+IMPORTANTE:
+- O output DEVE ter a mesma estrutura JSON do output anterior
+- Mantenha a qualidade e profundidade da análise original
+- Incorpore insights do advisor como refinamentos, não como substituição completa
+
+Retorne o JSON refinado no mesmo formato do output anterior.`
 )

@@ -3,9 +3,9 @@ package api
 import (
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/hibiken/asynq"
 )
 
 // --- HEALTH ENDPOINT ---
@@ -73,122 +73,108 @@ func (h *Handler) HealthCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, health)
 }
 
-// HealthMetrics represents comprehensive system metrics
-type HealthMetrics struct {
-	SubmissionsLast24h     int      `json:"submissions_last_24h"`
-	EnrichmentSuccessRate  string   `json:"enrichment_success_rate"`
-	AnalysisSuccessRate    string   `json:"analysis_success_rate"`
-	AvgAnalysisTimeSeconds float64  `json:"avg_analysis_time_seconds"`
-	TotalCostLast24hUSD    float64  `json:"total_cost_last_24h_usd"`
-	TotalTokensLast24h     int64    `json:"total_tokens_last_24h"`
-	LLMRequestsLast24h     int64    `json:"llm_requests_last_24h"`
-	ErrorsLast24h          []string `json:"errors_last_24h"`
-	LastUpdated            string   `json:"last_updated"`
-}
+// NOTE: GetMetrics moved to admin_handlers.go (admin-only endpoint)
 
-// GetMetrics handles GET /api/v1/admin/metrics with system-wide statistics
-func (h *Handler) GetMetrics(c *gin.Context) {
-	ctx := c.Request.Context()
-	since := time.Now().Add(-24 * time.Hour)
+// QueueDiagnostic handles GET /admin/queue-diagnostic
+// Returns queue status and can clear stuck tasks
+func (h *Handler) QueueDiagnostic(c *gin.Context) {
+	// Create inspector using same Redis config
+	redisAddr := h.redisClient.Options().Addr
+	redisPassword := h.redisClient.Options().Password
 
-	metrics := HealthMetrics{
-		ErrorsLast24h: []string{},
-		LastUpdated:   time.Now().Format(time.RFC3339),
+	inspector := asynq.NewInspector(asynq.RedisClientOpt{
+		Addr:     redisAddr,
+		Password: redisPassword,
+	})
+	defer inspector.Close()
+
+	// Get queue info for all queues
+	queues := []string{"critical", "default", "low"}
+	queueInfo := make(map[string]interface{})
+
+	for _, q := range queues {
+		info, err := inspector.GetQueueInfo(q)
+		if err != nil {
+			queueInfo[q] = gin.H{"error": err.Error()}
+			continue
+		}
+		queueInfo[q] = gin.H{
+			"pending":   info.Pending,
+			"active":    info.Active,
+			"scheduled": info.Scheduled,
+			"retry":     info.Retry,
+			"archived":  info.Archived,
+			"completed": info.Completed,
+			"processed": info.Processed,
+			"failed":    info.Failed,
+		}
+
+		h.logger.Info().
+			Str("queue", q).
+			Int("pending", info.Pending).
+			Int("active", info.Active).
+			Int("scheduled", info.Scheduled).
+			Int("retry", info.Retry).
+			Int("archived", info.Archived).
+			Msg("📊 Queue diagnostic")
 	}
 
-	// Query submissions count
-	var submissionCount int
-	err := h.db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM submissions WHERE created_at > $1
-	`, since).Scan(&submissionCount)
+	// Show archived tasks details (last 5)
+	archivedDetails := make([]map[string]interface{}, 0)
+	archivedTasks, err := inspector.ListArchivedTasks("default", asynq.PageSize(5))
 	if err == nil {
-		metrics.SubmissionsLast24h = submissionCount
-	}
-
-	// Query enrichment success rate
-	var enrichTotal, enrichSuccess int
-	err = h.db.QueryRowContext(ctx, `
-		SELECT
-			COUNT(*),
-			COUNT(*) FILTER (WHERE status IN ('completed', 'approved'))
-		FROM enrichments WHERE created_at > $1
-	`, since).Scan(&enrichTotal, &enrichSuccess)
-	if err == nil {
-		metrics.EnrichmentSuccessRate = fmt.Sprintf("%.0f%%", safePercent(enrichSuccess, enrichTotal))
-	}
-
-	// Query analysis success rate
-	var analysisTotal, analysisSuccess int
-	err = h.db.QueryRowContext(ctx, `
-		SELECT
-			COUNT(*),
-			COUNT(*) FILTER (WHERE status IN ('completed', 'approved', 'sent'))
-		FROM analyses WHERE created_at > $1
-	`, since).Scan(&analysisTotal, &analysisSuccess)
-	if err == nil {
-		metrics.AnalysisSuccessRate = fmt.Sprintf("%.0f%%", safePercent(analysisSuccess, analysisTotal))
-	}
-
-	// Query avg analysis time
-	var avgTime float64
-	err = h.db.QueryRowContext(ctx, `
-		SELECT COALESCE(AVG(processing_time_ms) / 1000.0, 0)
-		FROM analyses
-		WHERE status IN ('completed', 'approved', 'sent') AND created_at > $1
-	`, since).Scan(&avgTime)
-	if err == nil {
-		metrics.AvgAnalysisTimeSeconds = avgTime
-	}
-
-	// Query LLM usage (if table exists)
-	var totalCost float64
-	var totalTokens, llmRequests int64
-	err = h.db.QueryRowContext(ctx, `
-		SELECT
-			COALESCE(SUM(cost_usd), 0),
-			COALESCE(SUM(total_tokens), 0),
-			COUNT(*)
-		FROM llm_usage_logs WHERE created_at > $1
-	`, since).Scan(&totalCost, &totalTokens, &llmRequests)
-	if err == nil {
-		metrics.TotalCostLast24hUSD = totalCost
-		metrics.TotalTokensLast24h = totalTokens
-		metrics.LLMRequestsLast24h = llmRequests
-	}
-
-	// Query recent errors
-	rows, err := h.db.QueryContext(ctx, `
-		SELECT DISTINCT error_message FROM (
-			SELECT error_message FROM enrichments
-			WHERE status = 'failed' AND created_at > $1 AND error_message IS NOT NULL
-			UNION ALL
-			SELECT error_message FROM analyses
-			WHERE status = 'failed' AND created_at > $1 AND error_message IS NOT NULL
-		) e LIMIT 10
-	`, since)
-	if err == nil {
-		defer rows.Close()
-		for rows.Next() {
-			var msg string
-			if rows.Scan(&msg) == nil && msg != "" {
-				metrics.ErrorsLast24h = append(metrics.ErrorsLast24h, msg)
-			}
+		for _, t := range archivedTasks {
+			archivedDetails = append(archivedDetails, map[string]interface{}{
+				"id":           t.ID,
+				"type":         t.Type,
+				"payload":      string(t.Payload),
+				"last_error":   t.LastErr,
+				"last_failed":  t.LastFailedAt,
+				"max_retry":    t.MaxRetry,
+				"retried":      t.Retried,
+			})
 		}
 	}
+	queueInfo["archived_details"] = archivedDetails
 
-	h.logger.Info().
-		Int("submissions", metrics.SubmissionsLast24h).
-		Float64("cost_usd", metrics.TotalCostLast24hUSD).
-		Int64("llm_requests", metrics.LLMRequestsLast24h).
-		Msg("Metrics retrieved")
+	// Check if clear=true param is set
+	if c.Query("clear") == "true" {
+		h.logger.Warn().Msg("🧹 Clearing all queues...")
+		for _, q := range queues {
+			// Delete all tasks in different states
+			deleted, err := inspector.DeleteAllPendingTasks(q)
+			if err != nil {
+				h.logger.Error().Err(err).Str("queue", q).Msg("Failed to clear pending tasks")
+			} else {
+				h.logger.Info().Int("deleted", deleted).Str("queue", q).Msg("Cleared pending tasks")
+			}
 
-	c.JSON(http.StatusOK, metrics)
-}
+			deleted, err = inspector.DeleteAllScheduledTasks(q)
+			if err != nil {
+				h.logger.Error().Err(err).Str("queue", q).Msg("Failed to clear scheduled tasks")
+			} else {
+				h.logger.Info().Int("deleted", deleted).Str("queue", q).Msg("Cleared scheduled tasks")
+			}
 
-// safePercent calculates percentage, returning 100 if denominator is 0
-func safePercent(num, denom int) float64 {
-	if denom == 0 {
-		return 100.0 // No attempts = 100% success (vacuous truth)
+			deleted, err = inspector.DeleteAllRetryTasks(q)
+			if err != nil {
+				h.logger.Error().Err(err).Str("queue", q).Msg("Failed to clear retry tasks")
+			} else {
+				h.logger.Info().Int("deleted", deleted).Str("queue", q).Msg("Cleared retry tasks")
+			}
+
+			deleted, err = inspector.DeleteAllArchivedTasks(q)
+			if err != nil {
+				h.logger.Error().Err(err).Str("queue", q).Msg("Failed to clear archived tasks")
+			} else {
+				h.logger.Info().Int("deleted", deleted).Str("queue", q).Msg("Cleared archived tasks")
+			}
+		}
+		queueInfo["cleared"] = true
 	}
-	return float64(num) / float64(denom) * 100
+
+	c.JSON(http.StatusOK, gin.H{
+		"redis_addr": redisAddr,
+		"queues":     queueInfo,
+	})
 }

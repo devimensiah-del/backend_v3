@@ -30,17 +30,17 @@ func setupMockDB(t *testing.T) (*sqlx.DB, sqlmock.Sqlmock) {
 func createTestAnalysisForRepo() *Analysis {
 	now := time.Now()
 	analysisID := uuid.New().String()
-	submissionID := uuid.New().String()
-	enrichmentID := uuid.New().String()
+	companyID := uuid.New().String()
+	challengeID := uuid.New()
 
 	analysis := &Analysis{
-		ID:              analysisID,
-		SubmissionID:    submissionID,
-		EnrichmentID:    enrichmentID,
-		Status:          string(StatusCompleted),
-		CreatedAt:       now,
-		UpdatedAt:       now,
-		CompletedAt:     &now,
+		ID:               analysisID,
+		CompanyID:        &companyID,
+		ChallengeID:      challengeID,
+		Status:           string(StatusCompleted),
+		CreatedAt:        now,
+		UpdatedAt:        now,
+		CompletedAt:      &now,
 		FrameworkResults: make(map[string]json.RawMessage),
 	}
 
@@ -210,21 +210,18 @@ func TestRepository_Create_WithAll11Frameworks(t *testing.T) {
 	repo := NewPostgresRepository(db)
 	testAnalysis := createTestAnalysisForRepo()
 
-	// Expect INSERT with framework_results as single JSONB column (migration 034)
+	// Expect INSERT with framework_results as single JSONB column (v2_013 schema)
 	mock.ExpectExec(`INSERT INTO analyses`).
 		WithArgs(
 			testAnalysis.ID,
-			testAnalysis.SubmissionID,
-			testAnalysis.EnrichmentID,
-			sqlmock.AnyArg(), // framework_results (JSONB) - migration 034
+			testAnalysis.CompanyID,
+			testAnalysis.ChallengeID, // Challenge ID (v2)
+			sqlmock.AnyArg(), // framework_results (JSONB)
 			testAnalysis.Status,
 			testAnalysis.ErrorMessage,
-			testAnalysis.ProcessingTimeMs,
 			testAnalysis.IsVisibleToUser,
-			testAnalysis.IsBlurred,
 			testAnalysis.IsPublic,
 			testAnalysis.AccessCode,
-			testAnalysis.AccessCodeCreatedAt,
 			testAnalysis.DeletedAt,
 			sqlmock.AnyArg(), // created_at
 			sqlmock.AnyArg(), // updated_at
@@ -280,18 +277,18 @@ func TestRepository_Update_Success(t *testing.T) {
 
 	mock.ExpectExec(`UPDATE analyses SET`).
 		WithArgs(
-			sqlmock.AnyArg(), // framework_results (JSONB) - migration 034
+			sqlmock.AnyArg(), // framework_results (JSONB) - v2_013 schema
 			testAnalysis.Status,
 			testAnalysis.ErrorMessage,
-			testAnalysis.ProcessingTimeMs,
 			testAnalysis.IsVisibleToUser,
-			testAnalysis.IsBlurred,
 			testAnalysis.IsPublic,
 			testAnalysis.AccessCode,
-			testAnalysis.AccessCodeCreatedAt,
 			testAnalysis.DeletedAt,
 			sqlmock.AnyArg(), // updated_at
 			testAnalysis.CompletedAt,
+			testAnalysis.CurrentStep,   // wizard field
+			testAnalysis.WizardMode,    // wizard field
+			sqlmock.AnyArg(),           // steps_completed (JSONB array)
 			testAnalysis.ID,
 		).
 		WillReturnResult(sqlmock.NewResult(0, 1))
@@ -393,15 +390,15 @@ func TestRepository_GetByID_Success(t *testing.T) {
 	frameworkResultsJSON, _ := json.Marshal(testAnalysis.FrameworkResults)
 
 	rows := sqlmock.NewRows([]string{
-		"id", "submission_id", "enrichment_id",
-		"framework_results", "status", "error_message", "processing_time_ms",
-		"is_visible_to_user", "is_blurred", "is_public", "access_code", "access_code_created_at", "deleted_at",
+		"id", "company_id", "challenge_id",
+		"framework_results", "status", "error_message",
+		"is_visible_to_user", "is_public", "access_code", "deleted_at",
 		"created_at", "updated_at", "completed_at",
 	}).AddRow(
-		testAnalysis.ID, testAnalysis.SubmissionID, testAnalysis.EnrichmentID,
+		testAnalysis.ID, testAnalysis.CompanyID, testAnalysis.ChallengeID,
 		frameworkResultsJSON, testAnalysis.Status, testAnalysis.ErrorMessage,
-		testAnalysis.ProcessingTimeMs, testAnalysis.IsVisibleToUser, testAnalysis.IsBlurred,
-		testAnalysis.IsPublic, testAnalysis.AccessCode, testAnalysis.AccessCodeCreatedAt, testAnalysis.DeletedAt,
+		testAnalysis.IsVisibleToUser,
+		testAnalysis.IsPublic, testAnalysis.AccessCode, testAnalysis.DeletedAt,
 		testAnalysis.CreatedAt, testAnalysis.UpdatedAt, testAnalysis.CompletedAt,
 	)
 
@@ -495,23 +492,23 @@ func TestRepository_List_WithPagination(t *testing.T) {
 	a2JSON, _ := json.Marshal(a2.FrameworkResults)
 
 	rows := sqlmock.NewRows([]string{
-		"id", "submission_id", "enrichment_id",
-		"framework_results", "status", "error_message", "processing_time_ms",
-		"is_visible_to_user", "is_blurred", "is_public", "access_code", "access_code_created_at", "deleted_at",
+		"id", "company_id", "challenge_id",
+		"framework_results", "status", "error_message",
+		"is_visible_to_user", "is_public", "access_code", "deleted_at",
 		"created_at", "updated_at", "completed_at",
 	}).
 		AddRow(
-			a1.ID, a1.SubmissionID, a1.EnrichmentID,
+			a1.ID, a1.CompanyID, a1.ChallengeID,
 			a1JSON, a1.Status, a1.ErrorMessage,
-			a1.ProcessingTimeMs, a1.IsVisibleToUser, a1.IsBlurred, a1.IsPublic,
-			a1.AccessCode, a1.AccessCodeCreatedAt, a1.DeletedAt,
+			a1.IsVisibleToUser, a1.IsPublic,
+			a1.AccessCode, a1.DeletedAt,
 			a1.CreatedAt, a1.UpdatedAt, a1.CompletedAt,
 		).
 		AddRow(
-			a2.ID, a2.SubmissionID, a2.EnrichmentID,
+			a2.ID, a2.CompanyID, a2.ChallengeID,
 			a2JSON, a2.Status, a2.ErrorMessage,
-			a2.ProcessingTimeMs, a2.IsVisibleToUser, a2.IsBlurred, a2.IsPublic,
-			a2.AccessCode, a2.AccessCodeCreatedAt, a2.DeletedAt,
+			a2.IsVisibleToUser, a2.IsPublic,
+			a2.AccessCode, a2.DeletedAt,
 			a2.CreatedAt, a2.UpdatedAt, a2.CompletedAt,
 		)
 

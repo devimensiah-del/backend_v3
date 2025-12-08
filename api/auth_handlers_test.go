@@ -35,7 +35,7 @@ func TestLoginMockModeCreatesUserAndReturnsToken(t *testing.T) {
 	email := "newuser@example.com"
 	password := "password123"
 
-	mock.ExpectQuery(`SELECT id FROM user_profiles WHERE email = \$1`).
+	mock.ExpectQuery(`SELECT id, role FROM user_profiles WHERE email = \$1`).
 		WithArgs(email).
 		WillReturnError(sql.ErrNoRows)
 	mock.ExpectExec(`INSERT INTO user_profiles`).

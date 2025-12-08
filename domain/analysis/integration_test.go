@@ -40,24 +40,26 @@ func withTxRollback(t *testing.T, db *sqlx.DB, fn func(tx *sqlx.Tx)) {
 func createTestSubmission(t *testing.T, tx *sqlx.Tx) string {
 	t.Helper()
 	subID := uuid.New().String()
+	// Note: business_challenge and status columns were dropped by v2_009
+	// Challenge data now lives in challenges table
 	_, err := tx.Exec(`
-		INSERT INTO submissions (id, company_name, contact_name, contact_email, business_challenge, status, created_at, updated_at)
-		VALUES ($1, 'Test Company', 'Test User', 'test@test.com', 'Test challenge', 'received', NOW(), NOW())
+		INSERT INTO submissions (id, company_name, contact_name, contact_email, created_at, updated_at)
+		VALUES ($1, 'Test Company', 'Test User', 'test@test.com', NOW(), NOW())
 	`, subID)
 	require.NoError(t, err)
 	return subID
 }
 
-// createTestEnrichment creates an enrichment for FK constraint
-func createTestEnrichment(t *testing.T, tx *sqlx.Tx, submissionID string) string {
+// createTestCompany creates a company for FK constraint
+func createTestCompany(t *testing.T, tx *sqlx.Tx) string {
 	t.Helper()
-	enrichID := uuid.New().String()
+	companyID := uuid.New().String()
 	_, err := tx.Exec(`
-		INSERT INTO enrichments (id, submission_id, status, progress, current_step, is_locked, sources_status, sources_used, data, created_at, updated_at)
-		VALUES ($1, $2, 'completed', 100, 'Done', FALSE, '{}', '{}', '{}', NOW(), NOW())
-	`, enrichID, submissionID)
+		INSERT INTO companies (id, name, enrichment_status, created_at, updated_at)
+		VALUES ($1, 'Test Company', 'completed', NOW(), NOW())
+	`, companyID)
 	require.NoError(t, err)
-	return enrichID
+	return companyID
 }
 
 // txRepository wraps transaction for Repository interface
@@ -68,7 +70,7 @@ type txRepository struct {
 func (r *txRepository) Create(ctx context.Context, a *analysis.Analysis) error {
 	query := `
 		INSERT INTO analyses (
-			id, submission_id, enrichment_id,
+			id, submission_id, company_id,
 			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
 			synthesis, status, error_message, processing_time_ms,
 			approved_at, approved_by, sent_at, sent_to, deleted_at,
@@ -97,7 +99,7 @@ func (r *txRepository) Create(ctx context.Context, a *analysis.Analysis) error {
 	synthesis := a.FrameworkResults["synthesis"]
 
 	_, err := r.tx.ExecContext(ctx, query,
-		a.ID, a.SubmissionID, a.EnrichmentID,
+		a.ID, a.SubmissionID, a.CompanyID,
 		swot, pestel, porter, okrs, tamSamSom, benchmarking, blueOcean, growthHacking, scenarios, bsc, decisionMatrix,
 		synthesis, a.Status, a.ErrorMessage, a.ProcessingTimeMs,
 		a.ApprovedAt, a.ApprovedBy, a.SentAt, a.SentTo, a.DeletedAt,
@@ -110,7 +112,7 @@ func (r *txRepository) GetByID(ctx context.Context, id string) (*analysis.Analys
 	var a analysis.Analysis
 	err := r.tx.GetContext(ctx, &a, `
 		SELECT
-			id, submission_id, enrichment_id,
+			id, submission_id, company_id,
 			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
 			synthesis, status, error_message, processing_time_ms,
 			approved_at, approved_by, sent_at, sent_to, deleted_at,
@@ -124,7 +126,7 @@ func (r *txRepository) GetBySubmissionID(ctx context.Context, submissionID strin
 	var a analysis.Analysis
 	err := r.tx.GetContext(ctx, &a, `
 		SELECT
-			id, submission_id, enrichment_id,
+			id, submission_id, company_id,
 			swot, pestel, porter, okrs, tam_sam_som, benchmarking, blue_ocean, growth_hacking, scenarios, bsc, decision_matrix,
 			synthesis, status, error_message, processing_time_ms,
 			approved_at, approved_by, sent_at, sent_to, deleted_at,
@@ -187,16 +189,16 @@ func TestIntegration_CreateAnalysis_SavesToDB(t *testing.T) {
 		ctx := context.Background()
 		repo := &txRepository{tx: tx}
 
-		// Create submission and enrichment first (FK constraints)
+		// Create submission and company first (FK constraints)
 		subID := createTestSubmission(t, tx)
-		enrichID := createTestEnrichment(t, tx, subID)
+		companyID := createTestCompany(t, tx)
 
 		// Create analysis
 		now := time.Now()
 		a := &analysis.Analysis{
 			ID:           uuid.New().String(),
 			SubmissionID: subID,
-			EnrichmentID: enrichID,
+			CompanyID:    &companyID,
 			Status:       string(analysis.StatusPending),
 			CreatedAt:    now,
 			UpdatedAt:    now,
@@ -211,7 +213,8 @@ func TestIntegration_CreateAnalysis_SavesToDB(t *testing.T) {
 
 		assert.Equal(t, a.ID, saved.ID)
 		assert.Equal(t, subID, saved.SubmissionID)
-		assert.Equal(t, enrichID, saved.EnrichmentID)
+		assert.NotNil(t, saved.CompanyID)
+		assert.Equal(t, companyID, *saved.CompanyID)
 		assert.Equal(t, string(analysis.StatusPending), saved.Status)
 	})
 }
@@ -225,13 +228,13 @@ func TestIntegration_GetBySubmissionID_ReturnsAnalysis(t *testing.T) {
 		repo := &txRepository{tx: tx}
 
 		subID := createTestSubmission(t, tx)
-		enrichID := createTestEnrichment(t, tx, subID)
+		companyID := createTestCompany(t, tx)
 
 		now := time.Now()
 		a := &analysis.Analysis{
 			ID:           uuid.New().String(),
 			SubmissionID: subID,
-			EnrichmentID: enrichID,
+			CompanyID:    &companyID,
 			Status:       string(analysis.StatusPending),
 			CreatedAt:    now,
 			UpdatedAt:    now,
@@ -254,13 +257,13 @@ func TestIntegration_StatusTransitions(t *testing.T) {
 		repo := &txRepository{tx: tx}
 
 		subID := createTestSubmission(t, tx)
-		enrichID := createTestEnrichment(t, tx, subID)
+		companyID := createTestCompany(t, tx)
 
 		now := time.Now()
 		a := &analysis.Analysis{
 			ID:           uuid.New().String(),
 			SubmissionID: subID,
-			EnrichmentID: enrichID,
+			CompanyID:    &companyID,
 			Status:       string(analysis.StatusPending),
 			CreatedAt:    now,
 			UpdatedAt:    now,
@@ -309,13 +312,13 @@ func TestIntegration_JSONB_SWOTSavesAndLoads(t *testing.T) {
 		repo := &txRepository{tx: tx}
 
 		subID := createTestSubmission(t, tx)
-		enrichID := createTestEnrichment(t, tx, subID)
+		companyID := createTestCompany(t, tx)
 
 		now := time.Now()
 		a := &analysis.Analysis{
 			ID:              uuid.New().String(),
 			SubmissionID:    subID,
-			EnrichmentID:    enrichID,
+			CompanyID:       &companyID,
 			Status:          string(analysis.StatusPending),
 			FrameworkResults: make(map[string]json.RawMessage),
 			CreatedAt:       now,
@@ -368,13 +371,13 @@ func TestIntegration_JSONB_PorterSavesAndLoads(t *testing.T) {
 		repo := &txRepository{tx: tx}
 
 		subID := createTestSubmission(t, tx)
-		enrichID := createTestEnrichment(t, tx, subID)
+		companyID := createTestCompany(t, tx)
 
 		now := time.Now()
 		a := &analysis.Analysis{
 			ID:              uuid.New().String(),
 			SubmissionID:    subID,
-			EnrichmentID:    enrichID,
+			CompanyID:       &companyID,
 			Status:          string(analysis.StatusPending),
 			FrameworkResults: make(map[string]json.RawMessage),
 			CreatedAt:       now,
@@ -429,13 +432,13 @@ func TestIntegration_JSONB_OKRsSavesAndLoads(t *testing.T) {
 		repo := &txRepository{tx: tx}
 
 		subID := createTestSubmission(t, tx)
-		enrichID := createTestEnrichment(t, tx, subID)
+		companyID := createTestCompany(t, tx)
 
 		now := time.Now()
 		a := &analysis.Analysis{
 			ID:              uuid.New().String(),
 			SubmissionID:    subID,
-			EnrichmentID:    enrichID,
+			CompanyID:       &companyID,
 			Status:          string(analysis.StatusPending),
 			FrameworkResults: make(map[string]json.RawMessage),
 			CreatedAt:       now,
@@ -491,13 +494,13 @@ func TestIntegration_JSONB_Plan90DaysSavesAndLoads(t *testing.T) {
 		repo := &txRepository{tx: tx}
 
 		subID := createTestSubmission(t, tx)
-		enrichID := createTestEnrichment(t, tx, subID)
+		companyID := createTestCompany(t, tx)
 
 		now := time.Now()
 		a := &analysis.Analysis{
 			ID:              uuid.New().String(),
 			SubmissionID:    subID,
-			EnrichmentID:    enrichID,
+			CompanyID:       &companyID,
 			Status:          string(analysis.StatusPending),
 			FrameworkResults: make(map[string]json.RawMessage),
 			CreatedAt:       now,
@@ -572,13 +575,13 @@ func TestIntegration_ErrorMessage_SavesOnFailure(t *testing.T) {
 		repo := &txRepository{tx: tx}
 
 		subID := createTestSubmission(t, tx)
-		enrichID := createTestEnrichment(t, tx, subID)
+		companyID := createTestCompany(t, tx)
 
 		now := time.Now()
 		a := &analysis.Analysis{
 			ID:           uuid.New().String(),
 			SubmissionID: subID,
-			EnrichmentID: enrichID,
+			CompanyID:    &companyID,
 			Status:       string(analysis.StatusPending),
 			CreatedAt:    now,
 			UpdatedAt:    now,
@@ -605,13 +608,13 @@ func TestIntegration_SoftDelete(t *testing.T) {
 		repo := &txRepository{tx: tx}
 
 		subID := createTestSubmission(t, tx)
-		enrichID := createTestEnrichment(t, tx, subID)
+		companyID := createTestCompany(t, tx)
 
 		now := time.Now()
 		a := &analysis.Analysis{
 			ID:           uuid.New().String(),
 			SubmissionID: subID,
-			EnrichmentID: enrichID,
+			CompanyID:    &companyID,
 			Status:       string(analysis.StatusPending),
 			CreatedAt:    now,
 			UpdatedAt:    now,
