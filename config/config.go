@@ -65,10 +65,11 @@ type Config struct {
 	// Defined as OPENAI_API_KEY for OpenAI SDK compatibility
 	OpenRouterAPIKey string `envconfig:"OPENAI_API_KEY" required:"true"`
 
-	// PreSearch Model: Perplexity for company enrichment (inline at company creation)
-	// Used for: Company identification, data gathering
-	PreSearchModel    string `envconfig:"AI_PRESEARCH_MODEL" default:"perplexity/sonar-pro"`
-	PreSearchFallback string `envconfig:"AI_PRESEARCH_FALLBACK" default:"perplexity/sonar"`
+	// PreSearch Model: Gemini 3 Pro with web search for company enrichment (inline at company creation)
+	// Uses :online suffix for Exa-powered web search via OpenRouter
+	// Used for: Company identification, data gathering, strategic analysis
+	PreSearchModel    string `envconfig:"AI_PRESEARCH_MODEL" default:"google/gemini-2.5-pro-preview-06-05:online"`
+	PreSearchFallback string `envconfig:"AI_PRESEARCH_FALLBACK" default:"perplexity/sonar-pro"`
 
 	// Primary Model: Used for ALL 11 analysis frameworks
 	// Frameworks: PESTEL, Porter, TAM-SAM-SOM, SWOT, Benchmarking, Blue Ocean,
