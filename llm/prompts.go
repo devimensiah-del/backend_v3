@@ -83,6 +83,15 @@ Retorne JSON (PT-BR):
 
 	// 1. PESTEL - Modelo SCAN [cite: 416] - CONSTRAINED
 	FrameworkPESTELPrompt = `Realize uma análise PESTEL (Modelo SCAN) priorizada para relatório executivo.
+
+DESAFIO ESTRATÉGICO DO CLIENTE:
+{{.challenge_context}}
+
+TIPO DO DESAFIO: {{.challenge_type}} (Categoria: {{.challenge_category}})
+
+INSTRUÇÃO CRÍTICA: Toda a análise deve ser direcionada para ajudar a resolver este desafio específico.
+Conecte cada insight diretamente ao problema do cliente.
+
 Contexto: {{COMPANY_DATA}}
 
 Macro-Contexto: {{MACRO_CONTEXT}}
@@ -112,6 +121,15 @@ Retorne JSON (valores em PT-BR):
 
 	// 2. PORTER 7 FORCES (2025+) - Modelo RACE [cite: 131] - CONSTRAINED
 	FrameworkPorterPrompt = `Analise as 7 Forças de Porter (2025+) usando o framework RACE.
+
+DESAFIO ESTRATÉGICO DO CLIENTE:
+{{.challenge_context}}
+
+TIPO DO DESAFIO: {{.challenge_type}} (Categoria: {{.challenge_category}})
+
+INSTRUÇÃO CRÍTICA: Toda a análise deve ser direcionada para ajudar a resolver este desafio específico.
+Conecte cada insight diretamente ao problema do cliente.
+
 Contexto: {{COMPANY_DATA}}
 
 Macro-Contexto: {{MACRO_CONTEXT}}
@@ -158,6 +176,15 @@ Retorne JSON (valores em PT-BR):
 
 	// 3. TAM-SAM-SOM com Estimativa Obrigatória - Modelo RACE/AIM [cite: 658, 690] - CONSTRAINED
 	FrameworkTamSamSomPrompt = `Dimensione o mercado usando ESTIMATIVA OBRIGATÓRIA com o modelo RACE/AIM.
+
+DESAFIO ESTRATÉGICO DO CLIENTE:
+{{.challenge_context}}
+
+TIPO DO DESAFIO: {{.challenge_type}} (Categoria: {{.challenge_category}})
+
+INSTRUÇÃO CRÍTICA: Toda a análise deve ser direcionada para ajudar a resolver este desafio específico.
+Conecte cada insight diretamente ao problema do cliente.
+
 Contexto: {{COMPANY_DATA}}
 
 Macro-Contexto: {{MACRO_CONTEXT}}
@@ -255,6 +282,15 @@ Retorne JSON (valores em PT-BR):
 
 	// 4. SWOT com Confidence Levels - Modelo LIFT [cite: 317] - CONSTRAINED
 	FrameworkSWOTPrompt = `Realize uma análise SWOT (Modelo LIFT) focada em itens acionáveis com níveis de confiança e fonte.
+
+DESAFIO ESTRATÉGICO DO CLIENTE:
+{{.challenge_context}}
+
+TIPO DO DESAFIO: {{.challenge_type}} (Categoria: {{.challenge_category}})
+
+INSTRUÇÃO CRÍTICA: Toda a análise deve ser direcionada para ajudar a resolver este desafio específico.
+Conecte cada insight diretamente ao problema do cliente.
+
 Contexto Interno: {{COMPANY_DATA}}
 Contexto Externo (Layer 1): {{PESTEL_INSIGHTS}} | {{PORTER_INSIGHTS}}
 
@@ -297,6 +333,15 @@ Retorne JSON (valores em PT-BR):
 
 	// 5. BENCHMARKING - Modelo COMPARE [cite: 920] - CONSTRAINED
 	FrameworkBenchmarkingPrompt = `Realize um Benchmarking Competitivo (Modelo COMPARE).
+
+DESAFIO ESTRATÉGICO DO CLIENTE:
+{{.challenge_context}}
+
+TIPO DO DESAFIO: {{.challenge_type}} (Categoria: {{.challenge_category}})
+
+INSTRUÇÃO CRÍTICA: Toda a análise deve ser direcionada para ajudar a resolver este desafio específico.
+Conecte cada insight diretamente ao problema do cliente.
+
 Contexto: {{COMPANY_DATA}}
 
 
@@ -314,6 +359,15 @@ Retorne JSON (valores em PT-BR):
 
 	// 6. BLUE OCEAN - Modelo CREATE [cite: 516] - CONSTRAINED
 	FrameworkBlueOceanPrompt = `Desenvolva uma Estratégia do Oceano Azul (Modelo CREATE/ERRC).
+
+DESAFIO ESTRATÉGICO DO CLIENTE:
+{{.challenge_context}}
+
+TIPO DO DESAFIO: {{.challenge_type}} (Categoria: {{.challenge_category}})
+
+INSTRUÇÃO CRÍTICA: Toda a análise deve ser direcionada para ajudar a resolver este desafio específico.
+Conecte cada insight diretamente ao problema do cliente.
+
 Contexto: {{COMPANY_DATA}}
 Oceano Vermelho Atual: {{PORTER_INSIGHTS}}
 
@@ -335,6 +389,15 @@ Retorne JSON (valores em PT-BR):
 	// 7. GROWTH HACKING - LEAP + SCALE Loops [cite: 1164] - CONSTRAINED
 	// DEPENDENCIES: SWOT (weaknesses/opportunities), TAM-SAM-SOM (market scale)
 	FrameworkGrowthHackingPrompt = `Crie estratégias de Growth Hacking com LEAP Loop (Aquisição) e SCALE Loop (Monetização).
+
+DESAFIO ESTRATÉGICO DO CLIENTE:
+{{.challenge_context}}
+
+TIPO DO DESAFIO: {{.challenge_type}} (Categoria: {{.challenge_category}})
+
+INSTRUÇÃO CRÍTICA: Toda a análise deve ser direcionada para ajudar a resolver este desafio específico.
+Conecte cada insight diretamente ao problema do cliente.
+
 Contexto: {{COMPANY_DATA}}
 
 Análise SWOT: {{SWOT_SUMMARY}}
@@ -387,6 +450,15 @@ Retorne JSON (valores em PT-BR):
 
 	// 8. CENÁRIOS com Probabilidades - Modelo FUTUREMAP [cite: 1426] - CONSTRAINED
 	FrameworkScenariosPrompt = `Realize uma Análise de Cenários (Modelo FUTUREMAP) com probabilidades e táticas de mitigação.
+
+DESAFIO ESTRATÉGICO DO CLIENTE:
+{{.challenge_context}}
+
+TIPO DO DESAFIO: {{.challenge_type}} (Categoria: {{.challenge_category}})
+
+INSTRUÇÃO CRÍTICA: Toda a análise deve ser direcionada para ajudar a resolver este desafio específico.
+Conecte cada insight diretamente ao problema do cliente.
+
 Contexto: {{COMPANY_DATA}}
 Incertezas: {{PESTEL_INSIGHTS}}
 Macro-Contexto: {{MACRO_CONTEXT}}
@@ -433,6 +505,15 @@ Retorne JSON (valores em PT-BR):
 	// 9. OKRs Plano 90 Dias - Modelo FOCUS [cite: 1041] - CONSTRAINED
 	// IMPORTANT: Use Decision Matrix recommendations as input for OKR alignment
 	FrameworkOKRsPrompt = `Defina um Plano Estratégico de 90 Dias (Modelo FOCUS) com marcos mensais.
+
+DESAFIO ESTRATÉGICO DO CLIENTE:
+{{.challenge_context}}
+
+TIPO DO DESAFIO: {{.challenge_type}} (Categoria: {{.challenge_category}})
+
+INSTRUÇÃO CRÍTICA: Toda a análise deve ser direcionada para ajudar a resolver este desafio específico.
+Conecte cada insight diretamente ao problema do cliente.
+
 Contexto: {{COMPANY_DATA}}
 Estratégia: {{BLUE_OCEAN_INSIGHTS}}
 Recomendações Priorizadas: {{DECISION_MATRIX_RECOMMENDATIONS}}
@@ -562,6 +643,15 @@ Retorne JSON (valores em PT-BR):
 
 	// 10. BSC - Modelo ALIGN [cite: 774] - CONSTRAINED
 	FrameworkBSCPrompt = `Estruture um Balanced Scorecard (Modelo ALIGN).
+
+DESAFIO ESTRATÉGICO DO CLIENTE:
+{{.challenge_context}}
+
+TIPO DO DESAFIO: {{.challenge_type}} (Categoria: {{.challenge_category}})
+
+INSTRUÇÃO CRÍTICA: Toda a análise deve ser direcionada para ajudar a resolver este desafio específico.
+Conecte cada insight diretamente ao problema do cliente.
+
 Contexto: {{COMPANY_DATA}}
 Estratégia: {{BLUE_OCEAN_INSIGHTS}}
 
@@ -580,6 +670,15 @@ Retorne JSON (valores em PT-BR):
 
 	// 11. MATRIZ DECISÃO com Recomendações Priorizadas - Modelo ANALYTICA [cite: 1303] - CONSTRAINED
 	FrameworkDecisionMatrixPrompt = `Crie uma Matriz de Decisão Multicriterial (Modelo ANALYTICA) com recomendações priorizadas e ciclo de revisão.
+
+DESAFIO ESTRATÉGICO DO CLIENTE:
+{{.challenge_context}}
+
+TIPO DO DESAFIO: {{.challenge_type}} (Categoria: {{.challenge_category}})
+
+INSTRUÇÃO CRÍTICA: Toda a análise deve ser direcionada para ajudar a resolver este desafio específico.
+Conecte cada insight diretamente ao problema do cliente.
+
 Dilema: "Qual a melhor estratégia de crescimento?"
 Contexto: {{COMPANY_DATA}}
 Cenários: {{SCENARIO_INSIGHTS}}
@@ -685,6 +784,15 @@ Retorne JSON (valores em PT-BR):
 
 	// SYNTHESIS com Desafio Central - Modelo PAR [cite: 200] - CONSTRAINED
 	SynthesisPrompt = `Você é um Líder Exponencial. Sintetize os 11 frameworks em um Resumo Executivo estruturado.
+
+DESAFIO ESTRATÉGICO DO CLIENTE:
+{{.challenge_context}}
+
+TIPO DO DESAFIO: {{.challenge_type}} (Categoria: {{.challenge_category}})
+
+INSTRUÇÃO CRÍTICA: Toda a análise deve ser direcionada para ajudar a resolver este desafio específico.
+Conecte cada insight diretamente ao problema do cliente.
+
 Contexto: {{COMPANY_DATA}}
 Resultados: {{ALL_FRAMEWORK_SUMMARIES}}
 
@@ -712,7 +820,7 @@ Antes de finalizar, verifique:
    - Se dúvida → SER CONSERVADOR
 
 REGRAS DE FORMATAÇÃO (CRÍTICO PARA PDF):
-1. **Central Challenge**: Identifique O desafio estratégico central (max 200 chars).
+1. **Central Challenge**: O desafio declarado pelo cliente é: {{.challenge_context}}
 2. **Executive Summary**: Máximo 400 caracteres. Um parágrafo de impacto.
 3. **Main Findings**: 4 insights principais baseados no SWOT (Strength, Weakness, Opportunity, Threat).
 4. **Important Notes**: 2-3 observações críticas ou warnings (max 120 chars cada).
@@ -722,7 +830,7 @@ REGRAS DE FORMATAÇÃO (CRÍTICO PARA PDF):
 
 Retorne JSON (valores em PT-BR):
 {
-  "central_challenge": "O principal desafio estratégico que a empresa enfrenta (max 200 chars)",
+  "central_challenge": "{{.challenge_context}}",
   "executive_summary": "Texto de alto impacto (max 400 chars)",
   "main_findings": [
     "Força principal identificada (do SWOT)",

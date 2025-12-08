@@ -401,6 +401,7 @@ type AnalysisSynthesis struct {
 type ContextContainer struct {
 	SubmissionData map[string]interface{} // User's business challenge data from submission
 	CompanyData    map[string]interface{} // Company data from companies table
+	ChallengeData  map[string]interface{} // Challenge data (category, type, business_challenge)
 	// Pointers to hold interim results
 	PESTEL         *PESTELAnalysis
 	Porter         *PorterAnalysis

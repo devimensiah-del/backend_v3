@@ -462,9 +462,7 @@ func TestService_SubmitForm_ChallengeValidation(t *testing.T) {
 		{"growth", "growth_geographic"},
 		{"transform", "transform_digital"},
 		{"transform", "transform_model"},
-		{"transition", "transition_succession"},
 		{"compete", "compete_differentiate"},
-		{"funding", "funding_raise"},
 	}
 
 	for _, tc := range validCombinations {
@@ -505,7 +503,7 @@ func TestService_SubmitForm_ChallengeValidation(t *testing.T) {
 		typ      string
 	}{
 		{"growth", "transform_digital"},
-		{"transform", "funding_raise"},
+		{"transform", "compete_defend"},
 		{"invalid", "growth_organic"},
 		{"growth", "invalid_type"},
 	}

@@ -136,9 +136,7 @@ func TestIsValidCategory(t *testing.T) {
 	}{
 		{"growth", true},
 		{"transform", true},
-		{"transition", true},
 		{"compete", true},
-		{"funding", true},
 		{"invalid", false},
 		{"Growth", false}, // case sensitive
 		{"", false},
@@ -169,25 +167,12 @@ func TestIsValidType(t *testing.T) {
 		// Transform types
 		{"transform", "transform_digital", true},
 		{"transform", "transform_model", true},
-		{"transform", "transform_culture", true},
-		{"transform", "transform_operational", true},
 		{"transform", "growth_organic", false}, // wrong category
-
-		// Transition types
-		{"transition", "transition_succession", true},
-		{"transition", "transition_exit", true},
-		{"transition", "transition_merger", true},
-		{"transition", "transition_turnaround", true},
 
 		// Compete types
 		{"compete", "compete_differentiate", true},
 		{"compete", "compete_defend", true},
 		{"compete", "compete_reposition", true},
-
-		// Funding types
-		{"funding", "funding_raise", true},
-		{"funding", "funding_debt", true},
-		{"funding", "funding_ipo", true},
 
 		// Invalid cases
 		{"invalid", "growth_organic", false},
@@ -210,9 +195,7 @@ func TestIsValidTypeAny(t *testing.T) {
 	}{
 		{"growth_organic", true},
 		{"transform_digital", true},
-		{"transition_exit", true},
 		{"compete_defend", true},
-		{"funding_ipo", true},
 		{"invalid_type", false},
 		{"", false},
 	}
@@ -238,31 +221,23 @@ func TestValidCategories(t *testing.T) {
 	expected := []ChallengeCategory{
 		CategoryGrowth,
 		CategoryTransform,
-		CategoryTransition,
 		CategoryCompete,
-		CategoryFunding,
 	}
 
 	assert.Equal(t, expected, ValidCategories)
-	assert.Len(t, ValidCategories, 5)
+	assert.Len(t, ValidCategories, 3)
 }
 
 func TestValidTypesByCategory(t *testing.T) {
 	// Ensure all categories are covered
-	assert.Len(t, ValidTypesByCategory, 5)
+	assert.Len(t, ValidTypesByCategory, 3)
 
 	// Check growth has 5 types
 	assert.Len(t, ValidTypesByCategory[CategoryGrowth], 5)
 
-	// Check transform has 4 types
-	assert.Len(t, ValidTypesByCategory[CategoryTransform], 4)
-
-	// Check transition has 4 types
-	assert.Len(t, ValidTypesByCategory[CategoryTransition], 4)
+	// Check transform has 2 types
+	assert.Len(t, ValidTypesByCategory[CategoryTransform], 2)
 
 	// Check compete has 3 types
 	assert.Len(t, ValidTypesByCategory[CategoryCompete], 3)
-
-	// Check funding has 3 types
-	assert.Len(t, ValidTypesByCategory[CategoryFunding], 3)
 }

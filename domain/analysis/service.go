@@ -75,6 +75,11 @@ type SubmissionData struct {
 	FundingStage      *string
 }
 
+// ChallengeRepository defines minimal interface for loading challenge data
+type ChallengeRepository interface {
+	GetByID(ctx context.Context, id uuid.UUID) (interface{}, error)
+}
+
 // Service handles all business analysis operations
 type Service struct {
 	repo           Repository
@@ -83,6 +88,7 @@ type Service struct {
 	logger         zerolog.Logger
 	queueClient    *asynq.Client                   // For job orchestration
 	companyService AnalysisCompanyServiceInterface // Optional: used to fetch company data directly
+	challengeRepo  ChallengeRepository             // Optional: used to fetch challenge data
 
 	// Framework configurations (4-model approach: presearch, enrichment, primary, synthesis)
 	frameworks map[string]config.FrameworkConfig
@@ -115,6 +121,12 @@ func (s *Service) SetFrameworks(frameworks map[string]config.FrameworkConfig) {
 // This allows analysis to read from company table instead of enrichment
 func (s *Service) SetCompanyService(svc AnalysisCompanyServiceInterface) {
 	s.companyService = svc
+}
+
+// SetChallengeRepo wires a challenge repository dependency (used for fetching challenge data)
+// This allows analysis to inject challenge context into all framework prompts
+func (s *Service) SetChallengeRepo(repo ChallengeRepository) {
+	s.challengeRepo = repo
 }
 
 // GetByID retrieves an analysis by ID

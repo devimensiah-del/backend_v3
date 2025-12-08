@@ -32,11 +32,9 @@ type Challenge struct {
 type ChallengeCategory string
 
 const (
-	CategoryGrowth     ChallengeCategory = "growth"
-	CategoryTransform  ChallengeCategory = "transform"
-	CategoryTransition ChallengeCategory = "transition"
-	CategoryCompete    ChallengeCategory = "compete"
-	CategoryFunding    ChallengeCategory = "funding"
+	CategoryGrowth    ChallengeCategory = "growth"
+	CategoryTransform ChallengeCategory = "transform"
+	CategoryCompete   ChallengeCategory = "compete"
 )
 
 // ChallengeType represents the specific challenge type
@@ -53,18 +51,8 @@ const (
 
 // Transform types
 const (
-	TypeTransformDigital     ChallengeType = "transform_digital"
-	TypeTransformModel       ChallengeType = "transform_model"
-	TypeTransformCulture     ChallengeType = "transform_culture"
-	TypeTransformOperational ChallengeType = "transform_operational"
-)
-
-// Transition types
-const (
-	TypeTransitionSuccession ChallengeType = "transition_succession"
-	TypeTransitionExit       ChallengeType = "transition_exit"
-	TypeTransitionMerger     ChallengeType = "transition_merger"
-	TypeTransitionTurnaround ChallengeType = "transition_turnaround"
+	TypeTransformDigital ChallengeType = "transform_digital"
+	TypeTransformModel   ChallengeType = "transform_model"
 )
 
 // Compete types
@@ -72,13 +60,6 @@ const (
 	TypeCompeteDifferentiate ChallengeType = "compete_differentiate"
 	TypeCompeteDefend        ChallengeType = "compete_defend"
 	TypeCompeteReposition    ChallengeType = "compete_reposition"
-)
-
-// Funding types
-const (
-	TypeFundingRaise ChallengeType = "funding_raise"
-	TypeFundingDebt  ChallengeType = "funding_debt"
-	TypeFundingIPO   ChallengeType = "funding_ipo"
 )
 
 // NewChallenge creates a new challenge with default values
@@ -109,7 +90,7 @@ func (c *Challenge) Validate() error {
 		return errors.New("challenge_category is required")
 	}
 	if !isValidCategory(c.ChallengeCategory) {
-		return errors.New("challenge_category must be one of: growth, transform, transition, compete, funding")
+		return errors.New("challenge_category must be one of: growth, transform, compete")
 	}
 	if c.ChallengeType == "" {
 		return errors.New("challenge_type is required")
@@ -134,16 +115,14 @@ func (c *Challenge) IsDeleted() bool {
 
 // ValidCategories returns all valid challenge categories
 var ValidCategories = []ChallengeCategory{
-	CategoryGrowth, CategoryTransform, CategoryTransition, CategoryCompete, CategoryFunding,
+	CategoryGrowth, CategoryTransform, CategoryCompete,
 }
 
 // ValidTypesByCategory maps each category to its valid types
 var ValidTypesByCategory = map[ChallengeCategory][]ChallengeType{
-	CategoryGrowth:     {TypeGrowthOrganic, TypeGrowthGeographic, TypeGrowthSegment, TypeGrowthProduct, TypeGrowthChannel},
-	CategoryTransform:  {TypeTransformDigital, TypeTransformModel, TypeTransformCulture, TypeTransformOperational},
-	CategoryTransition: {TypeTransitionSuccession, TypeTransitionExit, TypeTransitionMerger, TypeTransitionTurnaround},
-	CategoryCompete:    {TypeCompeteDifferentiate, TypeCompeteDefend, TypeCompeteReposition},
-	CategoryFunding:    {TypeFundingRaise, TypeFundingDebt, TypeFundingIPO},
+	CategoryGrowth:    {TypeGrowthOrganic, TypeGrowthGeographic, TypeGrowthSegment, TypeGrowthProduct, TypeGrowthChannel},
+	CategoryTransform: {TypeTransformDigital, TypeTransformModel},
+	CategoryCompete:   {TypeCompeteDifferentiate, TypeCompeteDefend, TypeCompeteReposition},
 }
 
 // IsValidCategory checks if a category string is valid

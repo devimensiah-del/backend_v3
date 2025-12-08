@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"backend_v3/domain/challenge"
 	"backend_v3/llm"
 
 	"github.com/google/uuid"
@@ -80,10 +81,31 @@ func (s *Service) RunAnalysis(ctx context.Context, submissionID, companyID strin
 		Str("challenge_id", challengeID.String()).
 		Msg("Submission and company data loaded successfully")
 
+	// 2.5. FETCH CHALLENGE DATA (for challenge-focused prompts)
+	if s.challengeRepo == nil {
+		return nil, fmt.Errorf("challengeRepo not initialized")
+	}
+	challengeDataRaw, err := s.challengeRepo.GetByID(ctx, challengeID)
+	if err != nil {
+		s.logger.Error().Err(err).Str("challenge_id", challengeID.String()).Msg("Failed to fetch challenge data")
+		return nil, fmt.Errorf("failed to fetch challenge: %w", err)
+	}
+	// Type assert to *challenge.Challenge
+	challengeEntity, ok := challengeDataRaw.(*challenge.Challenge)
+	if !ok {
+		return nil, fmt.Errorf("invalid challenge data type")
+	}
+
+	s.logger.Info().
+		Str("challenge_category", string(challengeEntity.ChallengeCategory)).
+		Str("challenge_type", string(challengeEntity.ChallengeType)).
+		Msg("Challenge data loaded successfully")
+
 	// 3. SETUP CONTEXT
 	knowledge := &ContextContainer{
 		SubmissionData: submissionData,
 		CompanyData:    companyDataToMap(companyData),
+		ChallengeData:  challengeToMap(challengeEntity),
 	}
 
 	companyIDPtr := &companyID
@@ -578,8 +600,11 @@ func withDataPriority(prompt string) string {
 func (s *Service) runPESTEL(ctx context.Context, k *ContextContainer) (*PESTELAnalysis, error) {
 	var res PESTELAnalysis
 	data := map[string]interface{}{
-		"company_data":  k.CompanyData,
-		"macro_context": s.extractMacroContext(),
+		"company_data":       k.CompanyData,
+		"macro_context":      s.extractMacroContext(),
+		"challenge_context":  k.ChallengeData["business_challenge"],
+		"challenge_type":     k.ChallengeData["challenge_type"],
+		"challenge_category": k.ChallengeData["challenge_category"],
 	}
 	opts := llm.NewGenerationOptions(s.frameworks[FrameworkPESTEL])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, withDataPriority(llm.FrameworkPESTELPrompt), data, &res)
@@ -589,8 +614,11 @@ func (s *Service) runPESTEL(ctx context.Context, k *ContextContainer) (*PESTELAn
 func (s *Service) runPorter(ctx context.Context, k *ContextContainer) (*PorterAnalysis, error) {
 	var res PorterAnalysis
 	data := map[string]interface{}{
-		"company_data":  k.CompanyData,
-		"macro_context": s.extractMacroContext(),
+		"company_data":       k.CompanyData,
+		"macro_context":      s.extractMacroContext(),
+		"challenge_context":  k.ChallengeData["business_challenge"],
+		"challenge_type":     k.ChallengeData["challenge_type"],
+		"challenge_category": k.ChallengeData["challenge_category"],
 	}
 	opts := llm.NewGenerationOptions(s.frameworks[FrameworkPorter])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, withDataPriority(llm.FrameworkPorterPrompt), data, &res)
@@ -600,8 +628,11 @@ func (s *Service) runPorter(ctx context.Context, k *ContextContainer) (*PorterAn
 func (s *Service) runTamSamSom(ctx context.Context, k *ContextContainer) (*TamSamSomAnalysis, error) {
 	var res TamSamSomAnalysis
 	data := map[string]interface{}{
-		"company_data":  k.CompanyData,
-		"macro_context": s.extractMacroContext(),
+		"company_data":       k.CompanyData,
+		"macro_context":      s.extractMacroContext(),
+		"challenge_context":  k.ChallengeData["business_challenge"],
+		"challenge_type":     k.ChallengeData["challenge_type"],
+		"challenge_category": k.ChallengeData["challenge_category"],
 	}
 	opts := llm.NewGenerationOptions(s.frameworks[FrameworkTAMSAMSOM])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, withDataPriority(llm.FrameworkTamSamSomPrompt), data, &res)
@@ -622,9 +653,12 @@ func (s *Service) runSWOT(ctx context.Context, k *ContextContainer) (*SWOTAnalys
 	}
 
 	data := map[string]interface{}{
-		"company_data":    k.CompanyData,
-		"pestel_insights": pestelSummary,
-		"porter_insights": porterSummary,
+		"company_data":       k.CompanyData,
+		"pestel_insights":    pestelSummary,
+		"porter_insights":    porterSummary,
+		"challenge_context":  k.ChallengeData["business_challenge"],
+		"challenge_type":     k.ChallengeData["challenge_type"],
+		"challenge_category": k.ChallengeData["challenge_category"],
 	}
 	opts := llm.NewGenerationOptions(s.frameworks[FrameworkSWOT])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, withDataPriority(llm.FrameworkSWOTPrompt), data, &res)
@@ -641,8 +675,11 @@ func (s *Service) runBenchmarking(ctx context.Context, k *ContextContainer) (*Be
 	}
 
 	data := map[string]interface{}{
-		"company_data": k.CompanyData,
-		"market_scale": marketScale,
+		"company_data":       k.CompanyData,
+		"market_scale":       marketScale,
+		"challenge_context":  k.ChallengeData["business_challenge"],
+		"challenge_type":     k.ChallengeData["challenge_type"],
+		"challenge_category": k.ChallengeData["challenge_category"],
 	}
 	opts := llm.NewGenerationOptions(s.frameworks[FrameworkBenchmarking])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, withDataPriority(llm.FrameworkBenchmarkingPrompt), data, &res)
@@ -659,8 +696,11 @@ func (s *Service) runBlueOcean(ctx context.Context, k *ContextContainer) (*BlueO
 	}
 
 	data := map[string]interface{}{
-		"company_data":    k.CompanyData,
-		"porter_insights": porterSummary,
+		"company_data":       k.CompanyData,
+		"porter_insights":    porterSummary,
+		"challenge_context":  k.ChallengeData["business_challenge"],
+		"challenge_type":     k.ChallengeData["challenge_type"],
+		"challenge_category": k.ChallengeData["challenge_category"],
 	}
 	opts := llm.NewGenerationOptions(s.frameworks[FrameworkBlueOcean])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, withDataPriority(llm.FrameworkBlueOceanPrompt), data, &res)
@@ -701,6 +741,9 @@ func (s *Service) runGrowthHacking(ctx context.Context, k *ContextContainer) (*G
 		"swot_weaknesses":    swotWeaknesses,
 		"swot_opportunities": swotOpportunities,
 		"market_scale":       marketScale,
+		"challenge_context":  k.ChallengeData["business_challenge"],
+		"challenge_type":     k.ChallengeData["challenge_type"],
+		"challenge_category": k.ChallengeData["challenge_category"],
 	}
 	opts := llm.NewGenerationOptions(s.frameworks[FrameworkGrowthHacking])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, withDataPriority(llm.FrameworkGrowthHackingPrompt), data, &res)
@@ -717,9 +760,12 @@ func (s *Service) runScenarios(ctx context.Context, k *ContextContainer) (*Scena
 	}
 
 	data := map[string]interface{}{
-		"company_data":    k.CompanyData,
-		"pestel_insights": pestelSummary,
-		"macro_context":   s.extractMacroContext(),
+		"company_data":       k.CompanyData,
+		"pestel_insights":    pestelSummary,
+		"macro_context":      s.extractMacroContext(),
+		"challenge_context":  k.ChallengeData["business_challenge"],
+		"challenge_type":     k.ChallengeData["challenge_type"],
+		"challenge_category": k.ChallengeData["challenge_category"],
 	}
 	opts := llm.NewGenerationOptions(s.frameworks[FrameworkScenarios])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, withDataPriority(llm.FrameworkScenariosPrompt), data, &res)
@@ -758,6 +804,9 @@ func (s *Service) runOKRs(ctx context.Context, k *ContextContainer) (*OKRAnalysi
 		"blue_ocean_insights":             blueOceanSummary,
 		"swot_weaknesses":                 swotWeaknesses,
 		"decision_matrix_recommendations": decisionMatrixRecommendations,
+		"challenge_context":               k.ChallengeData["business_challenge"],
+		"challenge_type":                  k.ChallengeData["challenge_type"],
+		"challenge_category":              k.ChallengeData["challenge_category"],
 	}
 	opts := llm.NewGenerationOptions(s.frameworks[FrameworkOKRs])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, withDataPriority(llm.FrameworkOKRsPrompt), data, &res)
@@ -794,8 +843,11 @@ func (s *Service) runBSC(ctx context.Context, k *ContextContainer) (*BalancedSco
 		Msg("🔍 DEBUG BSC Input Data")
 
 	data := map[string]interface{}{
-		"company_data":        k.CompanyData,
+		"company_data":       k.CompanyData,
 		"blue_ocean_insights": blueOceanSummary,
+		"challenge_context":  k.ChallengeData["business_challenge"],
+		"challenge_type":     k.ChallengeData["challenge_type"],
+		"challenge_category": k.ChallengeData["challenge_category"],
 	}
 	opts := llm.NewGenerationOptions(s.frameworks[FrameworkBSC])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, withDataPriority(llm.FrameworkBSCPrompt), data, &res)
@@ -827,8 +879,11 @@ func (s *Service) runDecisionMatrix(ctx context.Context, k *ContextContainer) (*
 		Msg("🔍 DEBUG DecisionMatrix Input Data")
 
 	data := map[string]interface{}{
-		"company_data":      k.CompanyData,
-		"scenario_insights": scenarioSummary,
+		"company_data":       k.CompanyData,
+		"scenario_insights":  scenarioSummary,
+		"challenge_context":  k.ChallengeData["business_challenge"],
+		"challenge_type":     k.ChallengeData["challenge_type"],
+		"challenge_category": k.ChallengeData["challenge_category"],
 	}
 	opts := llm.NewGenerationOptions(s.frameworks[FrameworkDecisionMatrix])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, withDataPriority(llm.FrameworkDecisionMatrixPrompt), data, &res)
@@ -860,6 +915,9 @@ func (s *Service) runSynthesis(ctx context.Context, k *ContextContainer) (Analys
 	data := map[string]interface{}{
 		"company_data":            k.CompanyData,
 		"all_framework_summaries": summaries,
+		"challenge_context":       k.ChallengeData["business_challenge"],
+		"challenge_type":          k.ChallengeData["challenge_type"],
+		"challenge_category":      k.ChallengeData["challenge_category"],
 	}
 	// NEW: Uses framework-specific synthesis config (Claude 3.5 Sonnet with T=0.4)
 	opts := llm.NewGenerationOptions(s.frameworks[FrameworkSynthesis])
@@ -1191,4 +1249,13 @@ func (s *Service) generateOKRsSummaryFallback(okrs *OKRAnalysis) string {
 		Msg("✅ OKRs fallback summary generated")
 
 	return summary
+}
+
+// challengeToMap converts a Challenge entity to a map for template injection
+func challengeToMap(c *challenge.Challenge) map[string]interface{} {
+	return map[string]interface{}{
+		"business_challenge": c.BusinessChallenge,
+		"challenge_type":     string(c.ChallengeType),
+		"challenge_category": string(c.ChallengeCategory),
+	}
 }

@@ -169,3 +169,21 @@ func (a ChallengeServiceAdapterForSubmission) ValidateCategory(category string) 
 func (a ChallengeServiceAdapterForSubmission) ValidateType(category, challengeType string) bool {
 	return a.Svc.ValidateType(category, challengeType)
 }
+
+// =============================================================================
+// CHALLENGE REPOSITORY ADAPTER
+// =============================================================================
+
+// ChallengeRepositoryAdapterForAnalysis adapts challenge.Repository to analysis.ChallengeRepository
+type ChallengeRepositoryAdapterForAnalysis struct {
+	Repo challenge.Repository
+}
+
+func NewChallengeRepositoryAdapterForAnalysis(repo challenge.Repository) *ChallengeRepositoryAdapterForAnalysis {
+	return &ChallengeRepositoryAdapterForAnalysis{Repo: repo}
+}
+
+// GetByID implements analysis.ChallengeRepository
+func (a ChallengeRepositoryAdapterForAnalysis) GetByID(ctx context.Context, id uuid.UUID) (interface{}, error) {
+	return a.Repo.GetByID(ctx, id)
+}

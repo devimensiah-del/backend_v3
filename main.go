@@ -182,6 +182,10 @@ func main() {
 	analysisSvc.SetCompanyService(adapters.NewCompanyServiceAdapterForAnalysis(companySvc))
 	log.Info().Msg("CompanyService injected into analysis (company data enabled)")
 
+	// Inject challenge repository for challenge context in prompts
+	analysisSvc.SetChallengeRepo(adapters.NewChallengeRepositoryAdapterForAnalysis(challengeRepo))
+	log.Info().Msg("ChallengeRepo injected into analysis (challenge context enabled)")
+
 	// Wizard Service (Human-in-the-Loop Framework Wizard)
 	wizardSvc := wizard.NewService(
 		analysisRepo,

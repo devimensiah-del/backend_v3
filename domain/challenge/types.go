@@ -21,9 +21,7 @@ type ChallengeCategoryInfo struct {
 var ChallengeCategories = []ChallengeCategoryInfo{
 	{Code: CategoryGrowth, Label: "Crescimento", Description: "Estratégias de expansão e crescimento"},
 	{Code: CategoryTransform, Label: "Transformação", Description: "Mudanças estruturais e modernização"},
-	{Code: CategoryTransition, Label: "Transição", Description: "Sucessão, M&A e mudanças de controle"},
 	{Code: CategoryCompete, Label: "Competitividade", Description: "Posicionamento e diferenciação"},
-	{Code: CategoryFunding, Label: "Funding", Description: "Captação e estrutura de capital"},
 }
 
 // ChallengeTypesByCategory returns all challenge types organized by category with display metadata
@@ -38,24 +36,11 @@ var ChallengeTypesByCategory = map[ChallengeCategory][]ChallengeTypeInfo{
 	CategoryTransform: {
 		{Code: "transform_digital", Category: CategoryTransform, Label: "Transformação Digital", Description: "Digitalização de processos", Example: "Implementar ERP/CRM"},
 		{Code: "transform_model", Category: CategoryTransform, Label: "Modelo de Negócio", Description: "Mudar modelo de negócio", Example: "De venda para assinatura"},
-		{Code: "transform_culture", Category: CategoryTransform, Label: "Cultura Organizacional", Description: "Mudança cultural/organizacional", Example: "Profissionalizar gestão familiar"},
-		{Code: "transform_operational", Category: CategoryTransform, Label: "Eficiência Operacional", Description: "Eficiência operacional", Example: "Reduzir custos em 15%"},
-	},
-	CategoryTransition: {
-		{Code: "transition_succession", Category: CategoryTransition, Label: "Sucessão", Description: "Sucessão familiar/executiva", Example: "Preparar próxima geração"},
-		{Code: "transition_exit", Category: CategoryTransition, Label: "Preparação para Venda", Description: "Preparar para venda", Example: "M&A em 3 anos"},
-		{Code: "transition_merger", Category: CategoryTransition, Label: "Integração", Description: "Integrar aquisição", Example: "Compramos concorrente"},
-		{Code: "transition_turnaround", Category: CategoryTransition, Label: "Turnaround", Description: "Recuperação de crise", Example: "Empresa em dificuldade"},
 	},
 	CategoryCompete: {
 		{Code: "compete_differentiate", Category: CategoryCompete, Label: "Diferenciação", Description: "Criar diferenciação", Example: "Sair da guerra de preço"},
 		{Code: "compete_defend", Category: CategoryCompete, Label: "Defender Posição", Description: "Defender posição de mercado", Example: "Novos entrantes ameaçando"},
 		{Code: "compete_reposition", Category: CategoryCompete, Label: "Reposicionamento", Description: "Reposicionar marca", Example: "Subir de segmento"},
-	},
-	CategoryFunding: {
-		{Code: "funding_raise", Category: CategoryFunding, Label: "Captação", Description: "Captar investimento", Example: "Buscar Series A"},
-		{Code: "funding_debt", Category: CategoryFunding, Label: "Estruturação de Dívida", Description: "Estruturar dívida", Example: "Renegociar com bancos"},
-		{Code: "funding_ipo", Category: CategoryFunding, Label: "Abertura de Capital", Description: "Preparar abertura", Example: "IPO em 5 anos"},
 	},
 }
 
