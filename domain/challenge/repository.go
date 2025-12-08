@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/rs/zerolog/log"
 )
 
 // Repository defines the interface for challenge data access
@@ -43,6 +44,15 @@ func (r *PostgresRepository) Create(ctx context.Context, c *Challenge) error {
 
 	_, err := r.db.NamedExecContext(ctx, query, c)
 	if err != nil {
+		// Log the actual SQL error for debugging
+		log.Error().
+			Err(err).
+			Str("id", c.ID.String()).
+			Str("company_id", c.CompanyID.String()).
+			Str("category", string(c.ChallengeCategory)).
+			Str("type", string(c.ChallengeType)).
+			Str("business_challenge", c.BusinessChallenge[:min(100, len(c.BusinessChallenge))]).
+			Msg("SQL ERROR: Failed to insert challenge")
 		return NewRepositoryError("create", err)
 	}
 
