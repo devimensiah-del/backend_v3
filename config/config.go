@@ -65,11 +65,15 @@ type Config struct {
 	// Defined as OPENAI_API_KEY for OpenAI SDK compatibility
 	OpenRouterAPIKey string `envconfig:"OPENAI_API_KEY" required:"true"`
 
-	// PreSearch Model: Gemini 3 Pro for company enrichment (inline at company creation)
-	// Best reasoning model with recent training data for strategic analysis
-	// Fallback to Perplexity which has native web search
-	PreSearchModel    string `envconfig:"AI_PRESEARCH_MODEL" default:"google/gemini-3-pro-preview"`
-	PreSearchFallback string `envconfig:"AI_PRESEARCH_FALLBACK" default:"perplexity/sonar-pro"`
+	// PreSearch Model: Perplexity for web search and data gathering (Stage 1)
+	// Native web search finds competitors, news, facts
+	PreSearchModel    string `envconfig:"AI_PRESEARCH_MODEL" default:"perplexity/sonar-pro"`
+	PreSearchFallback string `envconfig:"AI_PRESEARCH_FALLBACK" default:"perplexity/sonar"`
+
+	// Enrichment Synthesis Model: Gemini 3 Pro for strategic analysis (Stage 2)
+	// Best reasoning model synthesizes raw data into structured insights
+	EnrichmentSynthesisModel    string `envconfig:"AI_ENRICHMENT_SYNTHESIS_MODEL" default:"google/gemini-3-pro-preview"`
+	EnrichmentSynthesisFallback string `envconfig:"AI_ENRICHMENT_SYNTHESIS_FALLBACK" default:"google/gemini-2.5-flash"`
 
 	// Primary Model: Used for ALL 11 analysis frameworks
 	// Frameworks: PESTEL, Porter, TAM-SAM-SOM, SWOT, Benchmarking, Blue Ocean,
@@ -418,12 +422,20 @@ func (c *Config) loadFrameworkConfigs() map[string]FrameworkConfig {
 		Str("synthesis", c.SynthesisModel).
 		Msg("Loading 3-model AI configuration")
 
-	// PreSearch/Enrichment - Perplexity for company data gathering (inline)
+	// PreSearch - Perplexity for web search and data gathering (Stage 1)
 	configs["presearch"] = FrameworkConfig{
 		Model:         c.PreSearchModel,
-		Temperature:   0.3, // Low temperature for consistent enrichment
+		Temperature:   0.3, // Low temperature for consistent data
 		MaxTokens:     c.MaxTokensEnrichment,
 		FallbackModel: c.PreSearchFallback,
+	}
+
+	// Enrichment Synthesis - Gemini 3 Pro for strategic analysis (Stage 2)
+	configs["enrichment_synthesis"] = FrameworkConfig{
+		Model:         c.EnrichmentSynthesisModel,
+		Temperature:   0.4, // Slightly higher for strategic insights
+		MaxTokens:     c.MaxTokensEnrichment * 2, // More tokens for comprehensive output
+		FallbackModel: c.EnrichmentSynthesisFallback,
 	}
 
 	// Backward compatibility: enrichment config points to presearch
