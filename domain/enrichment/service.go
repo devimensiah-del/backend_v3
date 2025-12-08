@@ -6,29 +6,37 @@ import (
 	"fmt"
 	"strings"
 
-	"backend_v3/config"
 	"backend_v3/llm"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 )
 
+// Hardcoded models for enrichment pipeline (via OpenRouter)
+const (
+	// Stage 1: Perplexity for web search and raw data gathering
+	// Native web search finds competitors, news, facts
+	ModelStage1Search   = "perplexity/sonar-pro"
+	ModelStage1Fallback = "perplexity/sonar"
+
+	// Stage 2: Claude Opus 4.5 with web search for reasoning and validation
+	// Best reasoning model with :online suffix for fact-checking
+	ModelStage2Synthesis   = "anthropic/claude-opus-4.5:online"
+	ModelStage2Fallback    = "anthropic/claude-sonnet-4:online"
+)
+
 // Service handles stateless enrichment operations using a two-stage approach:
 // Stage 1: Perplexity for web search and raw data gathering
-// Stage 2: Gemini 3 Pro for strategic analysis and synthesis
+// Stage 2: Claude Opus 4.5 for strategic reasoning and validation
 // The caller is responsible for persisting the enriched data
 type Service struct {
-	llmClient    *llm.Client
-	preSearchCfg config.FrameworkConfig // Stage 1: Perplexity for data gathering
-	synthesisCfg config.FrameworkConfig // Stage 2: Gemini 3 Pro for synthesis
+	llmClient *llm.Client
 }
 
-// NewService creates a new stateless enrichment service with two-stage processing
-func NewService(llmClient *llm.Client, preSearchCfg, synthesisCfg config.FrameworkConfig) *Service {
+// NewService creates a new stateless enrichment service
+func NewService(llmClient *llm.Client) *Service {
 	return &Service{
-		llmClient:    llmClient,
-		preSearchCfg: preSearchCfg,
-		synthesisCfg: synthesisCfg,
+		llmClient: llmClient,
 	}
 }
 
@@ -44,14 +52,14 @@ type CompanyInput struct {
 
 // EnrichCompany uses two-stage enrichment:
 // Stage 1: Perplexity searches the web for raw company data
-// Stage 2: Gemini 3 Pro synthesizes data into structured strategic analysis
+// Stage 2: Claude Opus 4.5 validates and synthesizes with reasoning
 // Returns enriched data - caller is responsible for saving to company table
 func (s *Service) EnrichCompany(ctx context.Context, company *CompanyInput) (*EnrichedCompanyData, error) {
 	log.Info().
 		Str("company_id", company.ID.String()).
 		Str("company_name", company.Name).
-		Str("stage1_model", s.preSearchCfg.Model).
-		Str("stage2_model", s.synthesisCfg.Model).
+		Str("stage1_model", ModelStage1Search).
+		Str("stage2_model", ModelStage2Synthesis).
 		Msg("Starting two-stage company enrichment")
 
 	// ==================== STAGE 1: Perplexity Web Search ====================
@@ -59,7 +67,7 @@ func (s *Service) EnrichCompany(ctx context.Context, company *CompanyInput) (*En
 
 	searchPrompt := s.buildSearchPrompt(company)
 	searchReq := llm.Request{
-		Model: s.preSearchCfg.Model,
+		Model: ModelStage1Search,
 		SystemPrompt: `Você é um pesquisador de inteligência de mercado. Sua tarefa é encontrar informações factuais sobre empresas brasileiras.
 
 INSTRUÇÕES:
@@ -67,13 +75,14 @@ INSTRUÇÕES:
 2. Inclua dados de: site oficial, LinkedIn, notícias recentes, Glassdoor, Reclame Aqui
 3. Liste TODOS os concorrentes que encontrar
 4. Inclua notícias dos últimos 12 meses
-5. Retorne os dados de forma organizada (pode ser texto estruturado)`,
+5. Retorne os dados de forma organizada (pode ser texto estruturado)
+6. SEMPRE cite as fontes com URLs`,
 		Messages:    []llm.Message{{Role: "user", Content: searchPrompt}},
 		Temperature: 0.2, // Very low for factual accuracy
 		MaxTokens:   3000,
 	}
 
-	searchResp, err := s.llmClient.CallWithFallback(ctx, &searchReq, s.preSearchCfg.FallbackModel)
+	searchResp, err := s.llmClient.CallWithFallback(ctx, &searchReq, ModelStage1Fallback)
 	if err != nil {
 		log.Error().
 			Err(err).
@@ -87,34 +96,51 @@ INSTRUÇÕES:
 		Int("raw_data_length", len(rawData)).
 		Msg("Stage 1 complete: raw data gathered")
 
-	// ==================== STAGE 2: Gemini 3 Pro Synthesis ====================
-	log.Debug().Msg("Stage 2: Gemini 3 Pro synthesis")
+	// ==================== STAGE 2: Claude Opus 4.5 Reasoning ====================
+	log.Debug().Msg("Stage 2: Claude Opus 4.5 reasoning and validation")
 
 	synthesisPrompt := s.buildSynthesisPrompt(company, rawData)
 	synthesisReq := llm.Request{
-		Model: s.synthesisCfg.Model,
-		SystemPrompt: `Você é um analista estratégico sênior especializado em inteligência competitiva.
+		Model: ModelStage2Synthesis,
+		SystemPrompt: `Você é um analista estratégico sênior com pensamento crítico rigoroso.
 
-TAREFA: Sintetizar dados brutos em análise estratégica estruturada.
+## SUA TAREFA
+Analisar dados brutos de pesquisa e produzir análise estratégica estruturada.
 
-REGRAS ABSOLUTAS:
-1. Retorne APENAS JSON válido, sem texto antes ou depois
-2. SEMPRE preencha competitors, strengths, weaknesses (NUNCA arrays vazios)
-3. Extraia insights estratégicos dos dados brutos fornecidos
-4. Se dados específicos não existirem, infira do setor/contexto
-5. Mantenha confidence_score realista baseado na qualidade dos dados`,
+## REGRAS DE VALIDAÇÃO DE DADOS
+
+Para CADA campo, aplique este raciocínio:
+
+### Dados que mudam frequentemente (notícias, funcionários, receita, funding):
+- SÓ inclua se tiver CERTEZA que é a informação mais atual
+- Se a fonte for de >6 meses atrás, marque como "dados de [data]" ou omita
+- Prefira não incluir a incluir dado desatualizado
+
+### Dados estáveis (CNPJ, fundação, sede, setor, fundadores):
+- Inclua se for verdadeiro e verificável
+- Estes raramente mudam, então fontes antigas são aceitáveis
+
+### Análises estratégicas (forças, fraquezas, concorrentes):
+- Baseie-se nos dados da pesquisa
+- Se não houver dados suficientes, infira do setor com ressalva
+- NUNCA invente - prefira "informação não disponível"
+
+## FORMATO
+Retorne APENAS JSON válido, sem texto antes ou depois.
+SEMPRE preencha competitors, strengths, weaknesses (NUNCA arrays vazios).
+Se não encontrar dados específicos, use análise do setor.`,
 		Messages:    []llm.Message{{Role: "user", Content: synthesisPrompt}},
 		Temperature: 0.3,
 		MaxTokens:   4000,
 	}
 
-	synthesisResp, err := s.llmClient.CallWithFallback(ctx, &synthesisReq, s.synthesisCfg.FallbackModel)
+	synthesisResp, err := s.llmClient.CallWithFallback(ctx, &synthesisReq, ModelStage2Fallback)
 	if err != nil {
 		log.Error().
 			Err(err).
 			Str("company_id", company.ID.String()).
-			Msg("Stage 2 (Gemini synthesis) failed")
-		return nil, fmt.Errorf("gemini synthesis failed: %w", err)
+			Msg("Stage 2 (Opus synthesis) failed")
+		return nil, fmt.Errorf("opus synthesis failed: %w", err)
 	}
 
 	// Parse synthesized response

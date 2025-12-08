@@ -146,17 +146,14 @@ func main() {
 	log.Info().Msg("Submission service initialized (with company + challenge creation)")
 
 	// Enrichment (Two-Stage Process)
-	// Stage 1: Perplexity for web search and data gathering
-	// Stage 2: Gemini 3 Pro for strategic analysis and synthesis
-	enrichSvc := enrichment.NewService(
-		llmClient,
-		cfg.Frameworks["presearch"],            // Stage 1: Perplexity
-		cfg.Frameworks["enrichment_synthesis"], // Stage 2: Gemini 3 Pro
-	)
+	// Stage 1: Perplexity sonar-pro for web search
+	// Stage 2: Claude Opus 4.5 :online for reasoning + validation
+	// Models are hardcoded in enrichment package (not configurable via env)
+	enrichSvc := enrichment.NewService(llmClient)
 	log.Info().
-		Str("stage1_model", cfg.Frameworks["presearch"].Model).
-		Str("stage2_model", cfg.Frameworks["enrichment_synthesis"].Model).
-		Msg("Enrichment service initialized (two-stage: Perplexity → Gemini 3 Pro)")
+		Str("stage1_model", enrichment.ModelStage1Search).
+		Str("stage2_model", enrichment.ModelStage2Synthesis).
+		Msg("Enrichment service initialized (two-stage: Perplexity → Opus 4.5)")
 
 	// Inject enrichment service into company service
 	companySvc.SetEnrichmentService(enrichSvc)
