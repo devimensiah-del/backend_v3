@@ -15,21 +15,27 @@ import (
 
 // RunAnalysis executes the "Strategic Cascade" for a specific challenge.
 //
+// EXECUTION MODE: Direct Analysis Mode
+// - Maximum parallel execution respecting layer dependencies
+// - Frameworks run in parallel WITHIN each layer
+// - Layers execute sequentially (Layer 1 → Layer 2 → Layer 3 → Layer 3.5 → Layer 4 → Synthesis)
+//
+// For human-in-the-loop workflows, use wizard mode (WizardService):
+// - Fully sequential step-by-step execution with human approval at each framework
+// - "Add context → regenerate" refinement pattern
+// - Full audit trail via versioning
+//
 // Parameters:
 // - submissionID: Historical reference to the originating submission
 // - companyID: The company being analyzed
 // - challengeID: REQUIRED - The specific business challenge this analysis addresses
-//
-// The wizard mode (WizardService) is recommended for human-in-the-loop workflows:
-// - Step-by-step execution with human approval at each framework
-// - "Add context → regenerate" refinement pattern
-// - Full audit trail via versioning
 func (s *Service) RunAnalysis(ctx context.Context, submissionID, companyID string, challengeID uuid.UUID) (*Analysis, error) {
 	startTime := time.Now()
 	s.logger.Info().
 		Str("sub_id", submissionID).
 		Str("challenge_id", challengeID.String()).
-		Msg("Starting Strategic Cascade Analysis")
+		Str("execution_mode", "DIRECT_ANALYSIS").
+		Msg("Starting Strategic Cascade Analysis - Direct Analysis Mode (Parallel within layers)")
 
 	// Validate challenge_id is not nil
 	if challengeID == uuid.Nil {
@@ -89,121 +95,208 @@ func (s *Service) RunAnalysis(ctx context.Context, submissionID, companyID strin
 
 	// ========================================================================
 	// LAYER 1: THE ENVIRONMENT (Macro + Industry)
+	// Fully parallel execution - no dependencies between frameworks
 	// ========================================================================
 	s.runLayer("Layer 1: Environment", func(wg *sync.WaitGroup) {
 		s.exec(wg, func() {
+			frameworkStart := time.Now()
+			s.logger.Info().Str("framework", "PESTEL").Msg("⚡ PESTEL started")
 			var err error
 			knowledge.PESTEL, err = s.runPESTEL(ctx, knowledge)
 			if err != nil {
 				s.logger.Error().Err(err).Msg("❌ PESTEL failed")
+			} else {
+				s.logger.Info().
+					Str("framework", "PESTEL").
+					Int64("duration_ms", time.Since(frameworkStart).Milliseconds()).
+					Msg("✅ PESTEL completed")
 			}
 		})
 		s.exec(wg, func() {
+			frameworkStart := time.Now()
+			s.logger.Info().Str("framework", "Porter").Msg("⚡ Porter started")
 			var err error
 			knowledge.Porter, err = s.runPorter(ctx, knowledge)
 			if err != nil {
 				s.logger.Error().Err(err).Msg("❌ Porter failed")
+			} else {
+				s.logger.Info().
+					Str("framework", "Porter").
+					Int64("duration_ms", time.Since(frameworkStart).Milliseconds()).
+					Msg("✅ Porter completed")
 			}
 		})
 		s.exec(wg, func() {
+			frameworkStart := time.Now()
+			s.logger.Info().Str("framework", "TAM-SAM-SOM").Msg("⚡ TAM-SAM-SOM started")
 			var err error
 			knowledge.TamSamSom, err = s.runTamSamSom(ctx, knowledge)
 			if err != nil {
 				s.logger.Error().Err(err).Msg("❌ TAM-SAM-SOM failed")
+			} else {
+				s.logger.Info().
+					Str("framework", "TAM-SAM-SOM").
+					Int64("duration_ms", time.Since(frameworkStart).Milliseconds()).
+					Msg("✅ TAM-SAM-SOM completed")
 			}
 		})
 	})
-	s.logger.Debug().Str("analysis_id", analysis.ID).Msg("Layer 2: Starting Positioning analysis")
+	s.logger.Debug().Str("analysis_id", analysis.ID).Msg("Layer 1 checkpoint: Saving progress")
 	s.saveCheckpoint(ctx, analysis, knowledge, string(StatusPending))
 
 	// ========================================================================
 	// LAYER 2: POSITIONING (Internal Fit)
+	// Parallel within layer - both frameworks can run simultaneously
+	// Dependencies: SWOT needs Layer 1 (PESTEL + Porter), Benchmarking needs Layer 1 (TAM-SAM-SOM)
 	// ========================================================================
 	s.runLayer("Layer 2: Positioning", func(wg *sync.WaitGroup) {
 		s.exec(wg, func() {
+			frameworkStart := time.Now()
+			s.logger.Info().Str("framework", "SWOT").Msg("⚡ SWOT started")
 			var err error
 			knowledge.SWOT, err = s.runSWOT(ctx, knowledge)
 			if err != nil {
 				s.logger.Error().Err(err).Msg("❌ SWOT failed")
+			} else {
+				s.logger.Info().
+					Str("framework", "SWOT").
+					Int64("duration_ms", time.Since(frameworkStart).Milliseconds()).
+					Msg("✅ SWOT completed")
 			}
 		})
 		s.exec(wg, func() {
+			frameworkStart := time.Now()
+			s.logger.Info().Str("framework", "Benchmarking").Msg("⚡ Benchmarking started")
 			var err error
 			knowledge.Benchmarking, err = s.runBenchmarking(ctx, knowledge)
 			if err != nil {
 				s.logger.Error().Err(err).Msg("❌ Benchmarking failed")
+			} else {
+				s.logger.Info().
+					Str("framework", "Benchmarking").
+					Int64("duration_ms", time.Since(frameworkStart).Milliseconds()).
+					Msg("✅ Benchmarking completed")
 			}
 		})
 	})
-	s.logger.Debug().Str("analysis_id", analysis.ID).Msg("Layer 3: Starting Strategy analysis")
+	s.logger.Debug().Str("analysis_id", analysis.ID).Msg("Layer 2 checkpoint: Saving progress")
 	s.saveCheckpoint(ctx, analysis, knowledge, string(StatusPending))
 
 	// ========================================================================
 	// LAYER 3: STRATEGY (Direction)
+	// Parallel within layer - all three frameworks can run simultaneously
+	// Dependencies: All need Layer 1 outputs
+	// NOTE: Could potentially optimize by starting Scenarios and BlueOcean immediately after Layer 1
 	// ========================================================================
 	s.runLayer("Layer 3: Strategy", func(wg *sync.WaitGroup) {
 		s.exec(wg, func() {
+			frameworkStart := time.Now()
+			s.logger.Info().Str("framework", "BlueOcean").Msg("⚡ BlueOcean started")
 			var err error
 			knowledge.BlueOcean, err = s.runBlueOcean(ctx, knowledge)
 			if err != nil {
 				s.logger.Error().Err(err).Msg("❌ BlueOcean failed")
+			} else {
+				s.logger.Info().
+					Str("framework", "BlueOcean").
+					Int64("duration_ms", time.Since(frameworkStart).Milliseconds()).
+					Msg("✅ BlueOcean completed")
 			}
 		})
 		s.exec(wg, func() {
+			frameworkStart := time.Now()
+			s.logger.Info().Str("framework", "GrowthHacking").Msg("⚡ GrowthHacking started")
 			var err error
 			knowledge.GrowthHacking, err = s.runGrowthHacking(ctx, knowledge)
 			if err != nil {
 				s.logger.Error().Err(err).Msg("❌ GrowthHacking failed")
+			} else {
+				s.logger.Info().
+					Str("framework", "GrowthHacking").
+					Int64("duration_ms", time.Since(frameworkStart).Milliseconds()).
+					Msg("✅ GrowthHacking completed")
 			}
 		})
 		s.exec(wg, func() {
+			frameworkStart := time.Now()
+			s.logger.Info().Str("framework", "Scenarios").Msg("⚡ Scenarios started")
 			var err error
 			knowledge.Scenarios, err = s.runScenarios(ctx, knowledge)
 			if err != nil {
 				s.logger.Error().Err(err).Msg("❌ Scenarios failed")
+			} else {
+				s.logger.Info().
+					Str("framework", "Scenarios").
+					Int64("duration_ms", time.Since(frameworkStart).Milliseconds()).
+					Msg("✅ Scenarios completed")
 			}
 		})
 	})
-	s.logger.Debug().Str("analysis_id", analysis.ID).Msg("Layer 3.5: Starting Decision Making analysis")
+	s.logger.Debug().Str("analysis_id", analysis.ID).Msg("Layer 3 checkpoint: Saving progress")
 	s.saveCheckpoint(ctx, analysis, knowledge, string(StatusPending))
 
 	// ========================================================================
 	// LAYER 3.5: DECISION MAKING (Priority Recommendations)
 	// CRITICAL: Decision Matrix MUST run before OKRs so OKRs can align with recommendations
+	// Single framework - sequential execution
+	// Dependencies: Needs Layer 3 (Scenarios)
 	// ========================================================================
 	s.runLayer("Layer 3.5: Decision Making", func(wg *sync.WaitGroup) {
 		s.exec(wg, func() {
+			frameworkStart := time.Now()
+			s.logger.Info().Str("framework", "DecisionMatrix").Msg("⚡ DecisionMatrix started")
 			var err error
 			knowledge.DecisionMatrix, err = s.runDecisionMatrix(ctx, knowledge)
 			if err != nil {
 				s.logger.Error().Err(err).Msg("❌ DecisionMatrix failed")
+			} else {
+				s.logger.Info().
+					Str("framework", "DecisionMatrix").
+					Int64("duration_ms", time.Since(frameworkStart).Milliseconds()).
+					Msg("✅ DecisionMatrix completed")
 			}
 		})
 	})
-	s.logger.Debug().Str("analysis_id", analysis.ID).Msg("Layer 4: Starting Execution analysis")
+	s.logger.Debug().Str("analysis_id", analysis.ID).Msg("Layer 3.5 checkpoint: Saving progress")
 	s.saveCheckpoint(ctx, analysis, knowledge, string(StatusPending))
 
 	// ========================================================================
 	// LAYER 4: EXECUTION (Roadmap)
+	// Parallel within layer - both frameworks can run simultaneously
 	// OKRs now have access to Decision Matrix recommendations for alignment
+	// Dependencies: Both need Layer 3.5 (DecisionMatrix)
 	// ========================================================================
 	s.runLayer("Layer 4: Execution", func(wg *sync.WaitGroup) {
 		s.exec(wg, func() {
+			frameworkStart := time.Now()
+			s.logger.Info().Str("framework", "OKRs").Msg("⚡ OKRs started")
 			var err error
 			knowledge.OKRs, err = s.runOKRs(ctx, knowledge)
 			if err != nil {
 				s.logger.Error().Err(err).Msg("❌ OKRs failed")
+			} else {
+				s.logger.Info().
+					Str("framework", "OKRs").
+					Int64("duration_ms", time.Since(frameworkStart).Milliseconds()).
+					Msg("✅ OKRs completed")
 			}
 		})
 		s.exec(wg, func() {
+			frameworkStart := time.Now()
+			s.logger.Info().Str("framework", "BSC").Msg("⚡ BSC started")
 			var err error
 			knowledge.BSC, err = s.runBSC(ctx, knowledge)
 			if err != nil {
 				s.logger.Error().Err(err).Msg("❌ BSC failed")
+			} else {
+				s.logger.Info().
+					Str("framework", "BSC").
+					Int64("duration_ms", time.Since(frameworkStart).Milliseconds()).
+					Msg("✅ BSC completed")
 			}
 		})
 	})
-	s.logger.Debug().Str("analysis_id", analysis.ID).Msg("Starting final synthesis")
+	s.logger.Debug().Str("analysis_id", analysis.ID).Msg("Layer 4 checkpoint: Saving progress")
 	s.saveCheckpoint(ctx, analysis, knowledge, string(StatusPending)) // Still pending until completed
 
 	// ========================================================================
@@ -227,11 +320,19 @@ func (s *Service) RunAnalysis(ctx context.Context, submissionID, companyID strin
 
 	// ========================================================================
 	// FINAL SYNTHESIS (The Senior Partner)
-	// ========================================================================
 	// Uses the Premium Model (s.synthesisModel)
+	// Dependencies: Requires all framework summaries
+	// ========================================================================
+	synthesisStart := time.Now()
+	s.logger.Info().Str("framework", "Synthesis").Msg("⚡ Synthesis started - using premium model")
 	synthesis, err := s.runSynthesis(ctx, knowledge)
 	if err != nil {
 		s.logger.Error().Err(err).Msg("❌ Synthesis failed")
+	} else {
+		s.logger.Info().
+			Str("framework", "Synthesis").
+			Int64("duration_ms", time.Since(synthesisStart).Milliseconds()).
+			Msg("✅ Synthesis completed")
 	}
 	if err := analysis.SetFramework(FrameworkSynthesis, synthesis); err != nil {
 		s.logger.Error().Err(err).Msg("Failed to set synthesis framework")
@@ -260,19 +361,37 @@ func (s *Service) RunAnalysis(ctx context.Context, submissionID, companyID strin
 }
 
 // =================================================================================
-// MECHANICS
+// MECHANICS - Parallel Execution Within Layers
 // =================================================================================
 
+// runLayer executes all frameworks in a layer in parallel
+// Uses sync.WaitGroup to ensure all parallel tasks complete before proceeding to next layer
 func (s *Service) runLayer(name string, tasks func(*sync.WaitGroup)) {
-	s.logger.Info().Msg("Starting " + name)
+	layerStart := time.Now()
+	s.logger.Info().
+		Str("layer", name).
+		Msg("🚀 Layer started - frameworks will run in PARALLEL")
+
 	var wg sync.WaitGroup
 	tasks(&wg)
 	wg.Wait()
+
+	layerDuration := time.Since(layerStart)
+	s.logger.Info().
+		Str("layer", name).
+		Int64("duration_ms", layerDuration.Milliseconds()).
+		Float64("duration_seconds", layerDuration.Seconds()).
+		Msg("✅ Layer completed - all parallel frameworks finished")
 }
 
+// exec spawns a single framework task in a goroutine
+// Increments WaitGroup counter before launching, decrements when done
 func (s *Service) exec(wg *sync.WaitGroup, task func()) {
 	wg.Add(1)
-	go func() { defer wg.Done(); task() }()
+	go func() {
+		defer wg.Done()
+		task()
+	}()
 }
 
 func (s *Service) startAnalysisRecord(ctx context.Context, challengeID uuid.UUID, companyID *string) (*Analysis, error) {
@@ -425,7 +544,12 @@ func (s *Service) saveCheckpoint(ctx context.Context, a *Analysis, k *ContextCon
 func (s *Service) markAsComplete(ctx context.Context, a *Analysis, startTime time.Time) {
 	a.Status = string(StatusCompleted)
 	now := time.Now()
-	s.logger.Info().Int64("processing_time_ms", time.Since(startTime).Milliseconds()).Msg("Analysis processing completed")
+	totalDuration := time.Since(startTime)
+	s.logger.Info().
+		Int64("total_processing_time_ms", totalDuration.Milliseconds()).
+		Float64("total_processing_time_seconds", totalDuration.Seconds()).
+		Float64("total_processing_time_minutes", totalDuration.Minutes()).
+		Msg("🎉 Analysis processing COMPLETED - all frameworks finished")
 	a.CompletedAt = &now
 	s.repo.Update(ctx, a)
 
