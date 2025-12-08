@@ -3,49 +3,88 @@
 ## Purpose
 Executes 11 strategic analysis frameworks using enrichment data, producing comprehensive business intelligence. Supports both batch execution and step-by-step wizard mode for human-in-the-loop validation.
 
-## Data Flow (Strategic Cascade)
+## Execution Modes
+
+### 1. Direct Analysis Mode (Default)
+**File**: `workflow.go` → `RunAnalysis()`
+
+**Execution Strategy**: Maximum parallel execution respecting layer dependencies
+- **Parallel execution WITHIN layers**: All frameworks in a layer run concurrently using goroutines
+- **Sequential execution BETWEEN layers**: Each layer waits for all parallel tasks before proceeding
+- **Checkpoint saves**: After each layer for crash recovery
+
+**Performance**:
+- Layer 1 (3 frameworks): ~60-90s total (fastest framework wins, not 3x60s)
+- Layer 2 (2 frameworks): ~60-90s total
+- Layer 3 (3 frameworks): ~60-90s total
+- Layer 3.5 (1 framework): ~60-90s
+- Layer 4 (2 frameworks): ~60-90s total
+- Synthesis: ~60-90s
+- **Total**: ~6-9 minutes (NOT 11x60s = 11 minutes)
+
+**When to use**: Background batch processing, API-triggered analysis, automated workflows
+
+### 2. Wizard Mode (Human-in-the-loop)
+**File**: `wizard/service.go` → `WizardService`
+
+**Execution Strategy**: Fully sequential with human approval gates
+- **Step-by-step**: One framework at a time, wait for human review
+- **Refinement pattern**: "Add context → regenerate" (no direct edits)
+- **Versioning**: Each refinement creates audit trail snapshot
+- **No going back**: Once approved, step cannot be regenerated
+
+**Performance**:
+- 12 total steps (11 frameworks + synthesis)
+- Each step: ~60-90s LLM generation + human review time
+- **Total**: Depends on human review speed (hours to days)
+
+**When to use**: High-value analyses, expert validation, learning mode
+
+## Data Flow (Strategic Cascade - Direct Analysis Mode)
 ```
 Background Worker                    Domain                         LLM
       │                                │                              │
       ├── Process job ────────────────►│                              │
       │                                │                              │
       │    ┌───────────────────────────┴──────────────────────────┐   │
-      │    │              LAYER 1: ENVIRONMENT (parallel)         │   │
+      │    │     LAYER 1: ENVIRONMENT (3 frameworks in PARALLEL)  │   │
       │    │  ┌─────────┐  ┌────────┐  ┌─────────────┐           │   │
-      │    │  │ PESTEL  │  │ Porter │  │ TAM-SAM-SOM │ ─────────────►│
+      │    │  │ PESTEL  │  │ Porter │  │ TAM-SAM-SOM │ ──────────┬───►│
+      │    │  │ 60-90s  │  │ 60-90s │  │   60-90s    │           │   │
       │    │  └─────────┘  └────────┘  └─────────────┘           │   │
+      │    │  Layer duration: max(60-90s), NOT sum(180-270s)     │   │
       │    └──────────────────────────────────────────────────────┘   │
       │                                │                              │
       │    ┌───────────────────────────┴──────────────────────────┐   │
-      │    │              LAYER 2: POSITIONING (parallel)         │   │
+      │    │    LAYER 2: POSITIONING (2 frameworks in PARALLEL)   │   │
       │    │  ┌──────┐  ┌──────────────┐                          │   │
       │    │  │ SWOT │  │ Benchmarking │ ────────────────────────────►│
       │    │  └──────┘  └──────────────┘                          │   │
       │    └──────────────────────────────────────────────────────┘   │
       │                                │                              │
       │    ┌───────────────────────────┴──────────────────────────┐   │
-      │    │              LAYER 3: STRATEGY (parallel)            │   │
+      │    │     LAYER 3: STRATEGY (3 frameworks in PARALLEL)     │   │
       │    │  ┌────────────┐  ┌───────────────┐  ┌───────────┐   │   │
       │    │  │ Blue Ocean │  │ Growth Hacking│  │ Scenarios │ ─────►│
       │    │  └────────────┘  └───────────────┘  └───────────┘   │   │
       │    └──────────────────────────────────────────────────────┘   │
       │                                │                              │
       │    ┌───────────────────────────┴──────────────────────────┐   │
-      │    │              LAYER 3.5: DECISION (sequential)        │   │
+      │    │     LAYER 3.5: DECISION (1 framework, sequential)    │   │
       │    │  ┌─────────────────┐                                 │   │
       │    │  │ Decision Matrix │ ──────────────────────────────────►│
       │    │  └─────────────────┘                                 │   │
       │    └──────────────────────────────────────────────────────┘   │
       │                                │                              │
       │    ┌───────────────────────────┴──────────────────────────┐   │
-      │    │              LAYER 4: EXECUTION (parallel)           │   │
+      │    │    LAYER 4: EXECUTION (2 frameworks in PARALLEL)     │   │
       │    │  ┌──────┐  ┌─────┐                                   │   │
       │    │  │ OKRs │  │ BSC │ ────────────────────────────────────►│
       │    │  └──────┘  └─────┘                                   │   │
       │    └──────────────────────────────────────────────────────┘   │
       │                                │                              │
       │    ┌───────────────────────────┴──────────────────────────┐   │
-      │    │              SYNTHESIS (premium model)               │   │
+      │    │         SYNTHESIS (premium model, sequential)        │   │
       │    │  ┌───────────────────────────────────────────────┐   │   │
       │    │  │ Executive Summary + Cross-Framework Validation │──────►│
       │    │  └───────────────────────────────────────────────┘   │   │
@@ -53,6 +92,26 @@ Background Worker                    Domain                         LLM
       │                                │                              │
       │◄── Analysis complete ──────────┤                              │
 ```
+
+## Performance Characteristics
+
+**Bottleneck**: LLM response streaming (30-90s per call), NOT Go execution
+- Go goroutine overhead: <1ms
+- Database checkpoint saves: ~10-50ms
+- LLM API calls: 30,000-90,000ms (99.9%+ of total time)
+
+**Parallel execution benefit**:
+- Layer 1: 3 frameworks in parallel = ~60-90s (vs 180-270s sequential)
+- Layer 2: 2 frameworks in parallel = ~60-90s (vs 120-180s sequential)
+- Layer 3: 3 frameworks in parallel = ~60-90s (vs 180-270s sequential)
+- Layer 4: 2 frameworks in parallel = ~60-90s (vs 120-180s sequential)
+- **Total savings**: ~3-5 minutes compared to fully sequential execution
+
+**Why not more parallelization?**
+- Layer dependencies prevent cross-layer parallelization (SWOT needs PESTEL+Porter)
+- Some frameworks could theoretically run earlier (Scenarios only needs PESTEL from Layer 1)
+- Current layer-by-layer approach prioritizes simplicity and maintainability
+- Future optimization: Dependency graph approach (see "Potential Optimizations" below)
 
 ## Business Rules (INVARIANTS)
 
@@ -206,25 +265,95 @@ analysis.HasFramework("swot")
 | `is_public` | Accessible via access code without login |
 | `access_code` | Shareable link for public access |
 
+## Detailed Timing Logs
+
+The workflow now includes comprehensive timing metrics for performance analysis:
+
+### Log Levels and Output
+```
+INFO: Starting Strategic Cascade Analysis - Direct Analysis Mode (Parallel within layers)
+INFO: 🚀 Layer started - frameworks will run in PARALLEL | layer="Layer 1: Environment"
+INFO: ⚡ PESTEL started | framework="PESTEL"
+INFO: ⚡ Porter started | framework="Porter"
+INFO: ⚡ TAM-SAM-SOM started | framework="TAM-SAM-SOM"
+INFO: ✅ PESTEL completed | framework="PESTEL" duration_ms=65432
+INFO: ✅ Porter completed | framework="Porter" duration_ms=72156
+INFO: ✅ TAM-SAM-SOM completed | framework="TAM-SAM-SOM" duration_ms=58921
+INFO: ✅ Layer completed - all parallel frameworks finished | layer="Layer 1: Environment" duration_ms=72156 duration_seconds=72.156
+```
+
+### Metrics Captured
+- **Per-framework timing**: Individual LLM call duration
+- **Per-layer timing**: Total layer duration (max of parallel tasks)
+- **Total analysis timing**: End-to-end processing time
+- **Execution mode**: Direct Analysis vs Wizard Mode identification
+
+### Using Logs for Optimization
+1. Check which frameworks are slowest (bottleneck identification)
+2. Verify parallel execution is working (layer time ≈ max(framework times), not sum)
+3. Identify if LLM API is rate-limiting (unusually long durations)
+4. Track total processing time trends over multiple runs
+
+## Potential Optimizations
+
+### 1. Dependency Graph Approach
+**Current**: Layer-by-layer execution (5 sequential stages)
+**Proposed**: Framework-level dependency graph
+
+```
+Layer 1 (parallel):
+  PESTEL, Porter, TAM-SAM-SOM
+
+After PESTEL+Porter complete → Start SWOT
+After TAM-SAM-SOM complete → Start Benchmarking
+After Porter complete → Start BlueOcean
+After PESTEL complete → Start Scenarios
+After SWOT+TAM-SAM-SOM complete → Start GrowthHacking
+After Scenarios complete → Start DecisionMatrix
+After DecisionMatrix complete → Start OKRs, BSC
+After all complete → Start Synthesis
+```
+
+**Benefit**: Could save 1-2 minutes by not waiting for full layer completion
+**Complexity**: Higher code complexity, harder to reason about, more error-prone
+**Recommendation**: Current layer approach is good balance of simplicity vs performance
+
+### 2. LLM Request Batching
+**Current**: Individual LLM calls per framework
+**Proposed**: Batch multiple frameworks in single LLM request
+**Benefit**: Reduce network round-trips
+**Downside**: Longer timeout windows, all-or-nothing failure mode
+**Recommendation**: Not worth the trade-offs for streaming responses
+
+### 3. Caching Layer
+**Proposed**: Cache framework results for repeated company+challenge combinations
+**Benefit**: Near-instant re-analysis
+**Downside**: Cache invalidation complexity, stale data risk
+**Recommendation**: Consider for high-traffic scenarios
+
 ## Related Domains
 - **Enrichment**: Source data for all frameworks
 - **Submission**: Parent entity (via enrichment)
 - **Company**: Linked for company-centric views
 - **Framework**: Dynamic framework configuration (v2+)
+- **Wizard**: Human-in-the-loop execution mode
 
 ## AI Agent Warnings
 
 ### DO NOT
-- Change layer execution order
-- Remove Decision Matrix → OKRs dependency
-- Skip validation at the end (critical frameworks check)
-- Remove checkpoint saves (needed for recovery)
-- Change the 4-layer architecture
-- Use individual framework columns (deprecated)
+- Change layer execution order (breaks dependencies)
+- Remove Decision Matrix → OKRs dependency (OKRs need recommendations)
+- Skip validation at the end (critical frameworks check prevents incomplete reports)
+- Remove checkpoint saves (needed for crash recovery)
+- Change the 4-layer architecture (well-tested and battle-hardened)
+- Use individual framework columns (deprecated - use framework_results JSONB)
+- Break parallel execution within layers (performance regression)
 
 ### SAFE TO MODIFY
-- Add new frameworks (follow layer pattern)
-- Modify individual framework prompts
-- Adjust parallel execution within layers
-- Add new fields to framework outputs
-- Extend wizard mode functionality
+- Add new frameworks (follow layer pattern, update dependencies)
+- Modify individual framework prompts (via llm/prompts.go)
+- Adjust parallel execution within layers (maintain sync.WaitGroup pattern)
+- Add new fields to framework outputs (update model structs)
+- Extend wizard mode functionality (preserve versioning and forward-only progression)
+- Add more detailed timing logs (help identify bottlenecks)
+- Implement dependency graph optimization (advanced - requires careful testing)
