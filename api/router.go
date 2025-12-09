@@ -246,11 +246,11 @@ func SetupRouter(
 		// Company management (admin)
 		adminAPI.GET("/companies", mainHandler.CompanyHandlers.ListAllCompanies)
 		adminAPI.GET("/companies/:id", mainHandler.CompanyHandlers.GetCompanyAdmin)
+		adminAPI.PUT("/companies/:id", mainHandler.CompanyHandlers.UpdateCompanyAdmin)
 		adminAPI.POST("/companies/:id/re-analyze", mainHandler.CompanyHandlers.ReAnalyzeCompany)
 		adminAPI.POST("/companies/:id/retry-enrichment", mainHandler.CompanyHandlers.RetryEnrichment)
 		adminAPI.POST("/companies/:id/re-enrich", mainHandler.CompanyHandlers.ReEnrichCompany)
 		adminAPI.POST("/challenges/:id/analyze", mainHandler.CompanyHandlers.AnalyzeChallenge)
-		// NOTE: PUT /companies/:id removed - edit company in Supabase directly
 		// NOTE: Multi-user management removed - manage allowed_users in Supabase directly
 	}
 

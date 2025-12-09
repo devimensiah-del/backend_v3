@@ -163,6 +163,28 @@ func (s *Service) GetByID(ctx context.Context, id uuid.UUID) (*Company, error) {
 	return s.repo.GetByID(ctx, id)
 }
 
+// Update updates an existing company with the provided fields
+func (s *Service) Update(ctx context.Context, company *Company) error {
+	s.logger.Info().
+		Str("company_id", company.ID.String()).
+		Str("company_name", company.Name).
+		Msg("Updating company")
+
+	if err := s.repo.Update(ctx, company); err != nil {
+		s.logger.Error().
+			Err(err).
+			Str("company_id", company.ID.String()).
+			Msg("Failed to update company")
+		return fmt.Errorf("failed to update company: %w", err)
+	}
+
+	s.logger.Info().
+		Str("company_id", company.ID.String()).
+		Msg("Company updated successfully")
+
+	return nil
+}
+
 // Delete removes a company (hard delete for saga rollback)
 // This should only be used during saga rollback - not for normal operations
 func (s *Service) Delete(ctx context.Context, id uuid.UUID) error {

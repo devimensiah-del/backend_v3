@@ -398,7 +398,254 @@ func (h *CompanyHandlers) ListAllCompanies(c *gin.Context) {
 	})
 }
 
-// NOTE: UpdateCompany and UpdateCompanyUser removed - edit company in Supabase directly
+// UpdateCompanyRequest contains the fields to update
+type UpdateCompanyRequest struct {
+	Fields map[string]interface{} `json:"fields"`
+}
+
+// UpdateCompanyAdmin handles PUT /api/v1/admin/companies/:id
+// Updates company fields - admin only
+func (h *CompanyHandlers) UpdateCompanyAdmin(c *gin.Context) {
+	companyID := c.Param("id")
+
+	companyUUID, err := uuid.Parse(companyID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
+		return
+	}
+
+	// Parse request body
+	var req UpdateCompanyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request", Message: err.Error()})
+		return
+	}
+
+	if len(req.Fields) == 0 {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "No fields", Message: "No fields provided for update"})
+		return
+	}
+
+	// Get existing company
+	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
+	if err != nil {
+		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to get company")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Database error", Message: "Failed to retrieve company"})
+		return
+	}
+	if comp == nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Company not found"})
+		return
+	}
+
+	// Check access (admin only)
+	if !h.checkCompanyAccess(c, comp) {
+		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Access denied - admin only"})
+		return
+	}
+
+	// Apply field updates
+	h.applyCompanyFields(comp, req.Fields)
+
+	// Save
+	if err := h.CompanyService.Update(c.Request.Context(), comp); err != nil {
+		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to update company")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Update failed", Message: err.Error()})
+		return
+	}
+
+	h.Logger.Info().
+		Str("company_id", companyID).
+		Int("fields_updated", len(req.Fields)).
+		Msg("Company updated by admin")
+
+	c.JSON(http.StatusOK, gin.H{"company": comp})
+}
+
+// applyCompanyFields applies a map of field updates to a company
+func (h *CompanyHandlers) applyCompanyFields(comp *company.Company, fields map[string]interface{}) {
+	for key, val := range fields {
+		switch key {
+		case "name":
+			if v, ok := val.(string); ok {
+				comp.Name = v
+			}
+		case "cnpj":
+			if v, ok := val.(string); ok {
+				comp.CNPJ = &v
+			}
+		case "website":
+			if v, ok := val.(string); ok {
+				comp.Website = &v
+			}
+		case "industry":
+			if v, ok := val.(string); ok {
+				comp.Industry = &v
+			}
+		case "company_size":
+			if v, ok := val.(string); ok {
+				comp.CompanySize = &v
+			}
+		case "location":
+			if v, ok := val.(string); ok {
+				comp.Location = &v
+			}
+		case "target_market":
+			if v, ok := val.(string); ok {
+				comp.TargetMarket = &v
+			}
+		case "funding_stage":
+			if v, ok := val.(string); ok {
+				comp.FundingStage = &v
+			}
+		case "foundation_year":
+			if v, ok := val.(string); ok {
+				comp.FoundationYear = &v
+			} else if v, ok := val.(float64); ok {
+				year := fmt.Sprintf("%d", int(v))
+				comp.FoundationYear = &year
+			}
+		case "legal_name":
+			if v, ok := val.(string); ok {
+				comp.LegalName = &v
+			}
+		case "headquarters":
+			if v, ok := val.(string); ok {
+				comp.Headquarters = &v
+			}
+		case "sector":
+			if v, ok := val.(string); ok {
+				comp.Sector = &v
+			}
+		case "target_audience":
+			if v, ok := val.(string); ok {
+				comp.TargetAudience = &v
+			}
+		case "value_proposition":
+			if v, ok := val.(string); ok {
+				comp.ValueProposition = &v
+			}
+		case "employees_range":
+			if v, ok := val.(string); ok {
+				comp.EmployeesRange = &v
+			}
+		case "revenue_estimate":
+			if v, ok := val.(string); ok {
+				comp.RevenueEstimate = &v
+			}
+		case "business_model":
+			if v, ok := val.(string); ok {
+				comp.BusinessModel = &v
+			}
+		case "market_share_status":
+			if v, ok := val.(string); ok {
+				comp.MarketShareStatus = &v
+			}
+		case "digital_maturity":
+			if v, ok := val.(float64); ok {
+				maturity := int(v)
+				comp.DigitalMaturity = &maturity
+			}
+		case "competitive_advantage":
+			if v, ok := val.(string); ok {
+				comp.CompetitiveAdvantage = &v
+			}
+		case "market_share":
+			if v, ok := val.(string); ok {
+				comp.MarketShare = &v
+			}
+		case "tam_estimate":
+			if v, ok := val.(string); ok {
+				comp.TAMEstimate = &v
+			}
+		case "sam_estimate":
+			if v, ok := val.(string); ok {
+				comp.SAMEstimate = &v
+			}
+		case "som_estimate":
+			if v, ok := val.(string); ok {
+				comp.SOMEstimate = &v
+			}
+		case "company_history":
+			if v, ok := val.(string); ok {
+				comp.CompanyHistory = &v
+			}
+		case "pricing_model":
+			if v, ok := val.(string); ok {
+				comp.PricingModel = &v
+			}
+		case "industry_growth_rate":
+			if v, ok := val.(string); ok {
+				comp.IndustryGrowthRate = &v
+			}
+		case "regulatory_context":
+			if v, ok := val.(string); ok {
+				comp.RegulatoryContext = &v
+			}
+		case "market_concentration":
+			if v, ok := val.(string); ok {
+				comp.MarketConcentration = &v
+			}
+		case "linkedin_url":
+			if v, ok := val.(string); ok {
+				comp.LinkedInURL = &v
+			}
+		case "twitter_handle":
+			if v, ok := val.(string); ok {
+				comp.TwitterHandle = &v
+			}
+		// Array fields - convert from []interface{} to []string
+		case "competitors":
+			comp.Competitors = toStringSlice(val)
+		case "strengths":
+			comp.Strengths = toStringSlice(val)
+		case "weaknesses":
+			comp.Weaknesses = toStringSlice(val)
+		case "main_products":
+			comp.MainProducts = toStringSlice(val)
+		case "customer_segments":
+			comp.CustomerSegments = toStringSlice(val)
+		case "unique_selling_points":
+			comp.UniqueSellingPoints = toStringSlice(val)
+		case "recent_news":
+			comp.RecentNews = toStringSlice(val)
+		case "key_executives":
+			comp.KeyExecutives = toStringSlice(val)
+		case "opportunities":
+			comp.Opportunities = toStringSlice(val)
+		case "threats":
+			comp.Threats = toStringSlice(val)
+		case "strategic_challenges":
+			comp.StrategicChallenges = toStringSlice(val)
+		case "competitor_details":
+			comp.CompetitorDetails = toStringSlice(val)
+		case "industry_trends":
+			comp.IndustryTrends = toStringSlice(val)
+		case "enrichment_sources":
+			comp.EnrichmentSources = toStringSlice(val)
+		}
+	}
+}
+
+// toStringSlice converts an interface{} (typically []interface{}) to []string
+func toStringSlice(val interface{}) []string {
+	if val == nil {
+		return nil
+	}
+	if arr, ok := val.([]interface{}); ok {
+		result := make([]string, 0, len(arr))
+		for _, item := range arr {
+			if s, ok := item.(string); ok {
+				result = append(result, s)
+			}
+		}
+		return result
+	}
+	if arr, ok := val.([]string); ok {
+		return arr
+	}
+	return nil
+}
 
 // ========================================================================
 // ADMIN HANDLERS - RE-ANALYSIS WORKFLOW
