@@ -112,9 +112,17 @@ func convertCompanyToAnalysisData(comp *company.Company) *analysis.AnalysisCompa
 		BusinessModel:     comp.BusinessModel,
 		MarketShareStatus: comp.MarketShareStatus,
 		DigitalMaturity:   comp.DigitalMaturity,
+		// Enrichment v3 scalar fields
+		PricingModel:         comp.PricingModel,
+		CompanyHistory:       comp.CompanyHistory,
+		CompetitiveAdvantage: comp.CompetitiveAdvantage,
+		MarketShare:          comp.MarketShare,
+		TAMEstimate:          comp.TAMEstimate,
+		SAMEstimate:          comp.SAMEstimate,
+		SOMEstimate:          comp.SOMEstimate,
 	}
 
-	// Convert slices
+	// Convert slices (original fields)
 	if comp.Competitors != nil {
 		result.Competitors = []string(comp.Competitors)
 	}
@@ -123,6 +131,35 @@ func convertCompanyToAnalysisData(comp *company.Company) *analysis.AnalysisCompa
 	}
 	if comp.Weaknesses != nil {
 		result.Weaknesses = []string(comp.Weaknesses)
+	}
+
+	// Convert slices (v3 enrichment fields)
+	if comp.MainProducts != nil {
+		result.MainProducts = []string(comp.MainProducts)
+	}
+	if comp.CustomerSegments != nil {
+		result.CustomerSegments = []string(comp.CustomerSegments)
+	}
+	if comp.UniqueSellingPoints != nil {
+		result.UniqueSellingPoints = []string(comp.UniqueSellingPoints)
+	}
+	if comp.RecentNews != nil {
+		result.RecentNews = []string(comp.RecentNews)
+	}
+	if comp.KeyExecutives != nil {
+		result.KeyExecutives = []string(comp.KeyExecutives)
+	}
+	if comp.Opportunities != nil {
+		result.Opportunities = []string(comp.Opportunities)
+	}
+	if comp.Threats != nil {
+		result.Threats = []string(comp.Threats)
+	}
+	if comp.StrategicChallenges != nil {
+		result.StrategicChallenges = []string(comp.StrategicChallenges)
+	}
+	if comp.CompetitorDetails != nil {
+		result.CompetitorDetails = []string(comp.CompetitorDetails)
 	}
 
 	return result

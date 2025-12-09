@@ -53,6 +53,24 @@ type AnalysisCompanyData struct {
 	Strengths         []string               `json:"strengths,omitempty"`
 	Weaknesses        []string               `json:"weaknesses,omitempty"`
 	MacroContext      map[string]interface{} `json:"macro_context,omitempty"`
+
+	// Enrichment v3 fields (from Perplexity + Claude pipeline)
+	MainProducts         []string `json:"main_products,omitempty"`
+	CustomerSegments     []string `json:"customer_segments,omitempty"`
+	PricingModel         *string  `json:"pricing_model,omitempty"`
+	UniqueSellingPoints  []string `json:"unique_selling_points,omitempty"`
+	RecentNews           []string `json:"recent_news,omitempty"`
+	KeyExecutives        []string `json:"key_executives,omitempty"`
+	CompanyHistory       *string  `json:"company_history,omitempty"`
+	Opportunities        []string `json:"opportunities,omitempty"`
+	Threats              []string `json:"threats,omitempty"`
+	StrategicChallenges  []string `json:"strategic_challenges,omitempty"`
+	CompetitorDetails    []string `json:"competitor_details,omitempty"`
+	CompetitiveAdvantage *string  `json:"competitive_advantage,omitempty"`
+	MarketShare          *string  `json:"market_share,omitempty"`
+	TAMEstimate          *string  `json:"tam_estimate,omitempty"`
+	SAMEstimate          *string  `json:"sam_estimate,omitempty"`
+	SOMEstimate          *string  `json:"som_estimate,omitempty"`
 }
 
 // SubmissionRepository defines the interface for accessing submission data

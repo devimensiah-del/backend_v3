@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -20,13 +21,14 @@ import (
 
 // CompanyHandlers handles company-based re-enrich/re-analyze endpoints
 type CompanyHandlers struct {
-	CompanyService    *company.Service
-	SubmissionService *submission.Service // Needed for re-analyze flow
-	EnrichmentService *enrichment.Service
-	ChallengeService  *challenge.Service // For creating challenges for analysis
-	AnalysisService   *analysis.Service  // For fetching latest analysis per challenge
-	AsynqClient       *asynq.Client
-	Logger            zerolog.Logger
+	CompanyService      *company.Service
+	SubmissionService   *submission.Service // Needed for re-analyze flow
+	EnrichmentService   *enrichment.Service
+	ChallengeService    *challenge.Service // For creating challenges for analysis
+	AnalysisService     *analysis.Service  // For fetching latest analysis per challenge
+	AsynqClient         *asynq.Client
+	Logger              zerolog.Logger
+	EnrichmentLimiter   *EnrichmentRateLimiter // Rate limiter for re-enrichment
 }
 
 // NewCompanyHandlers creates a new company handler set
@@ -47,6 +49,7 @@ func NewCompanyHandlers(
 		AnalysisService:   analysisSvc,
 		AsynqClient:       asynqClient,
 		Logger:            logger,
+		EnrichmentLimiter: NewEnrichmentRateLimiter(),
 	}
 }
 
@@ -802,6 +805,121 @@ func (h *CompanyHandlers) RetryEnrichment(c *gin.Context) {
 	})
 }
 
+// ReEnrichCompany handles POST /api/v1/admin/companies/:id/re-enrich
+// Re-runs enrichment for a company with rate limiting (max 5 per company per 24 hours)
+// Only fills in NULL/empty fields - preserves any manually edited values
+func (h *CompanyHandlers) ReEnrichCompany(c *gin.Context) {
+	companyID := c.Param("id")
+
+	companyUUID, err := uuid.Parse(companyID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
+		return
+	}
+
+	// Check rate limit first
+	if !h.EnrichmentLimiter.CanEnrich(companyUUID) {
+		retryAfter := h.EnrichmentLimiter.GetRetryAfter(companyUUID)
+		count := h.EnrichmentLimiter.GetEnrichmentCount(companyUUID)
+
+		h.Logger.Warn().
+			Str("company_id", companyID).
+			Int("enrichment_count_24h", count).
+			Dur("retry_after", retryAfter).
+			Msg("Rate limit exceeded for re-enrichment")
+
+		c.JSON(http.StatusTooManyRequests, ErrorResponse{
+			Error:   "Rate limit exceeded",
+			Message: "Maximum 5 re-enrichments per day per company. Please try again later.",
+		})
+		// Set Retry-After header for client convenience
+		c.Header("Retry-After", formatDuration(retryAfter))
+		return
+	}
+
+	// Get company to verify it exists and check access
+	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
+	if err != nil {
+		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to get company")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Database error", Message: "Failed to retrieve company"})
+		return
+	}
+	if comp == nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Company not found"})
+		return
+	}
+
+	// Check access (admin only for re-enrich)
+	if !h.checkCompanyAccess(c, comp) {
+		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Access denied - admin only"})
+		return
+	}
+
+	h.Logger.Info().
+		Str("company_id", companyID).
+		Str("company_name", comp.Name).
+		Str("current_status", comp.EnrichmentStatus).
+		Msg("Admin triggered re-enrichment (rate limited)")
+
+	// Record the enrichment attempt for rate limiting
+	h.EnrichmentLimiter.RecordEnrichment(companyUUID)
+
+	// Run enrichment synchronously to capture results
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Minute)
+	defer cancel()
+
+	// Call the enrichment service directly
+	if err := h.CompanyService.RetryEnrichment(ctx, companyUUID); err != nil {
+		h.Logger.Error().
+			Err(err).
+			Str("company_id", companyID).
+			Msg("Re-enrichment failed")
+
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Enrichment failed",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	// Fetch updated company to get enrichment results
+	updatedComp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
+	if err != nil || updatedComp == nil {
+		// Enrichment succeeded but can't fetch results - still return success
+		h.Logger.Warn().Err(err).Str("company_id", companyID).Msg("Failed to fetch updated company after enrichment")
+		c.JSON(http.StatusOK, MessageResponse{
+			Message: "Re-enrichment completed",
+			Data: map[string]interface{}{
+				"company_id":   companyID,
+				"company_name": comp.Name,
+			},
+		})
+		return
+	}
+
+	// Count how many fields were enriched (non-null values)
+	fieldsUpdated := countEnrichedFields(updatedComp)
+
+	h.Logger.Info().
+		Str("company_id", companyID).
+		Str("company_name", updatedComp.Name).
+		Str("enrichment_status", updatedComp.EnrichmentStatus).
+		Int("fields_updated", fieldsUpdated).
+		Msg("Re-enrichment completed successfully")
+
+	c.JSON(http.StatusOK, MessageResponse{
+		Message: "Re-enrichment completed",
+		Data: map[string]interface{}{
+			"company_id":      companyID,
+			"company_name":    updatedComp.Name,
+			"status":          updatedComp.EnrichmentStatus,
+			"fields_updated":  fieldsUpdated,
+			"enrichment_count_24h": h.EnrichmentLimiter.GetEnrichmentCount(companyUUID),
+			"remaining_today": 5 - h.EnrichmentLimiter.GetEnrichmentCount(companyUUID),
+		},
+	})
+}
+
 // ========================================================================
 // HELPER FUNCTIONS
 // ========================================================================
@@ -820,4 +938,137 @@ func parseIntParam(s string, min, max int) (int, error) {
 		return max, nil
 	}
 	return val, nil
+}
+
+// formatDuration formats a duration for the Retry-After header
+// Returns duration in seconds or human-readable format
+func formatDuration(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
+	hours := int(d.Hours())
+	minutes := int(d.Minutes()) % 60
+	if minutes > 0 {
+		return fmt.Sprintf("%dh%dm", hours, minutes)
+	}
+	return fmt.Sprintf("%dh", hours)
+}
+
+// countEnrichedFields counts how many enriched fields have non-null values
+func countEnrichedFields(comp *company.Company) int {
+	count := 0
+
+	// Basic fields
+	if comp.CNPJ != nil && *comp.CNPJ != "" {
+		count++
+	}
+	if comp.Website != nil && *comp.Website != "" {
+		count++
+	}
+	if comp.Industry != nil && *comp.Industry != "" {
+		count++
+	}
+	if comp.CompanySize != nil && *comp.CompanySize != "" {
+		count++
+	}
+	if comp.Location != nil && *comp.Location != "" {
+		count++
+	}
+	if comp.TargetMarket != nil && *comp.TargetMarket != "" {
+		count++
+	}
+	if comp.FundingStage != nil && *comp.FundingStage != "" {
+		count++
+	}
+
+	// Enriched fields
+	if comp.FoundationYear != nil {
+		count++
+	}
+	if comp.LegalName != nil && *comp.LegalName != "" {
+		count++
+	}
+	if comp.Headquarters != nil && *comp.Headquarters != "" {
+		count++
+	}
+	if comp.Sector != nil && *comp.Sector != "" {
+		count++
+	}
+	if comp.TargetAudience != nil && *comp.TargetAudience != "" {
+		count++
+	}
+	if comp.ValueProposition != nil && *comp.ValueProposition != "" {
+		count++
+	}
+	if comp.EmployeesRange != nil && *comp.EmployeesRange != "" {
+		count++
+	}
+	if comp.RevenueEstimate != nil && *comp.RevenueEstimate != "" {
+		count++
+	}
+	if comp.BusinessModel != nil && *comp.BusinessModel != "" {
+		count++
+	}
+	if comp.MarketShareStatus != nil && *comp.MarketShareStatus != "" {
+		count++
+	}
+	if comp.DigitalMaturity != nil {
+		count++
+	}
+
+	// Arrays
+	if comp.Competitors != nil && len(comp.Competitors) > 0 {
+		count++
+	}
+	if comp.Strengths != nil && len(comp.Strengths) > 0 {
+		count++
+	}
+	if comp.Weaknesses != nil && len(comp.Weaknesses) > 0 {
+		count++
+	}
+	if comp.MainProducts != nil && len(comp.MainProducts) > 0 {
+		count++
+	}
+	if comp.RecentNews != nil && len(comp.RecentNews) > 0 {
+		count++
+	}
+	if comp.KeyExecutives != nil && len(comp.KeyExecutives) > 0 {
+		count++
+	}
+	if comp.Opportunities != nil && len(comp.Opportunities) > 0 {
+		count++
+	}
+	if comp.Threats != nil && len(comp.Threats) > 0 {
+		count++
+	}
+
+	// Strategic fields
+	if comp.CompetitiveAdvantage != nil && *comp.CompetitiveAdvantage != "" {
+		count++
+	}
+	if comp.MarketShare != nil && *comp.MarketShare != "" {
+		count++
+	}
+	if comp.TAMEstimate != nil && *comp.TAMEstimate != "" {
+		count++
+	}
+	if comp.SAMEstimate != nil && *comp.SAMEstimate != "" {
+		count++
+	}
+	if comp.SOMEstimate != nil && *comp.SOMEstimate != "" {
+		count++
+	}
+
+	// Social
+	if comp.LinkedInURL != nil && *comp.LinkedInURL != "" {
+		count++
+	}
+	if comp.TwitterHandle != nil && *comp.TwitterHandle != "" {
+		count++
+	}
+
+	return count
 }

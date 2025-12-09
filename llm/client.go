@@ -419,10 +419,43 @@ func (c *Client) parseResponse(result map[string]interface{}, model string) *Res
 			if message, ok := choice["message"].(map[string]interface{}); ok {
 				if content, ok := message["content"].(string); ok {
 					resp.Content = content
+				} else if content, ok := message["content"].([]interface{}); ok {
+					// Handle array content format (some models return content as array of parts)
+					var contentParts []string
+					for _, part := range content {
+						if partMap, ok := part.(map[string]interface{}); ok {
+							if text, ok := partMap["text"].(string); ok {
+								contentParts = append(contentParts, text)
+							}
+						} else if partStr, ok := part.(string); ok {
+							contentParts = append(contentParts, partStr)
+						}
+					}
+					resp.Content = strings.Join(contentParts, "")
+				}
+			}
+			// Also check for direct content at choice level (some providers)
+			if resp.Content == "" {
+				if content, ok := choice["content"].(string); ok {
+					resp.Content = content
+				}
+			}
+			// Check for text field (Anthropic format via OpenRouter)
+			if resp.Content == "" {
+				if message, ok := choice["message"].(map[string]interface{}); ok {
+					if text, ok := message["text"].(string); ok {
+						resp.Content = text
+					}
 				}
 			}
 		}
 	}
+
+	// Debug: Log if content is empty but tokens were used
+	if resp.Content == "" && resp.OutputTokens > 0 {
+		fmt.Printf("[LLM] WARNING: Empty content but %d output tokens used. Raw response structure: %+v\n", resp.OutputTokens, result)
+	}
+
 	return resp
 }
 

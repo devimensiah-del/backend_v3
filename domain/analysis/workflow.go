@@ -1104,6 +1104,64 @@ func companyDataToMap(c *AnalysisCompanyData) map[string]interface{} {
 		result["macro_context"] = c.MacroContext
 	}
 
+	// Enrichment v3 fields - Products & Services
+	if len(c.MainProducts) > 0 {
+		result["main_products"] = c.MainProducts
+	}
+	if len(c.CustomerSegments) > 0 {
+		result["customer_segments"] = c.CustomerSegments
+	}
+	if c.PricingModel != nil {
+		result["pricing_model"] = *c.PricingModel
+	}
+	if len(c.UniqueSellingPoints) > 0 {
+		result["unique_selling_points"] = c.UniqueSellingPoints
+	}
+
+	// Enrichment v3 fields - Leadership & News
+	if len(c.RecentNews) > 0 {
+		result["recent_news"] = c.RecentNews
+	}
+	if len(c.KeyExecutives) > 0 {
+		result["key_executives"] = c.KeyExecutives
+	}
+	if c.CompanyHistory != nil {
+		result["company_history"] = *c.CompanyHistory
+	}
+
+	// Enrichment v3 fields - SWOT Extended
+	if len(c.Opportunities) > 0 {
+		result["opportunities"] = c.Opportunities
+	}
+	if len(c.Threats) > 0 {
+		result["threats"] = c.Threats
+	}
+	if len(c.StrategicChallenges) > 0 {
+		result["strategic_challenges"] = c.StrategicChallenges
+	}
+
+	// Enrichment v3 fields - Competitive Intelligence
+	if len(c.CompetitorDetails) > 0 {
+		result["competitor_details"] = c.CompetitorDetails
+	}
+	if c.CompetitiveAdvantage != nil {
+		result["competitive_advantage"] = *c.CompetitiveAdvantage
+	}
+	if c.MarketShare != nil {
+		result["market_share"] = *c.MarketShare
+	}
+
+	// Enrichment v3 fields - Market Sizing
+	if c.TAMEstimate != nil {
+		result["tam_estimate"] = *c.TAMEstimate
+	}
+	if c.SAMEstimate != nil {
+		result["sam_estimate"] = *c.SAMEstimate
+	}
+	if c.SOMEstimate != nil {
+		result["som_estimate"] = *c.SOMEstimate
+	}
+
 	return result
 }
 

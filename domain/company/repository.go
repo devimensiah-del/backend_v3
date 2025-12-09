@@ -71,6 +71,10 @@ func (r *PostgresRepository) Create(ctx context.Context, company *Company) error
 			foundation_year, legal_name, headquarters, sector, target_audience, value_proposition,
 			employees_range, revenue_estimate, business_model, competitors, market_share_status,
 			digital_maturity, strengths, weaknesses,
+			main_products, recent_news, key_executives, opportunities, threats,
+			strategic_challenges, competitor_details, competitive_advantage, market_share,
+			tam_estimate, sam_estimate, som_estimate, company_history,
+			customer_segments, pricing_model, unique_selling_points,
 			industry_growth_rate, industry_trends, regulatory_context, market_concentration, enrichment_sources,
 			linkedin_url, twitter_handle,
 			enrichment_status, enrichment_completed_at, enrichment_error,
@@ -84,10 +88,14 @@ func (r *PostgresRepository) Create(ctx context.Context, company *Company) error
 			$18, $19, $20, $21, $22,
 			$23, $24, $25,
 			$26, $27, $28, $29, $30,
-			$31, $32,
-			$33, $34, $35,
-			$36, $37,
-			$38, $39
+			$31, $32, $33, $34,
+			$35, $36, $37, $38,
+			$39, $40, $41,
+			$42, $43, $44, $45, $46,
+			$47, $48,
+			$49, $50, $51,
+			$52, $53,
+			$54, $55
 		)
 	`
 
@@ -98,6 +106,10 @@ func (r *PostgresRepository) Create(ctx context.Context, company *Company) error
 		company.FoundationYear, company.LegalName, company.Headquarters, company.Sector, company.TargetAudience, company.ValueProposition,
 		company.EmployeesRange, company.RevenueEstimate, company.BusinessModel, company.Competitors, company.MarketShareStatus,
 		company.DigitalMaturity, company.Strengths, company.Weaknesses,
+		company.MainProducts, company.RecentNews, company.KeyExecutives, company.Opportunities, company.Threats,
+		company.StrategicChallenges, company.CompetitorDetails, company.CompetitiveAdvantage, company.MarketShare,
+		company.TAMEstimate, company.SAMEstimate, company.SOMEstimate, company.CompanyHistory,
+		company.CustomerSegments, company.PricingModel, company.UniqueSellingPoints,
 		company.IndustryGrowthRate, company.IndustryTrends, company.RegulatoryContext, company.MarketConcentration, company.EnrichmentSources,
 		company.LinkedInURL, company.TwitterHandle,
 		company.EnrichmentStatus, company.EnrichmentCompletedAt, company.EnrichmentError,
@@ -120,6 +132,10 @@ func (r *PostgresRepository) GetByID(ctx context.Context, id uuid.UUID) (*Compan
 			foundation_year, legal_name, headquarters, sector, target_audience, value_proposition,
 			employees_range, revenue_estimate, business_model, competitors, market_share_status,
 			digital_maturity, strengths, weaknesses,
+			main_products, recent_news, key_executives, opportunities, threats,
+			strategic_challenges, competitor_details, competitive_advantage, market_share,
+			tam_estimate, sam_estimate, som_estimate, company_history,
+			customer_segments, pricing_model, unique_selling_points,
 			industry_growth_rate, industry_trends, regulatory_context, market_concentration, enrichment_sources,
 			linkedin_url, twitter_handle,
 			enrichment_status, enrichment_completed_at, enrichment_error,
@@ -150,6 +166,10 @@ func (r *PostgresRepository) GetBySubmissionID(ctx context.Context, submissionID
 			c.foundation_year, c.legal_name, c.headquarters, c.sector, c.target_audience, c.value_proposition,
 			c.employees_range, c.revenue_estimate, c.business_model, c.competitors, c.market_share_status,
 			c.digital_maturity, c.strengths, c.weaknesses,
+			c.main_products, c.recent_news, c.key_executives, c.opportunities, c.threats,
+			c.strategic_challenges, c.competitor_details, c.competitive_advantage, c.market_share,
+			c.tam_estimate, c.sam_estimate, c.som_estimate, c.company_history,
+			c.customer_segments, c.pricing_model, c.unique_selling_points,
 			c.industry_growth_rate, c.industry_trends, c.regulatory_context, c.market_concentration, c.enrichment_sources,
 			c.linkedin_url, c.twitter_handle,
 			c.enrichment_status, c.enrichment_completed_at, c.enrichment_error,
@@ -184,11 +204,15 @@ func (r *PostgresRepository) Update(ctx context.Context, company *Company) error
 			foundation_year = $12, legal_name = $13, headquarters = $14, sector = $15, target_audience = $16, value_proposition = $17,
 			employees_range = $18, revenue_estimate = $19, business_model = $20, competitors = $21, market_share_status = $22,
 			digital_maturity = $23, strengths = $24, weaknesses = $25,
-			industry_growth_rate = $26, industry_trends = $27, regulatory_context = $28, market_concentration = $29, enrichment_sources = $30,
-			linkedin_url = $31, twitter_handle = $32,
-			enrichment_status = $33, enrichment_completed_at = $34, enrichment_error = $35,
-			allowed_users = $36, owner_id = $37,
-			updated_at = $38
+			main_products = $26, recent_news = $27, key_executives = $28, opportunities = $29, threats = $30,
+			strategic_challenges = $31, competitor_details = $32, competitive_advantage = $33, market_share = $34,
+			tam_estimate = $35, sam_estimate = $36, som_estimate = $37, company_history = $38,
+			customer_segments = $39, pricing_model = $40, unique_selling_points = $41,
+			industry_growth_rate = $42, industry_trends = $43, regulatory_context = $44, market_concentration = $45, enrichment_sources = $46,
+			linkedin_url = $47, twitter_handle = $48,
+			enrichment_status = $49, enrichment_completed_at = $50, enrichment_error = $51,
+			allowed_users = $52, owner_id = $53,
+			updated_at = $54
 		WHERE id = $1
 	`
 
@@ -199,6 +223,10 @@ func (r *PostgresRepository) Update(ctx context.Context, company *Company) error
 		company.FoundationYear, company.LegalName, company.Headquarters, company.Sector, company.TargetAudience, company.ValueProposition,
 		company.EmployeesRange, company.RevenueEstimate, company.BusinessModel, company.Competitors, company.MarketShareStatus,
 		company.DigitalMaturity, company.Strengths, company.Weaknesses,
+		company.MainProducts, company.RecentNews, company.KeyExecutives, company.Opportunities, company.Threats,
+		company.StrategicChallenges, company.CompetitorDetails, company.CompetitiveAdvantage, company.MarketShare,
+		company.TAMEstimate, company.SAMEstimate, company.SOMEstimate, company.CompanyHistory,
+		company.CustomerSegments, company.PricingModel, company.UniqueSellingPoints,
 		company.IndustryGrowthRate, company.IndustryTrends, company.RegulatoryContext, company.MarketConcentration, company.EnrichmentSources,
 		company.LinkedInURL, company.TwitterHandle,
 		company.EnrichmentStatus, company.EnrichmentCompletedAt, company.EnrichmentError,
@@ -305,6 +333,10 @@ func (r *PostgresRepository) GetUserCompanies(ctx context.Context, userID uuid.U
 			foundation_year, legal_name, headquarters, sector, target_audience, value_proposition,
 			employees_range, revenue_estimate, business_model, competitors, market_share_status,
 			digital_maturity, strengths, weaknesses,
+			main_products, recent_news, key_executives, opportunities, threats,
+			strategic_challenges, competitor_details, competitive_advantage, market_share,
+			tam_estimate, sam_estimate, som_estimate, company_history,
+			customer_segments, pricing_model, unique_selling_points,
 			industry_growth_rate, industry_trends, regulatory_context, market_concentration, enrichment_sources,
 			linkedin_url, twitter_handle,
 			enrichment_status, enrichment_completed_at, enrichment_error,
@@ -343,6 +375,10 @@ func (r *PostgresRepository) ListAll(ctx context.Context, limit, offset int) ([]
 			foundation_year, legal_name, headquarters, sector, target_audience, value_proposition,
 			employees_range, revenue_estimate, business_model, competitors, market_share_status,
 			digital_maturity, strengths, weaknesses,
+			main_products, recent_news, key_executives, opportunities, threats,
+			strategic_challenges, competitor_details, competitive_advantage, market_share,
+			tam_estimate, sam_estimate, som_estimate, company_history,
+			customer_segments, pricing_model, unique_selling_points,
 			industry_growth_rate, industry_trends, regulatory_context, market_concentration, enrichment_sources,
 			linkedin_url, twitter_handle,
 			enrichment_status, enrichment_completed_at, enrichment_error,
@@ -440,14 +476,32 @@ func (r *PostgresRepository) SetEnrichmentCompleted(ctx context.Context, id uuid
 			competitors = CASE WHEN competitors IS NULL OR jsonb_array_length(competitors) = 0 THEN $24 ELSE competitors END,
 			strengths = CASE WHEN strengths IS NULL OR jsonb_array_length(strengths) = 0 THEN $25 ELSE strengths END,
 			weaknesses = CASE WHEN weaknesses IS NULL OR jsonb_array_length(weaknesses) = 0 THEN $26 ELSE weaknesses END,
-			industry_growth_rate = COALESCE(industry_growth_rate, $27),
-			industry_trends = CASE WHEN industry_trends IS NULL OR jsonb_array_length(industry_trends) = 0 THEN $28 ELSE industry_trends END,
-			regulatory_context = COALESCE(regulatory_context, $29),
-			market_concentration = COALESCE(market_concentration, $30),
-			enrichment_sources = CASE WHEN enrichment_sources IS NULL OR jsonb_array_length(enrichment_sources) = 0 THEN $31 ELSE enrichment_sources END,
-			linkedin_url = COALESCE(linkedin_url, $32),
-			twitter_handle = COALESCE(twitter_handle, $33),
-			updated_at = $34
+			-- Enrichment v3 fields
+			main_products = CASE WHEN main_products IS NULL OR jsonb_array_length(main_products) = 0 THEN $27 ELSE main_products END,
+			recent_news = CASE WHEN recent_news IS NULL OR jsonb_array_length(recent_news) = 0 THEN $28 ELSE recent_news END,
+			key_executives = CASE WHEN key_executives IS NULL OR jsonb_array_length(key_executives) = 0 THEN $29 ELSE key_executives END,
+			opportunities = CASE WHEN opportunities IS NULL OR jsonb_array_length(opportunities) = 0 THEN $30 ELSE opportunities END,
+			threats = CASE WHEN threats IS NULL OR jsonb_array_length(threats) = 0 THEN $31 ELSE threats END,
+			strategic_challenges = CASE WHEN strategic_challenges IS NULL OR jsonb_array_length(strategic_challenges) = 0 THEN $32 ELSE strategic_challenges END,
+			competitor_details = CASE WHEN competitor_details IS NULL OR jsonb_array_length(competitor_details) = 0 THEN $33 ELSE competitor_details END,
+			competitive_advantage = COALESCE(competitive_advantage, $34),
+			market_share = COALESCE(market_share, $35),
+			tam_estimate = COALESCE(tam_estimate, $36),
+			sam_estimate = COALESCE(sam_estimate, $37),
+			som_estimate = COALESCE(som_estimate, $38),
+			company_history = COALESCE(company_history, $39),
+			customer_segments = CASE WHEN customer_segments IS NULL OR jsonb_array_length(customer_segments) = 0 THEN $40 ELSE customer_segments END,
+			pricing_model = COALESCE(pricing_model, $41),
+			unique_selling_points = CASE WHEN unique_selling_points IS NULL OR jsonb_array_length(unique_selling_points) = 0 THEN $42 ELSE unique_selling_points END,
+			-- Industry context
+			industry_growth_rate = COALESCE(industry_growth_rate, $43),
+			industry_trends = CASE WHEN industry_trends IS NULL OR jsonb_array_length(industry_trends) = 0 THEN $44 ELSE industry_trends END,
+			regulatory_context = COALESCE(regulatory_context, $45),
+			market_concentration = COALESCE(market_concentration, $46),
+			enrichment_sources = CASE WHEN enrichment_sources IS NULL OR jsonb_array_length(enrichment_sources) = 0 THEN $47 ELSE enrichment_sources END,
+			linkedin_url = COALESCE(linkedin_url, $48),
+			twitter_handle = COALESCE(twitter_handle, $49),
+			updated_at = $50
 		WHERE id = $1
 	`
 
@@ -455,6 +509,17 @@ func (r *PostgresRepository) SetEnrichmentCompleted(ctx context.Context, id uuid
 	competitorsJSON, _ := json.Marshal(data.Competitors)
 	strengthsJSON, _ := json.Marshal(data.Strengths)
 	weaknessesJSON, _ := json.Marshal(data.Weaknesses)
+	// Enrichment v3 arrays
+	mainProductsJSON, _ := json.Marshal(data.MainProducts)
+	recentNewsJSON, _ := json.Marshal(data.RecentNews)
+	keyExecutivesJSON, _ := json.Marshal(data.KeyExecutives)
+	opportunitiesJSON, _ := json.Marshal(data.Opportunities)
+	threatsJSON, _ := json.Marshal(data.Threats)
+	strategicChallengesJSON, _ := json.Marshal(data.StrategicChallenges)
+	competitorDetailsJSON, _ := json.Marshal(data.CompetitorDetails)
+	customerSegmentsJSON, _ := json.Marshal(data.CustomerSegments)
+	uniqueSellingPointsJSON, _ := json.Marshal(data.UniqueSellingPts)
+	// Industry context arrays
 	industryTrendsJSON, _ := json.Marshal(data.IndustryTrends)
 	sourcesJSON, _ := json.Marshal(data.Sources)
 
@@ -467,6 +532,12 @@ func (r *PostgresRepository) SetEnrichmentCompleted(ctx context.Context, id uuid
 		data.RevenueEstimate, data.BusinessModel, data.MarketShareStatus,
 		data.DigitalMaturity,
 		competitorsJSON, strengthsJSON, weaknessesJSON,
+		// Enrichment v3 fields
+		mainProductsJSON, recentNewsJSON, keyExecutivesJSON, opportunitiesJSON, threatsJSON,
+		strategicChallengesJSON, competitorDetailsJSON, data.CompetitiveAdvantage, data.MarketShare,
+		data.TAMEstimate, data.SAMEstimate, data.SOMEstimate, data.CompanyHistory,
+		customerSegmentsJSON, data.PricingModel, uniqueSellingPointsJSON,
+		// Industry context
 		data.IndustryGrowthRate, industryTrendsJSON, data.RegulatoryContext, data.MarketConcentration, sourcesJSON,
 		data.LinkedInURL, data.TwitterHandle,
 		now,
