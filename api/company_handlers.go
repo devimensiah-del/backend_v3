@@ -21,14 +21,14 @@ import (
 
 // CompanyHandlers handles company-based re-enrich/re-analyze endpoints
 type CompanyHandlers struct {
-	CompanyService      *company.Service
-	SubmissionService   *submission.Service // Needed for re-analyze flow
-	EnrichmentService   *enrichment.Service
-	ChallengeService    *challenge.Service // For creating challenges for analysis
-	AnalysisService     *analysis.Service  // For fetching latest analysis per challenge
-	AsynqClient         *asynq.Client
-	Logger              zerolog.Logger
-	EnrichmentLimiter   *EnrichmentRateLimiter // Rate limiter for re-enrichment
+	CompanyService    *company.Service
+	SubmissionService *submission.Service // Needed for re-analyze flow
+	EnrichmentService *enrichment.Service
+	ChallengeService  *challenge.Service // For creating challenges for analysis
+	AnalysisService   *analysis.Service  // For fetching latest analysis per challenge
+	AsynqClient       *asynq.Client
+	Logger            zerolog.Logger
+	EnrichmentLimiter *EnrichmentRateLimiter // Rate limiter for re-enrichment
 }
 
 // NewCompanyHandlers creates a new company handler set
@@ -910,12 +910,12 @@ func (h *CompanyHandlers) ReEnrichCompany(c *gin.Context) {
 	c.JSON(http.StatusOK, MessageResponse{
 		Message: "Re-enrichment completed",
 		Data: map[string]interface{}{
-			"company_id":      companyID,
-			"company_name":    updatedComp.Name,
-			"status":          updatedComp.EnrichmentStatus,
-			"fields_updated":  fieldsUpdated,
+			"company_id":           companyID,
+			"company_name":         updatedComp.Name,
+			"status":               updatedComp.EnrichmentStatus,
+			"fields_updated":       fieldsUpdated,
 			"enrichment_count_24h": h.EnrichmentLimiter.GetEnrichmentCount(companyUUID),
-			"remaining_today": 5 - h.EnrichmentLimiter.GetEnrichmentCount(companyUUID),
+			"remaining_today":      5 - h.EnrichmentLimiter.GetEnrichmentCount(companyUUID),
 		},
 	})
 }

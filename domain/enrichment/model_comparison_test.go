@@ -1,3 +1,4 @@
+//go:build integration
 // +build integration
 
 package enrichment
@@ -39,18 +40,18 @@ func TestModelComparison(t *testing.T) {
 	}
 
 	combinations := []struct {
-		name     string
-		stage1   string
-		fallback1 string
-		stage2   string
-		fallback2 string
+		name       string
+		stage1     string
+		fallback1  string
+		stage2     string
+		fallback2  string
 		singleCall bool // true = use stage1 model only for everything
 	}{
 		{
-			name:     "1. Perplexity + Sonnet 4.5 (current)",
-			stage1:   "perplexity/sonar-pro",
+			name:      "1. Perplexity + Sonnet 4.5 (current)",
+			stage1:    "perplexity/sonar-pro",
 			fallback1: "perplexity/sonar",
-			stage2:   "anthropic/claude-sonnet-4.5",
+			stage2:    "anthropic/claude-sonnet-4.5",
 			fallback2: "anthropic/claude-sonnet-4",
 		},
 		{
@@ -60,10 +61,10 @@ func TestModelComparison(t *testing.T) {
 			singleCall: true,
 		},
 		{
-			name:     "3. Perplexity + Opus 4.5 (two-stage)",
-			stage1:   "perplexity/sonar-pro",
+			name:      "3. Perplexity + Opus 4.5 (two-stage)",
+			stage1:    "perplexity/sonar-pro",
 			fallback1: "perplexity/sonar",
-			stage2:   "anthropic/claude-opus-4.5",
+			stage2:    "anthropic/claude-opus-4.5",
 			fallback2: "anthropic/claude-sonnet-4.5",
 		},
 		{
@@ -343,7 +344,6 @@ func parseEnrichmentJSON(content string) (*EnrichedCompanyData, error) {
 	svc := &Service{}
 	return svc.parseEnrichmentResponse(content)
 }
-
 
 func scoreResult(r *EnrichedCompanyData) int {
 	score := 0

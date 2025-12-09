@@ -1,3 +1,4 @@
+//go:build integration
 // +build integration
 
 package enrichment
@@ -31,8 +32,8 @@ func TestSelicRealTimeData(t *testing.T) {
 	client := llm.NewClientWithBaseURL(apiKey, "https://openrouter.ai/api/v1")
 
 	models := []struct {
-		name     string
-		model    string
+		name         string
+		model        string
 		hasWebSearch bool
 	}{
 		{"Perplexity sonar-pro (native search)", "perplexity/sonar-pro", true},
@@ -50,11 +51,11 @@ func TestSelicRealTimeData(t *testing.T) {
 	fmt.Println(strings.Repeat("=", 70))
 
 	results := make([]struct {
-		name    string
-		model   string
-		result  string
-		elapsed time.Duration
-		cost    float64
+		name      string
+		model     string
+		result    string
+		elapsed   time.Duration
+		cost      float64
 		isCorrect bool
 	}, 0)
 
@@ -79,11 +80,11 @@ func TestSelicRealTimeData(t *testing.T) {
 		if err != nil {
 			fmt.Printf("   ❌ ERROR: %v\n", err)
 			results = append(results, struct {
-				name    string
-				model   string
-				result  string
-				elapsed time.Duration
-				cost    float64
+				name      string
+				model     string
+				result    string
+				elapsed   time.Duration
+				cost      float64
 				isCorrect bool
 			}{m.name, m.model, "ERROR: " + err.Error(), elapsed, 0, false})
 			continue
@@ -100,11 +101,11 @@ func TestSelicRealTimeData(t *testing.T) {
 		fmt.Printf("   %s Response: %s (%.1fs, $%.4f)\n", icon, answer, elapsed.Seconds(), resp.CostUSD)
 
 		results = append(results, struct {
-			name    string
-			model   string
-			result  string
-			elapsed time.Duration
-			cost    float64
+			name      string
+			model     string
+			result    string
+			elapsed   time.Duration
+			cost      float64
 			isCorrect bool
 		}{m.name, m.model, answer, elapsed, resp.CostUSD, isCorrect})
 	}

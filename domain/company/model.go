@@ -46,22 +46,22 @@ type Company struct {
 	Weaknesses        StringSlice `json:"weaknesses,omitempty" db:"weaknesses"`
 
 	// Enriched data v3 (additional fields from Perplexity + Claude)
-	MainProducts        StringSlice `json:"main_products,omitempty" db:"main_products"`
-	RecentNews          StringSlice `json:"recent_news,omitempty" db:"recent_news"`
-	KeyExecutives       StringSlice `json:"key_executives,omitempty" db:"key_executives"`
-	Opportunities       StringSlice `json:"opportunities,omitempty" db:"opportunities"`
-	Threats             StringSlice `json:"threats,omitempty" db:"threats"`
-	StrategicChallenges StringSlice `json:"strategic_challenges,omitempty" db:"strategic_challenges"`
-	CompetitorDetails   StringSlice `json:"competitor_details,omitempty" db:"competitor_details"`
-	CompetitiveAdvantage *string    `json:"competitive_advantage,omitempty" db:"competitive_advantage"`
-	MarketShare         *string     `json:"market_share,omitempty" db:"market_share"`
-	TAMEstimate         *string     `json:"tam_estimate,omitempty" db:"tam_estimate"`
-	SAMEstimate         *string     `json:"sam_estimate,omitempty" db:"sam_estimate"`
-	SOMEstimate         *string     `json:"som_estimate,omitempty" db:"som_estimate"`
-	CompanyHistory      *string     `json:"company_history,omitempty" db:"company_history"`
-	CustomerSegments    StringSlice `json:"customer_segments,omitempty" db:"customer_segments"`
-	PricingModel        *string     `json:"pricing_model,omitempty" db:"pricing_model"`
-	UniqueSellingPoints StringSlice `json:"unique_selling_points,omitempty" db:"unique_selling_points"`
+	MainProducts         StringSlice `json:"main_products,omitempty" db:"main_products"`
+	RecentNews           StringSlice `json:"recent_news,omitempty" db:"recent_news"`
+	KeyExecutives        StringSlice `json:"key_executives,omitempty" db:"key_executives"`
+	Opportunities        StringSlice `json:"opportunities,omitempty" db:"opportunities"`
+	Threats              StringSlice `json:"threats,omitempty" db:"threats"`
+	StrategicChallenges  StringSlice `json:"strategic_challenges,omitempty" db:"strategic_challenges"`
+	CompetitorDetails    StringSlice `json:"competitor_details,omitempty" db:"competitor_details"`
+	CompetitiveAdvantage *string     `json:"competitive_advantage,omitempty" db:"competitive_advantage"`
+	MarketShare          *string     `json:"market_share,omitempty" db:"market_share"`
+	TAMEstimate          *string     `json:"tam_estimate,omitempty" db:"tam_estimate"`
+	SAMEstimate          *string     `json:"sam_estimate,omitempty" db:"sam_estimate"`
+	SOMEstimate          *string     `json:"som_estimate,omitempty" db:"som_estimate"`
+	CompanyHistory       *string     `json:"company_history,omitempty" db:"company_history"`
+	CustomerSegments     StringSlice `json:"customer_segments,omitempty" db:"customer_segments"`
+	PricingModel         *string     `json:"pricing_model,omitempty" db:"pricing_model"`
+	UniqueSellingPoints  StringSlice `json:"unique_selling_points,omitempty" db:"unique_selling_points"`
 
 	// Industry context (enrichment v2 - deeper market intelligence)
 	IndustryGrowthRate  *string     `json:"industry_growth_rate,omitempty" db:"industry_growth_rate"`
