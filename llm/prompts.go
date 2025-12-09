@@ -828,6 +828,15 @@ REGRAS DE FORMATAÇÃO (CRÍTICO PARA PDF):
 6. **Strategic Priorities**: Exatamente 3 prioridades (max 100 chars cada).
 7. **Roadmap**: Exatamente 3 passos macro (Curto, Médio, Longo Prazo).
 
+NARRATIVA ESTRATEGICA (4 Perguntas Fundamentais do 10XMentorAI):
+Alem do sumario executivo, organize os insights nas 4 perguntas estrategicas:
+1. **Parte I - Onde Estamos?**: Sintetize PESTEL + Porter + SWOT em um paragrafo
+2. **Parte II - Onde Queremos Ir?**: Sintetize TAM-SAM-SOM + Benchmarking + Blue Ocean
+3. **Parte III - Como Chegar La?**: Sintetize OKRs + Growth Hacking + BSC
+4. **Parte IV - O Que Fazer Agora?**: Sintetize Cenarios + Matriz de Decisao
+
+Cada sintese deve ter no MAXIMO 200 caracteres e conectar os frameworks da fase.
+
 Retorne JSON (valores em PT-BR):
 {
   "central_challenge": "{{.challenge_context}}",
@@ -847,6 +856,12 @@ Retorne JSON (valores em PT-BR):
   "strategic_priorities": ["Prioridade 1 (max 100 chars)", "Prioridade 2", "Prioridade 3"],
   "roadmap": ["Curto Prazo (3-6 meses): ...", "Médio Prazo (6-12 meses): ...", "Longo Prazo (12+ meses): ..."],
   "overall_recommendation": "Conclusão final curta e acionável",
+  "strategic_narrative": {
+    "parte_1_onde_estamos": "Sintese da situacao atual baseada em PESTEL, Porter e SWOT (max 200 chars)",
+    "parte_2_onde_queremos_ir": "Sintese do posicionamento baseado em TAM-SAM-SOM, Benchmarking e Blue Ocean (max 200 chars)",
+    "parte_3_como_chegar_la": "Sintese da execucao baseada em OKRs, Growth Hacking e BSC (max 200 chars)",
+    "parte_4_o_que_fazer_agora": "Sintese das acoes imediatas baseada em Cenarios e Matriz de Decisao (max 200 chars)"
+  },
   "consistency_validation": {
     "financial_alignment": true,
     "capacity_alignment": true,
