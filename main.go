@@ -184,15 +184,20 @@ func main() {
 	analysisSvc.SetChallengeRepo(adapters.NewChallengeRepositoryAdapterForAnalysis(challengeRepo))
 	log.Info().Msg("ChallengeRepo injected into analysis (challenge context enabled)")
 
-	// AnalysisBySteps (Human-editable step-by-step analysis - IAH-2)
+	// AnalysisBySteps (Human-editable step-by-step analysis - IAH-2, IAH-3)
 	analysisByStepsRepo := analysisbysteps.NewRepository(db)
-	analysisByStepsSvc := analysisbysteps.NewService(analysisByStepsRepo)
+	analysisByStepsSvc := analysisbysteps.NewService(
+		analysisByStepsRepo,
+		analysisRepo,
+		companySvc,
+		challengeRepo,
+		llmClient,
+		cfg.Frameworks,
+		log.Logger,
+	)
 	log.Info().
 		Int("total_frameworks", analysisbysteps.TotalSteps()).
-		Msg("AnalysisBySteps service initialized (human editing enabled)")
-
-	// Silence unused variable warning - service will be wired in IAH-3
-	_ = analysisByStepsSvc
+		Msg("AnalysisBySteps service initialized (human editing + LLM generation enabled)")
 
 	// 7. BACKGROUND WORKER
 	log.Info().Msg("Initializing background job worker...")
@@ -261,8 +266,9 @@ func main() {
 		subSvc,
 		enrichSvc,
 		analysisSvc,
-		companySvc,   // Company service for re-enrich/re-analyze workflows
-		challengeSvc, // Challenge service for challenge management
+		companySvc,            // Company service for re-enrich/re-analyze workflows
+		challengeSvc,          // Challenge service for challenge management
+		analysisByStepsSvc,    // Step-by-step analysis with human editing (IAH-3)
 	)
 
 	srv := &http.Server{

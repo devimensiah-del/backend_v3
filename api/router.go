@@ -32,8 +32,9 @@ func SetupRouter(
 	submissionSvc *domainsubmission.Service, // Pass domain services directly
 	enrichmentSvc *domainenrichment.Service,
 	analysisSvc *domainanalysis.Service,
-	companySvc *domaincompany.Service, // Company service for re-enrich/re-analyze workflows
-	challengeSvc *domainchallenge.Service, // Challenge service for challenge management
+	companySvc *domaincompany.Service,                // Company service for re-enrich/re-analyze workflows
+	challengeSvc *domainchallenge.Service,            // Challenge service for challenge management
+	analysisByStepsSvc *domainanalysisbysteps.Service, // Step-by-step analysis with human editing (IAH-3)
 ) *gin.Engine {
 	if isProd {
 		gin.SetMode(gin.ReleaseMode)
@@ -100,12 +101,18 @@ func SetupRouter(
 		asynqClient,
 		logger,
 	)
+	// Analysis by Steps handlers (IAH-3)
+	analysisByStepsHandlers := NewAnalysisByStepsHandlers(
+		analysisByStepsSvc,
+		logger,
+	)
 
 	// Create the main API Handler instance
 	// This Handler now composes all specialized handlers
 	mainHandler := NewHandler(
 		adminHandlers,
 		analysisHandlers,
+		analysisByStepsHandlers,
 		authHandlers,
 		companyHandlers,
 		submissionHandlers,
@@ -202,7 +209,20 @@ func SetupRouter(
 			})
 		})
 
-		// TODO: IAH-3 - Add analysisbysteps API handlers for human editing
+		// Analysis by Steps (IAH-3) - Human-in-the-loop step-by-step analysis
+		// These endpoints enable controlled analysis flow with human editing
+		analysisSteps := protectedAPI.Group("/analyses")
+		{
+			// Start new step-by-step analysis
+			analysisSteps.POST("/steps/start", mainHandler.AnalysisByStepsHandlers.StartAnalysisBySteps)
+
+			// Step operations (requires analysis ID and step number)
+			analysisSteps.GET("/:id/steps", mainHandler.AnalysisByStepsHandlers.GetAnalysisSteps)
+			analysisSteps.GET("/:id/steps/state", mainHandler.AnalysisByStepsHandlers.GetStepState)
+			analysisSteps.POST("/:id/steps/:step/generate", mainHandler.AnalysisByStepsHandlers.GenerateStep)
+			analysisSteps.PUT("/:id/steps/:step/edit", mainHandler.AnalysisByStepsHandlers.SaveHumanEdit)
+			analysisSteps.POST("/:id/steps/:step/approve", mainHandler.AnalysisByStepsHandlers.ApproveAndAdvance)
+		}
 	}
 
 	// Admin API routes (v1)

@@ -1,6 +1,6 @@
-# AnalysisBySteps Domain (IAH-2)
+# AnalysisBySteps Domain (IAH-2, IAH-3)
 
-Step-by-step analysis execution with human editing capability. Replaces the deprecated `wizard` package.
+Step-by-step analysis execution with human editing capability and AI generation. Replaces the deprecated `wizard` package.
 
 ## Key Differences from Wizard
 
@@ -21,7 +21,9 @@ Step-by-step analysis execution with human editing capability. Replaces the depr
 | `model.go` | `AnalysisStep` struct and `StepStatus` constants |
 | `constants.go` | `FrameworkMeta` struct and 14-step `FrameworkOrder` |
 | `repository.go` | CRUD + specialized update methods |
-| `service.go` | Business logic (TODO: implement as needed) |
+| `service.go` | Business logic (start, generate, edit, approve, state) - IAH-3 |
+| `types.go` | Response DTOs (`StartResponse`, `ApproveResponse`, `StepStateResponse`) |
+| `prompts.go` | Framework code to LLM prompt mapping |
 
 ## Model
 
@@ -161,7 +163,106 @@ Frontend editors use `react-hook-form` to edit individual framework outputs:
 4. Submit via `PUT /api/v1/analyses/:id/steps/:frameworkCode`
 5. Backend calls `SetHumanEdited()` with JSON string
 
+## Service Methods (IAH-3)
+
+### StartAnalysisBySteps(ctx, challengeID) → StartResponse
+Creates a new step-by-step analysis:
+- Fetches challenge to get company_id
+- Creates (or reuses) parent `Analysis` record
+- Creates all 14 `AnalysisStep` records with `status=pending`
+- Returns analysis ID and all steps
+- **Idempotent**: Safe to call multiple times
+
+### GenerateStep(ctx, analysisID, stepNumber) → AnalysisStep
+Calls LLM to generate AI output for a step:
+- Validates step number (0-13)
+- Validates all previous steps are approved (enforces sequential flow)
+- Sets status to `generating`
+- Builds LLM context (company, challenge, macro, previous frameworks)
+- Calls LLM with framework-specific prompt and config
+- On success: sets `ai_output`, `status=generated`, `generated_at`
+- On failure: sets `status=failed`, logs error
+- **Preserves** existing `human_edited` (doesn't overwrite)
+
+### SaveHumanEdit(ctx, stepID, editedJSON) → AnalysisStep
+Saves human edits without calling LLM:
+- Validates JSON structure
+- Updates `human_edited` field only
+- **Does NOT change status** (stays `generated` or `approved`)
+
+### ApproveAndAdvance(ctx, stepID) → ApproveResponse
+Approves a step and advances to next:
+- Validates step has content (ai_output OR human_edited)
+- Sets `status=approved`, `approved_at=now()`
+- If not last step: returns next step info
+- If last step (synthesis): marks parent Analysis as `completed`
+
+### GetStepState(ctx, analysisID) → StepStateResponse
+Returns current state for UI:
+- **Current step**: First non-approved (or last if all approved)
+- **Previous steps**: All approved steps (read-only context)
+- **Framework metadata**: Guidance text for current step
+
+### GetAnalysisSteps(ctx, analysisID) → []AnalysisStep
+Returns all 14 steps ordered by step_number.
+
+## LLM Context Building
+
+Each step receives structured context via `buildStepContext()`:
+
+```go
+{
+  "company_data": { /* Full company record */ },
+  "challenge_context": "The business challenge description",
+  "challenge_type": "growth_organic",
+  "challenge_category": "growth",
+  "macro_context": {
+    "economic_indicators": {
+      "interest_rate": "15.00% a.a.",       // SELIC
+      "inflation_rate": "4.68% (12 meses)", // IPCA
+      "exchange_rate": "R$ 5,44/USD",
+      "as_of": "2025-12"
+    }
+  },
+  "previous_frameworks": {
+    "pestel": { /* JSON output from step 1 */ },
+    "porter": { /* JSON output from step 2 */ },
+    // ... all approved previous steps
+  }
+}
+```
+
+**Key Rules**:
+- Macro indicators are hardcoded (not from database)
+- Previous frameworks include only **approved** steps
+- Each framework uses its effective output (`human_edited` if exists, else `ai_output`)
+
+## Service Dependencies
+
+The service requires:
+- `*Repository` - Database operations
+- `analysis.Repository` - To fetch/create parent Analysis records
+- `*company.Service` - To get company data for LLM context
+- `challenge.Repository` - To get challenge data
+- `*llm.Client` - For AI generation
+- `map[string]config.FrameworkConfig` - Model routing (primary + fallback)
+- `zerolog.Logger` - Structured logging
+
+Initialization in `main.go`:
+
+```go
+analysisByStepsSvc := analysisbysteps.NewService(
+    analysisByStepsRepo,
+    analysisRepo,
+    companySvc,
+    challengeRepo,
+    llmClient,
+    cfg.Frameworks,
+    log.Logger,
+)
+```
+
 ## Jira Reference
 
-- **Ticket**: IAH-2 "Domínio e modelo do fluxo por etapas"
-- **Status**: Domain package created, API handlers pending
+- **IAH-2**: "Domínio e modelo do fluxo por etapas" - Domain package created ✅
+- **IAH-3**: "Service e API do fluxo por etapas" - Service layer implemented ✅, API handlers pending

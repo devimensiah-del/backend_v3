@@ -17,12 +17,13 @@ type Handler struct {
 	supabaseJWTSecret string
 
 	// Composed Handlers from sub-packages
-	AdminHandlers      *AdminHandlers
-	AnalysisHandlers   *AnalysisHandlers
-	AuthHandlers       *AuthHandlers
-	CompanyHandlers    *CompanyHandlers
-	SubmissionHandlers *SubmissionHandlers
-	UserHandlers       *UserHandlers
+	AdminHandlers           *AdminHandlers
+	AnalysisHandlers        *AnalysisHandlers
+	AnalysisByStepsHandlers *AnalysisByStepsHandlers
+	AuthHandlers            *AuthHandlers
+	CompanyHandlers         *CompanyHandlers
+	SubmissionHandlers      *SubmissionHandlers
+	UserHandlers            *UserHandlers
 
 	// Helper for building detailed submission responses
 	SubmissionResponseBuilder *SubmissionResponseBuilder
@@ -32,6 +33,7 @@ type Handler struct {
 func NewHandler(
 	adminHandlers *AdminHandlers,
 	analysisHandlers *AnalysisHandlers,
+	analysisByStepsHandlers *AnalysisByStepsHandlers,
 	authHandlers *AuthHandlers,
 	companyHandlers *CompanyHandlers,
 	submissionHandlers *SubmissionHandlers,
@@ -54,6 +56,7 @@ func NewHandler(
 
 		AdminHandlers:             adminHandlers,
 		AnalysisHandlers:          analysisHandlers,
+		AnalysisByStepsHandlers:   analysisByStepsHandlers,
 		AuthHandlers:              authHandlers,
 		CompanyHandlers:           companyHandlers,
 		SubmissionHandlers:        submissionHandlers,

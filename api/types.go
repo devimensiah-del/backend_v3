@@ -202,6 +202,37 @@ type UserProfile struct {
 	UpdatedAt time.Time `json:"updatedAt" db:"updated_at"`
 }
 
+// ==================== ANALYSIS BY STEPS REQUEST TYPES ====================
+
+type StartAnalysisByStepsRequest struct {
+	ChallengeID string `json:"challenge_id" binding:"required"` // Validate UUID manually in handler
+}
+
+type SaveHumanEditRequest struct {
+	EditedContent string `json:"edited_content" binding:"required"`
+}
+
+// ==================== ANALYSIS BY STEPS RESPONSE TYPES ====================
+
+// AnalysisStepResponse maps domain AnalysisStep to API response
+type AnalysisStepResponse struct {
+	ID            string     `json:"id"`
+	AnalysisID    string     `json:"analysis_id"`
+	FrameworkCode string     `json:"framework_code"`
+	StepNumber    int        `json:"step_number"`
+	AIOutput      *string    `json:"ai_output,omitempty"`
+	HumanEdited   *string    `json:"human_edited,omitempty"`
+	Visible       bool       `json:"visible"`
+	Status        string     `json:"status"`
+	GeneratedAt   *time.Time `json:"generated_at,omitempty"`
+	ApprovedAt    *time.Time `json:"approved_at,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+	// Computed fields
+	EffectiveOutput *string `json:"effective_output,omitempty"`
+	IsEdited        bool    `json:"is_edited"`
+}
+
 // ==================== ANALYSIS RESPONSE TYPES ====================
 
 // AnalysisResponse maps domain Analysis to frontend-expected structure
