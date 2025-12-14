@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Go REST API backend for IMENSIAH business intelligence platform. Processes company submissions through an AI-powered pipeline: Submission → Enrichment → Analysis (11 strategic frameworks) → PDF Report.
+Go REST API backend for IMENSIAH business intelligence platform. Processes company submissions through an AI-powered pipeline: Submission → Enrichment → Analysis (14 strategic frameworks) → PDF Report.
 
 ## Build & Development Commands
 
@@ -40,14 +40,12 @@ domain/
 ├── company/           # Company management, verification & enriched data
 ├── challenge/         # Business challenge management
 ├── enrichment/        # Stateless enrichment service (Perplexity-only)
-├── analysis/          # 14 strategic frameworks execution
-├── framework/         # Dynamic framework configuration (deprecated)
-├── wizard/            # Human-in-the-loop analysis (deprecated, use analysisbysteps)
+├── analysis/          # 14 strategic frameworks execution (batch mode)
 ├── analysisbysteps/   # Step-by-step analysis with human editing (IAH-2)
 └── macroeconomics/    # SELIC, IPCA, USD/BRL indicators
 ```
 
-**9 domain packages** with consistent patterns:
+**7 domain packages** with consistent patterns:
 - `model.go` - Domain entities and value objects
 - `repository.go` - Database access with sqlx
 - `service.go` - Business logic
@@ -61,20 +59,18 @@ domain/
 - `jobs/worker.go` - Asynq background job handlers
 
 ### Handler Composition Pattern
-API handlers are split by domain in `api/` (21 files total):
+API handlers are split by domain in `api/`:
 
-**Domain Handlers (9 files):**
-- `admin_handlers.go` - Admin operations (4 handlers)
-- `analysis_handlers.go` - Analysis CRUD and visibility (10 handlers)
-- `auth_handlers.go` - Authentication with Supabase (7 handlers)
-- `company_handlers.go` - Company CRUD + re-analysis (6 handlers)
-- `framework_handlers.go` - Framework management (6 handlers)
-- `macro_handlers.go` - Macroeconomic indicators (4 handlers)
-- `submission_handlers.go` - Public submission endpoint (3 handlers)
-- `user_handlers.go` - User profile management (2 handlers)
-- `wizard_handlers.go` - Human-in-the-loop wizard (6 handlers)
+**Domain Handlers:**
+- `admin_handlers.go` - Admin operations
+- `analysis_handlers.go` - Analysis CRUD and visibility
+- `auth_handlers.go` - Authentication with Supabase
+- `company_handlers.go` - Company CRUD + re-analysis
+- `macro_handlers.go` - Macroeconomic indicators
+- `submission_handlers.go` - Public submission endpoint
+- `user_handlers.go` - User profile management
 
-**Infrastructure (8 files):**
+**Infrastructure:**
 - `router.go` - Route setup and composition
 - `handlers.go` - Main Handler struct
 - `middleware.go` - Auth, CORS, logging, rate limit
@@ -83,10 +79,6 @@ API handlers are split by domain in `api/` (21 files total):
 - `security_events.go` - Security audit logging
 - `submission_response_builder.go` - Status derivation
 - `health_handlers.go` - Health check endpoint
-
-**Tests (5 files):**
-- `auth_handlers_test.go`, `middleware_test.go`, `user_handlers_test.go`
-- `submission_handlers_contract_test.go`, `submission_response_builder_test.go`
 
 Handlers are composed via `NewHandler()` in `router.go`. See `api/README.md` for details.
 
@@ -98,7 +90,7 @@ Handlers are composed via `NewHandler()` in `router.go`. See `api/README.md` for
 - Analysis: `pending` → `processing` → `completed` (or `failed`)
 
 **Background Jobs (Asynq/Redis):**
-- `AnalysisJob` - Executes 11 frameworks in parallel
+- `AnalysisJob` - Executes 14 frameworks sequentially
 
 **Inline Operations:**
 - Company enrichment runs synchronously via Perplexity at company creation
@@ -107,7 +99,7 @@ Handlers are composed via `NewHandler()` in `router.go`. See `api/README.md` for
 
 3-model approach via OpenRouter:
 1. **PreSearch** (`AI_PRESEARCH_MODEL`): Perplexity sonar-pro for company enrichment (inline)
-2. **Primary** (`AI_PRIMARY_MODEL`): All 11 analysis frameworks
+2. **Primary** (`AI_PRIMARY_MODEL`): All 14 analysis frameworks
 3. **Synthesis** (`AI_SYNTHESIS_MODEL`): Premium model for executive summary
 
 Each has a fallback model (`_FALLBACK` suffix) for automatic retry on rate limits.
@@ -131,8 +123,6 @@ PostgreSQL via Supabase. Key tables:
 - `submissions` - Entry data, linked to optional `user_id`
 - `companies` - Verified company records with enriched data (includes enrichment_status)
 - `analyses` - Framework outputs in `framework_results` JSONB
-- `frameworks` - Dynamic framework configuration (v2+, deprecated)
-- `analysis_steps` - Wizard step tracking (v2+, deprecated)
 - `analysis_steps_v2` - Human-editable step storage (IAH-2)
 
 ### Migrations Structure
@@ -140,18 +130,9 @@ PostgreSQL via Supabase. Key tables:
 migrations/
 ├── 000_baseline.sql       # Production schema snapshot (001-031)
 ├── archive/               # Historical reference only (DO NOT RUN)
-│   ├── 01_initial_schema.sql
-│   ├── 02_constraints_triggers.sql
-│   └── ...
-├── v2_001_frameworks_table.sql    # Dynamic frameworks (deprecated)
-├── v2_002_framework_results.sql   # Consolidate JSONB
-├── v2_003_drop_legacy_columns.sql # Remove old columns
-├── v2_004_wizard_system.sql       # Human-in-the-loop (deprecated)
-├── v2_005_company_enrichment.sql  # Enriched data → companies
-├── v2_006_submission_challenges.sql
-├── v2_007_cleanup.sql
-├── ...
-└── v2_019_analysis_steps_by_human.sql  # IAH-2: analysis_steps_v2 table
+├── v2_001 - v2_018        # Schema evolution
+├── v2_019_analysis_steps_by_human.sql  # IAH-2: analysis_steps_v2 table
+└── v2_020_drop_legacy_wizard_tables.sql # Cleanup deprecated tables
 ```
 
 **For fresh setups:** Run `000_baseline.sql` then `v2_*` migrations.
@@ -164,12 +145,6 @@ migrations/
 - Contract tests: `*_contract_test.go` for API/model compatibility
 - Mocking: `github.com/DATA-DOG/go-sqlmock` for DB, `testify/mock` for services
 
-**Current Test Coverage:** 17.7% overall
-- High coverage: `enrichment` (68%), `submission` (60.8%), `infrastructure` (69.4%), `pkg/errors` (100%)
-- Medium coverage: `challenge` (28.1%), `company` (20.7%), `framework` (37.6%)
-- Low coverage: `analysis` (9%), `api` (9.7%), `llm` (14.1%), `wizard` (0%)
-- **Priority:** Add tests for wizard, analysis, and API handlers
-
 ## API Route Groups
 
 ```
@@ -180,6 +155,7 @@ migrations/
 /api/v1/submissions/*      # Protected user routes
 /api/v1/companies/*        # User's companies
 /api/v1/admin/*            # Admin-only operations
+/api/v1/frameworks/order   # Framework metadata (IAH-2)
 ```
 
 Auth uses Supabase JWT tokens validated via `SUPABASE_JWT_SECRET`.
@@ -201,3 +177,8 @@ GOTENBERG_URL             # PDF generation service
 - **Circuit breaker**: LLM client uses gobreaker for fault tolerance
 - **Job retries**: Exponential backoff configured in `config.go`
 - **Soft deletes**: Entities have `deleted_at` column, use `WHERE deleted_at IS NULL`
+
+## Jira Tickets
+
+- **IAH-2**: AnalysisBySteps domain + migration (completed)
+- **IAH-3**: API handlers for human editing (pending)

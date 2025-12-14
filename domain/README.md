@@ -11,27 +11,19 @@ domain/
 ├── challenge/        # Business challenges
 ├── enrichment/       # Stateless Perplexity client
 ├── macroeconomics/   # Economic indicators (SELIC, IPCA, USD/BRL)
-├── analysis/         # Strategic frameworks execution
-├── framework/        # Framework configuration
-├── wizard/           # Human-in-the-loop step-by-step analysis (v2, deprecated)
-└── analysisbysteps/  # Step-by-step analysis with human editing (v3, IAH-2)
+├── analysis/         # Strategic frameworks execution (batch mode)
+└── analysisbysteps/  # Step-by-step analysis with human editing (IAH-2)
 ```
 
 ## Data Flow
 
 ```
-                    ┌─── Batch Mode (deprecated) ───┐
-                    │                                │
-Submission → Company → Challenge → Analysis ←──────────┤
-     │           │                                    │
-     │           └── Enrichment (async, one-time)    │
-     │                                                │
-     └── Saga rollback on failure     ┌─── Wizard Mode (v2) ───┐
-                                      │   Step-by-step with    │
-                                      │   human validation     │
-                                      └─────────────────────────┘
+Submission → Company → Challenge → Analysis
+     │           │                    │
+     │           └── Enrichment       └── AnalysisBySteps (human editing)
+     │               (inline)
+     └── Saga rollback on failure
 ```
-
 ---
 
 # Reviewed Domains
@@ -343,9 +335,9 @@ See `domain/analysis/README.md` for detailed documentation.
 
 ## 7. AnalysisBySteps (IAH-2)
 
-Step-by-step analysis with human editing capability. Replaces the deprecated wizard package.
+Step-by-step analysis with human editing capability.
 
-**Key differences from wizard:**
+**Key features:**
 - Human can **directly edit** AI output (not just add context for regeneration)
 - `ai_output` and `human_edited` stored as TEXT (JSON string)
 - `GetEffectiveOutput()` returns `COALESCE(human_edited, ai_output)`
@@ -503,7 +495,6 @@ Defined in `challenge/model.go`. Use `challenge.ValidCategories` and `challenge.
 - Remove `enrichment_status` from companies - it tracks async enrichment
 - Change framework step order without updating `FrameworkOrder` in `analysisbysteps/constants.go`
 - Import domain packages directly - use interfaces in consuming package
-- Run v2_020 migration before confirming wizard data is disposable
 
 **SAFE TO:**
 - Add new challenge categories/types (update `types.go`)
