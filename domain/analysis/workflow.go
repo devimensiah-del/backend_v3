@@ -843,11 +843,11 @@ func (s *Service) runBSC(ctx context.Context, k *ContextContainer) (*BalancedSco
 		Msg("🔍 DEBUG BSC Input Data")
 
 	data := map[string]interface{}{
-		"company_data":       k.CompanyData,
+		"company_data":        k.CompanyData,
 		"blue_ocean_insights": blueOceanSummary,
-		"challenge_context":  k.ChallengeData["business_challenge"],
-		"challenge_type":     k.ChallengeData["challenge_type"],
-		"challenge_category": k.ChallengeData["challenge_category"],
+		"challenge_context":   k.ChallengeData["business_challenge"],
+		"challenge_type":      k.ChallengeData["challenge_type"],
+		"challenge_category":  k.ChallengeData["challenge_category"],
 	}
 	opts := llm.NewGenerationOptions(s.frameworks[FrameworkBSC])
 	err := s.llm.GenerateStructuredWithOptions(ctx, opts, withDataPriority(llm.FrameworkBSCPrompt), data, &res)

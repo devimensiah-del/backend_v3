@@ -13,11 +13,11 @@ import (
 	"backend_v3/api"
 	"backend_v3/config"
 	"backend_v3/domain/analysis"
+	"backend_v3/domain/analysisbysteps"
 	"backend_v3/domain/challenge"
 	"backend_v3/domain/company"
 	"backend_v3/domain/enrichment"
 	"backend_v3/domain/submission"
-	"backend_v3/domain/wizard"
 	"backend_v3/internal/adapters"
 	"backend_v3/jobs"
 	"backend_v3/llm"
@@ -186,16 +186,15 @@ func main() {
 	analysisSvc.SetChallengeRepo(adapters.NewChallengeRepositoryAdapterForAnalysis(challengeRepo))
 	log.Info().Msg("ChallengeRepo injected into analysis (challenge context enabled)")
 
-	// Wizard Service (Human-in-the-Loop Framework Wizard)
-	wizardSvc := wizard.NewService(
-		analysisRepo,
-		llmClient,
-		cfg.Frameworks,
-		log.Logger,
-	)
-	// Inject company service for getting company data in wizard (same adapter as analysis)
-	wizardSvc.SetCompanyService(adapters.NewCompanyServiceAdapterForAnalysis(companySvc))
-	log.Info().Msg("Wizard service initialized (human-in-the-loop enabled with company data)")
+	// AnalysisBySteps (Human-editable step-by-step analysis - IAH-2)
+	analysisByStepsRepo := analysisbysteps.NewRepository(db)
+	analysisByStepsSvc := analysisbysteps.NewService(analysisByStepsRepo)
+	log.Info().
+		Int("total_frameworks", analysisbysteps.TotalSteps()).
+		Msg("AnalysisBySteps service initialized (human editing enabled)")
+
+	// Silence unused variable warning - service will be wired in IAH-3
+	_ = analysisByStepsSvc
 
 	// 7. BACKGROUND WORKER
 	log.Info().Msg("Initializing background job worker...")
@@ -265,7 +264,6 @@ func main() {
 		enrichSvc,
 		analysisSvc,
 		companySvc,   // Company service for re-enrich/re-analyze workflows
-		wizardSvc,    // Wizard service for human-in-the-loop analysis
 		challengeSvc, // Challenge service for challenge management
 	)
 
