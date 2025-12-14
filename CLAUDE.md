@@ -36,17 +36,18 @@ go clean -testcache
 ### Domain-Driven Design Structure
 ```
 domain/
-├── submission/      # Entry point - company data capture
-├── company/         # Company management, verification & enriched data
-├── challenge/       # Business challenge management
-├── enrichment/      # Stateless enrichment service (Perplexity-only)
-├── analysis/        # 11 strategic frameworks execution
-├── framework/       # Dynamic framework configuration
-├── wizard/          # Human-in-the-loop step-by-step analysis
-└── macroeconomics/  # SELIC, IPCA, USD/BRL indicators
+├── submission/        # Entry point - company data capture
+├── company/           # Company management, verification & enriched data
+├── challenge/         # Business challenge management
+├── enrichment/        # Stateless enrichment service (Perplexity-only)
+├── analysis/          # 14 strategic frameworks execution
+├── framework/         # Dynamic framework configuration (deprecated)
+├── wizard/            # Human-in-the-loop analysis (deprecated, use analysisbysteps)
+├── analysisbysteps/   # Step-by-step analysis with human editing (IAH-2)
+└── macroeconomics/    # SELIC, IPCA, USD/BRL indicators
 ```
 
-**8 domain packages** with consistent patterns:
+**9 domain packages** with consistent patterns:
 - `model.go` - Domain entities and value objects
 - `repository.go` - Database access with sqlx
 - `service.go` - Business logic
@@ -111,15 +112,17 @@ Handlers are composed via `NewHandler()` in `router.go`. See `api/README.md` for
 
 Each has a fallback model (`_FALLBACK` suffix) for automatic retry on rate limits.
 
-## Analysis Frameworks (11 Total)
+## Analysis Frameworks (14 Total)
 
-Defined in `domain/analysis/model.go`:
-- Layer 1 (Environment): PESTEL, Porter's 7 Forces, TAM-SAM-SOM
-- Layer 2 (Positioning): SWOT (with confidence/source), Benchmarking
-- Layer 3 (Strategy): Blue Ocean, Growth Hacking, Scenarios
-- Layer 4 (Execution): OKRs, BSC, Decision Matrix
-- Final: Synthesis (executive summary)
+Defined in `domain/analysisbysteps/constants.go`:
+- **Step 0**: Challenge Refinement (problem validation)
+- **Layer 1** (Environment): PESTEL, Porter's 5 Forces, Benchmarking
+- **Layer 2** (Positioning): SWOT, SWOT Cross (cross-quadrant strategies), TAM-SAM-SOM
+- **Layer 3** (Strategy): Blue Ocean, Growth Hacking, Scenarios
+- **Layer 4** (Execution): Decision Matrix, OKRs, BSC
+- **Final**: Synthesis (executive summary)
 
+Framework order and guidance text in `domain/analysisbysteps/constants.go`.
 Prompts in `llm/prompts.go`.
 
 ## Database
@@ -128,8 +131,9 @@ PostgreSQL via Supabase. Key tables:
 - `submissions` - Entry data, linked to optional `user_id`
 - `companies` - Verified company records with enriched data (includes enrichment_status)
 - `analyses` - Framework outputs in `framework_results` JSONB
-- `frameworks` - Dynamic framework configuration (v2+)
-- `analysis_steps` - Wizard step tracking (v2+)
+- `frameworks` - Dynamic framework configuration (v2+, deprecated)
+- `analysis_steps` - Wizard step tracking (v2+, deprecated)
+- `analysis_steps_v2` - Human-editable step storage (IAH-2)
 
 ### Migrations Structure
 ```
@@ -139,13 +143,15 @@ migrations/
 │   ├── 01_initial_schema.sql
 │   ├── 02_constraints_triggers.sql
 │   └── ...
-├── v2_001_frameworks_table.sql    # Dynamic frameworks
+├── v2_001_frameworks_table.sql    # Dynamic frameworks (deprecated)
 ├── v2_002_framework_results.sql   # Consolidate JSONB
 ├── v2_003_drop_legacy_columns.sql # Remove old columns
-├── v2_004_wizard_system.sql       # Human-in-the-loop
+├── v2_004_wizard_system.sql       # Human-in-the-loop (deprecated)
 ├── v2_005_company_enrichment.sql  # Enriched data → companies
 ├── v2_006_submission_challenges.sql
-└── v2_007_cleanup.sql
+├── v2_007_cleanup.sql
+├── ...
+└── v2_019_analysis_steps_by_human.sql  # IAH-2: analysis_steps_v2 table
 ```
 
 **For fresh setups:** Run `000_baseline.sql` then `v2_*` migrations.

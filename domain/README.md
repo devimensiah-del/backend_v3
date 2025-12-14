@@ -6,14 +6,15 @@ Business logic organized by bounded contexts. Each domain is independent with it
 
 ```
 domain/
-├── submission/      # Entry point - form capture
-├── company/         # Company records + enrichment
-├── challenge/       # Business challenges
-├── enrichment/      # Stateless Perplexity client
-├── macroeconomics/  # Economic indicators (SELIC, IPCA, USD/BRL)
-├── analysis/        # Strategic frameworks execution
-├── framework/       # Framework configuration
-└── wizard/          # Human-in-the-loop step-by-step analysis (v2)
+├── submission/       # Entry point - form capture
+├── company/          # Company records + enrichment
+├── challenge/        # Business challenges
+├── enrichment/       # Stateless Perplexity client
+├── macroeconomics/   # Economic indicators (SELIC, IPCA, USD/BRL)
+├── analysis/         # Strategic frameworks execution
+├── framework/        # Framework configuration
+├── wizard/           # Human-in-the-loop step-by-step analysis (v2, deprecated)
+└── analysisbysteps/  # Step-by-step analysis with human editing (v3, IAH-2)
 ```
 
 ## Data Flow
@@ -319,126 +320,97 @@ Brazilian economic indicators for strategic analysis. DB-first, API-fallback pat
 
 ## 6. Analysis
 
-Strategic analysis with 11 frameworks and wizard mode for human-in-the-loop validation.
+Strategic analysis with 14 frameworks. Human editing via `analysisbysteps` package (section 7).
 
 See `domain/analysis/README.md` for detailed documentation.
 
 ### Analysis Key Points
 - Requires `challenge_id` for all analyses (links analysis to specific business problem)
-- Two modes: batch (RunAnalysis) or step-by-step (WizardService)
-- Wizard mode: "add context → regenerate" pattern with versioning
-- No direct edits - human provides context, AI regenerates
-- No going back - wizard only moves forward
+- `RunAnalysis()` executes all 14 frameworks in batch mode
+- Results stored in `framework_results` JSONB column
+- Human editing via `analysisbysteps` package (IAH-2)
 
 ### Analysis Service
 
 | Method | Purpose |
 |--------|---------|
-| `RunAnalysis(ctx, subID, compID, challengeID)` | **DEPRECATED** - Batch execution (use wizard) |
-| `NewWizardService()` | Human-in-the-loop wizard constructor |
-| `StartWizard()` | Initialize wizard for company + challenge |
-| `GenerateStep()` | Generate next framework |
-| `ApproveStep()` | Approve current step and advance |
-| `RefineStep()` | Add context and regenerate (with versioning) |
-| `GetWizardState()` | Get current wizard state |
+| `RunAnalysis(ctx, subID, compID, challengeID)` | Execute all frameworks (batch mode) |
+| `GetByID(ctx, id)` | Get analysis by ID |
+| `GetBySubmissionID(ctx, subID)` | Get analysis for submission |
+| `UpdateStatus(ctx, id, status)` | Update analysis status |
 
 ---
 
-## 7. Framework
+## 7. AnalysisBySteps (IAH-2)
 
-Dynamic framework configuration. Enables runtime management of prompts, schemas, and execution order.
+Step-by-step analysis with human editing capability. Replaces the deprecated wizard package.
 
-See `domain/framework/README.md` for detailed documentation.
+**Key differences from wizard:**
+- Human can **directly edit** AI output (not just add context for regeneration)
+- `ai_output` and `human_edited` stored as TEXT (JSON string)
+- `GetEffectiveOutput()` returns `COALESCE(human_edited, ai_output)`
+- 14 frameworks (0-13) including `challenge_refinement` and `swotcross`
+- `visible` defaults to `true` for public report sections
 
-### Framework Key Points
-- Framework `code` is unique (e.g., "pestel", "swot")
-- Dependencies resolved via topological sort
-- Deactivated frameworks are soft-deleted (is_active=false)
-- Used by Analysis domain for framework execution
-
-### Framework Service
-
-| Method | Purpose |
-|--------|---------|
-| `GetByCode(code)` | Get framework by code |
-| `List()` | Get all frameworks |
-| `ListActive()` | Get only active frameworks |
-| `Create(f)` | Create new framework |
-| `Update(f)` | Update existing framework |
-| `Deactivate(id)` | Soft-delete framework |
-| `GetExecutionPlan(codes)` | Resolve dependencies, return execution order |
-
----
-
-## 8. Wizard
-
-Human-in-the-loop analysis workflow. Executes frameworks step-by-step with human validation at each stage.
-
-**Key Invariants:**
-- Wizard only moves **forward** - no going back to previous steps
-- Human provides **context**, AI **regenerates** - no direct edits
-- Each refinement creates a **version snapshot** for audit trail
-- 12 steps total (0-11) + auto-generated synthesis
-
-### Wizard Models
+### AnalysisBySteps Models
 
 | Model | Fields | Notes |
 |-------|--------|-------|
-| `State` | `AnalysisID`, `CurrentStep`, `TotalSteps`, `Framework`, `StepStatus`, `Output`, `HumanContext`, `HumanAnswers`, `PreviousSteps`, `IterationCount`, `ErrorMessage` | Current wizard state |
-| `FrameworkStep` | `Step`, `Code`, `Name`, `Description`, `Questions` | Step definition |
-| `ClarifyingQuestion` | `ID`, `Question` | Guides human review (PT-BR) |
-| `StepSummary` | `Step`, `FrameworkCode`, `FrameworkName`, `Status`, `ApprovedAt` | Completed step summary |
+| `AnalysisStep` | `ID`, `AnalysisID`, `FrameworkCode`, `StepNumber`, `AIOutput`, `HumanEdited`, `Visible`, `Status`, `GeneratedAt`, `ApprovedAt`, `CreatedAt`, `UpdatedAt` | Table: `analysis_steps_v2` |
+| `FrameworkMeta` | `Code`, `Name`, `GuidanceText` | Human checkpoint reflection text |
+| `StepStatus` | `pending`, `generating`, `generated`, `approved`, `failed` | Status enum |
 
-### Wizard Service
+### AnalysisBySteps Repository
 
-| Function | Purpose |
-|----------|---------|
-| `NewService(repo, llm, frameworks)` | Constructor |
-| `SetCompanyService(svc)` | Inject dependency |
-| `SetMacroService(svc)` | Inject dependency |
-| `SetVersioningService(svc)` | Inject dependency |
-| `StartWizard(ctx, companyID, challengeID)` | Initialize or resume wizard |
-| `GenerateStep(ctx, analysisID, humanContext, humanAnswers)` | Generate current framework output |
-| `ApproveStep(ctx, analysisID, userID)` | Approve and advance to next step |
-| `RefineStep(ctx, analysisID, humanContext, humanAnswers, userID)` | Add context and regenerate |
-| `GetWizardState(ctx, analysisID)` | Get current state |
+| Function | SQL Operation |
+|----------|---------------|
+| `Create(ctx, step)` | `INSERT INTO analysis_steps_v2` |
+| `GetByID(ctx, id)` | `SELECT ... WHERE id = $1` |
+| `GetByAnalysisID(ctx, analysisID)` | `SELECT ... WHERE analysis_id = $1 ORDER BY step_number` |
+| `GetByAnalysisAndFramework(ctx, analysisID, frameworkCode)` | `SELECT ... WHERE analysis_id = $1 AND framework_code = $2` |
+| `Update(ctx, step)` | `UPDATE analysis_steps_v2 SET ...` |
+| `Upsert(ctx, step)` | `INSERT ... ON CONFLICT (analysis_id, framework_code) DO UPDATE` |
+| `SetAIOutput(ctx, id, output)` | Update ai_output + status = generated |
+| `SetHumanEdited(ctx, id, edited)` | Update human_edited only |
+| `Approve(ctx, id)` | Update status = approved + approved_at |
+| `SetVisibility(ctx, id, visible)` | Update visible flag |
 
-### Step Status Flow
-
-```
-pending → generating → generated ─┬→ approved (advance to next)
-                                   │
-                                   └→ RefineStep → generating → generated
-```
-
-### Framework Order (12 steps)
-
-| Step | Code | Name |
-|------|------|------|
-| 0 | `challenge_refinement` | Refinamento do Desafio |
-| 1 | `pestel` | PESTEL |
-| 2 | `porter` | Porter 5 Forças |
-| 3 | `benchmarking` | Benchmarking |
-| 4 | `swot` | SWOT |
-| 5 | `tam_sam_som` | TAM-SAM-SOM |
-| 6 | `blue_ocean` | Blue Ocean |
-| 7 | `growth_hacking` | Growth Loops |
-| 8 | `scenarios` | Cenários |
-| 9 | `decision_matrix` | Matriz de Decisão |
-| 10 | `okrs` | Plano 90 Dias |
-| 11 | `bsc` | BSC |
-| — | `synthesis` | Auto-generated final summary |
-
-### Versioning Service
+### AnalysisBySteps Helpers
 
 | Function | Purpose |
 |----------|---------|
-| `NewVersioningService(repo)` | Constructor |
-| `CreateVersionSnapshot(ctx, analysisID, summary, userID)` | Snapshot before change |
-| `GetVersionHistory(ctx, analysisID)` | List all versions |
-| `GetVersion(ctx, analysisID, versionNum)` | Get specific version |
-| `RevertToVersion(ctx, analysisID, targetVersion, userID)` | Restore old version (creates new) |
-| `CompareVersions(ctx, analysisID, v1, v2)` | Diff two versions |
+| `GetEffectiveOutput()` | Returns `human_edited` if set, else `ai_output` |
+| `IsEdited()` | Check if step has human edits |
+| `IsApproved()` | Check if status == approved |
+| `GetStepNumber(frameworkCode)` | Get step number (0-13) for framework code |
+| `GetFrameworkMeta(frameworkCode)` | Get metadata for framework code |
+| `TotalSteps()` | Returns 14 (total framework count) |
+
+### Framework Order (14 steps)
+
+| Step | Code | Name | GuidanceText |
+|------|------|------|--------------|
+| 0 | `challenge_refinement` | Refinamento do Desafio | "Revise se o desafio está claro..." |
+| 1 | `pestel` | Análise PESTEL | "Considere quais fatores externos..." |
+| 2 | `porter` | 5 Forças de Porter | "Avalie a intensidade competitiva..." |
+| 3 | `benchmarking` | Benchmarking | "Os players comparados são relevantes?" |
+| 4 | `swot` | Análise SWOT | "As forças listadas geram valor?" |
+| 5 | `swotcross` | SWOT Cruzado | "As estratégias cruzadas são viáveis?" |
+| 6 | `tam_sam_som` | TAM-SAM-SOM | "O dimensionamento está realista?" |
+| 7 | `blue_ocean` | Blue Ocean | "A curva de valor diferencia?" |
+| 8 | `growth_hacking` | Growth Hacking | "As táticas são aplicáveis ao estágio?" |
+| 9 | `scenarios` | Cenários | "Os cenários cobrem riscos relevantes?" |
+| 10 | `decision_matrix` | Matriz de Decisão | "Os critérios refletem prioridades?" |
+| 11 | `okrs` | OKRs | "Os objetivos são alcançáveis?" |
+| 12 | `bsc` | Balanced Scorecard | "As perspectivas estão balanceadas?" |
+| 13 | `synthesis` | Síntese Executiva | "A síntese captura conclusões?" |
+
+### Migration
+
+Table created via `v2_019_analysis_steps_by_human.sql`:
+- `analysis_steps_v2` with `UNIQUE(analysis_id, framework_code)`
+- `visible BOOLEAN NOT NULL DEFAULT true`
+- `ai_output TEXT`, `human_edited TEXT` (JSON strings)
 
 ---
 
@@ -500,14 +472,15 @@ Defined in `challenge/model.go`. Use `challenge.ValidCategories` and `challenge.
 | `completed` | All frameworks completed successfully |
 | `failed` | Analysis failed (see error message) |
 
-### Wizard Step Status
+### AnalysisBySteps Step Status
 
 | Status | Meaning |
 |--------|---------|
 | `pending` | Step not yet generated |
 | `generating` | LLM is running |
 | `generated` | Output ready for review |
-| `approved` | Human approved, moved to next step |
+| `approved` | Human approved step |
+| `failed` | AI generation failed |
 
 ### Validation Limits
 
@@ -528,13 +501,13 @@ Defined in `challenge/model.go`. Use `challenge.ValidCategories` and `challenge.
 **DO NOT:**
 - Delete or rename `challenge_id` on analyses - it's required
 - Remove `enrichment_status` from companies - it tracks async enrichment
-- Change wizard step order without updating `FrameworkOrder` array
-- Allow direct framework edits - wizard uses "add context → regenerate" pattern
-- Skip version snapshots before refinements - breaks audit trail
+- Change framework step order without updating `FrameworkOrder` in `analysisbysteps/constants.go`
 - Import domain packages directly - use interfaces in consuming package
+- Run v2_020 migration before confirming wizard data is disposable
 
 **SAFE TO:**
 - Add new challenge categories/types (update `types.go`)
 - Add new framework steps (update `FrameworkOrder` and prompts)
 - Extend enrichment fields (company model + Perplexity prompt)
 - Add new macro indicators (via DB config, not code)
+- Edit `human_edited` field in `analysis_steps_v2` (user editing is intended)

@@ -2,11 +2,11 @@ package api
 
 import (
 	domainanalysis "backend_v3/domain/analysis"
+	domainanalysisbysteps "backend_v3/domain/analysisbysteps"
 	domainchallenge "backend_v3/domain/challenge"
 	domaincompany "backend_v3/domain/company"
 	domainenrichment "backend_v3/domain/enrichment"
 	domainsubmission "backend_v3/domain/submission"
-	domainwizard "backend_v3/domain/wizard"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hibiken/asynq"
@@ -33,7 +33,6 @@ func SetupRouter(
 	enrichmentSvc *domainenrichment.Service,
 	analysisSvc *domainanalysis.Service,
 	companySvc *domaincompany.Service, // Company service for re-enrich/re-analyze workflows
-	wizardSvc *domainwizard.Service, // Wizard service for human-in-the-loop analysis
 	challengeSvc *domainchallenge.Service, // Challenge service for challenge management
 ) *gin.Engine {
 	if isProd {
@@ -101,9 +100,6 @@ func SetupRouter(
 		asynqClient,
 		logger,
 	)
-
-	// Wizard handlers for human-in-the-loop analysis
-	wizardHandlers := NewWizardHandlers(wizardSvc)
 
 	// Create the main API Handler instance
 	// This Handler now composes all specialized handlers
@@ -198,23 +194,15 @@ func SetupRouter(
 			})
 		})
 
-		// Framework order for wizard
+		// Framework order for step-by-step analysis (IAH-2)
 		protectedAPI.GET("/frameworks/order", func(c *gin.Context) {
 			c.JSON(200, gin.H{
-				"frameworks":  domainwizard.GetAllFrameworks(),
-				"total_steps": domainwizard.TotalSteps,
+				"frameworks":  domainanalysisbysteps.FrameworkOrder,
+				"total_steps": domainanalysisbysteps.TotalSteps(),
 			})
 		})
 
-		// Wizard routes (human-in-the-loop analysis)
-		// Wizard works with Company + Challenge directly (NOT submission)
-		// POST /wizard/start { "company_id": "...", "challenge_id": "..." }
-		protectedAPI.POST("/wizard/start", wizardHandlers.StartWizard)
-		protectedAPI.GET("/analyses/:id/wizard", wizardHandlers.GetWizardState)
-		protectedAPI.POST("/analyses/:id/wizard/generate", wizardHandlers.GenerateStep)
-		protectedAPI.POST("/analyses/:id/wizard/approve", wizardHandlers.ApproveStep)
-		protectedAPI.POST("/analyses/:id/wizard/refine", wizardHandlers.RefineStep)
-		protectedAPI.GET("/analyses/:id/wizard/summary", wizardHandlers.GetWizardSummary)
+		// TODO: IAH-3 - Add analysisbysteps API handlers for human editing
 	}
 
 	// Admin API routes (v1)
@@ -241,7 +229,7 @@ func SetupRouter(
 		adminAPI.PATCH("/analysis/:id/visibility", mainHandler.AnalysisHandlers.UpdateVisibility)
 		adminAPI.POST("/analysis/:id/public", mainHandler.AnalysisHandlers.TogglePublic)
 		adminAPI.POST("/analysis/:id/access-code", mainHandler.AnalysisHandlers.GenerateAccessCode)
-		adminAPI.POST("/analysis/:id/wizard/generate-all", wizardHandlers.GenerateAllSteps)
+		// NOTE: POST /analysis/:id/wizard/generate-all removed - wizard package deprecated (IAH-2)
 
 		// Company management (admin)
 		adminAPI.GET("/companies", mainHandler.CompanyHandlers.ListAllCompanies)
