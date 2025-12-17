@@ -1,6 +1,9 @@
 package analysisbysteps
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // StepStatus represents the status of an analysis step
 type StepStatus string
@@ -46,4 +49,16 @@ func (s *AnalysisStep) IsEdited() bool {
 // IsApproved returns true if this step has been approved
 func (s *AnalysisStep) IsApproved() bool {
 	return s.Status == StatusApproved
+}
+
+// MarshalJSON implements custom JSON marshaling to include computed fields
+func (s AnalysisStep) MarshalJSON() ([]byte, error) {
+	type Alias AnalysisStep
+	return json.Marshal(&struct {
+		Alias
+		IsEdited bool `json:"is_edited"`
+	}{
+		Alias:    Alias(s),
+		IsEdited: s.HumanEdited != nil,
+	})
 }

@@ -19,10 +19,13 @@ type ApproveResponse struct {
 
 // StepStateResponse provides the current step state with all previous steps as context
 type StepStateResponse struct {
-	AnalysisID      string         `json:"analysis_id"`
-	CurrentStep     int            `json:"current_step"`
-	TotalSteps      int            `json:"total_steps"`
-	CurrentStepData *AnalysisStep  `json:"current_step_data"`
-	PreviousSteps   []AnalysisStep `json:"previous_steps"` // Read-only context
-	FrameworkMeta   *FrameworkMeta `json:"framework_meta"`
+	AnalysisID           string         `json:"analysis_id"`
+	CurrentStep          int            `json:"current_step"`
+	TotalSteps           int            `json:"total_steps"`
+	CurrentStepData      *AnalysisStep  `json:"current_step_data"`
+	PreviousSteps        []AnalysisStep `json:"previous_steps"` // Read-only context
+	FrameworkMeta        *FrameworkMeta `json:"framework_meta"`
+	ChallengeDescription string         `json:"challenge_description"`
+	ChallengeCategory    string         `json:"challenge_category"`
+	ChallengeType        string         `json:"challenge_type"`
 }

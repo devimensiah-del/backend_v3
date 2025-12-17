@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"backend_v3/config"
@@ -24,6 +25,7 @@ type Service struct {
 	challengeRepo  challenge.Repository
 	llmClient      *llm.Client
 	frameworks     map[string]config.FrameworkConfig
+	cfg            *config.Config
 	logger         zerolog.Logger
 }
 
@@ -35,6 +37,7 @@ func NewService(
 	challengeRepo challenge.Repository,
 	llmClient *llm.Client,
 	frameworks map[string]config.FrameworkConfig,
+	cfg *config.Config,
 	logger zerolog.Logger,
 ) *Service {
 	return &Service{
@@ -44,6 +47,7 @@ func NewService(
 		challengeRepo:  challengeRepo,
 		llmClient:      llmClient,
 		frameworks:     frameworks,
+		cfg:            cfg,
 		logger:         logger.With().Str("service", "analysisbysteps").Logger(),
 	}
 }
@@ -67,7 +71,12 @@ func (s *Service) StartAnalysisBySteps(ctx context.Context, challengeID uuid.UUI
 	// 2. Check if an analysis already exists for this challenge
 	existingAnalysis, err := s.analysisRepo.GetByChallengeID(ctx, challengeID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check existing analysis: %w", err)
+		// GetByChallengeID returns an error with "not found" message when no analysis exists
+		// This is expected - we'll create a new analysis below
+		if !strings.Contains(err.Error(), "not found") {
+			return nil, fmt.Errorf("failed to check existing analysis: %w", err)
+		}
+		existingAnalysis = nil // Treat "not found" as nil
 	}
 
 	var analysisID string
@@ -151,6 +160,28 @@ func (s *Service) StartAnalysisBySteps(ctx context.Context, challengeID uuid.UUI
 		Str("analysis_id", analysisID).
 		Int("steps_created", len(steps)).
 		Msg("Successfully created all analysis steps")
+
+	// 6. Auto-generate step 0 (challenge_refinement)
+	s.logger.Info().
+		Str("analysis_id", analysisID).
+		Msg("Auto-generating step 0 (challenge_refinement)")
+
+	generatedStep, err := s.GenerateStep(ctx, analysisID, 0)
+	if err != nil {
+		// Log warning but don't fail the whole request - user can retry from UI
+		s.logger.Warn().
+			Err(err).
+			Str("analysis_id", analysisID).
+			Msg("Auto-generation of step 0 failed, user can retry from UI")
+	} else {
+		// Update the first step in the response with the generated output
+		if len(steps) > 0 {
+			steps[0] = *generatedStep
+		}
+		s.logger.Info().
+			Str("analysis_id", analysisID).
+			Msg("Successfully auto-generated step 0")
+	}
 
 	return &StartResponse{
 		AnalysisID:  analysisID,
@@ -253,26 +284,42 @@ func (s *Service) GenerateStep(ctx context.Context, analysisID string, stepNumbe
 			Msg("Using default framework config - config not found")
 	}
 
-	// 8. Call LLM with framework-specific prompt and config
-	opts := llm.NewGenerationOptions(frameworkConfig)
-	prompt := getPromptForFramework(currentStep.FrameworkCode)
-
+	// 8. Call LLM with framework-specific prompt and config (or use mock in test mode)
 	var result map[string]interface{}
-	err = s.llmClient.GenerateStructuredWithOptions(ctx, opts, prompt, stepContext, &result)
-	if err != nil {
-		// Set status to failed
-		currentStep.Status = StatusFailed
-		currentStep.UpdatedAt = time.Now()
-		_ = s.repo.Update(ctx, currentStep)
 
-		s.logger.Error().
-			Err(err).
-			Str("analysis_id", analysisID).
-			Int("step_number", stepNumber).
+	if s.cfg != nil && s.cfg.LLMMockMode {
+		// Mock mode: return canned response for fast testing
+		s.logger.Info().
 			Str("framework_code", currentStep.FrameworkCode).
-			Msg("LLM generation failed")
+			Msg("Using mock LLM response (LLM_MOCK_MODE=true)")
 
-		return nil, fmt.Errorf("LLM generation failed for %s: %w", currentStep.FrameworkCode, err)
+		if err := llm.GetMockResponseStruct(currentStep.FrameworkCode, &result); err != nil {
+			currentStep.Status = StatusFailed
+			currentStep.UpdatedAt = time.Now()
+			_ = s.repo.Update(ctx, currentStep)
+			return nil, fmt.Errorf("mock response failed for %s: %w", currentStep.FrameworkCode, err)
+		}
+	} else {
+		// Real LLM call
+		opts := llm.NewGenerationOptions(frameworkConfig)
+		prompt := getPromptForFramework(currentStep.FrameworkCode)
+
+		err = s.llmClient.GenerateStructuredWithOptions(ctx, opts, prompt, stepContext, &result)
+		if err != nil {
+			// Set status to failed
+			currentStep.Status = StatusFailed
+			currentStep.UpdatedAt = time.Now()
+			_ = s.repo.Update(ctx, currentStep)
+
+			s.logger.Error().
+				Err(err).
+				Str("analysis_id", analysisID).
+				Int("step_number", stepNumber).
+				Str("framework_code", currentStep.FrameworkCode).
+				Msg("LLM generation failed")
+
+			return nil, fmt.Errorf("LLM generation failed for %s: %w", currentStep.FrameworkCode, err)
+		}
 	}
 
 	// 9. On success: set ai_output, status=generated, generated_at
@@ -442,7 +489,25 @@ func (s *Service) GetStepState(ctx context.Context, analysisID string) (*StepSta
 		return nil, fmt.Errorf("no steps found for analysis: %s", analysisID)
 	}
 
-	// 2. Find current step (first non-approved, or last if all approved)
+	// 2. Get the analysis record to fetch challenge_id
+	analysisRecord, err := s.analysisRepo.GetByID(ctx, analysisID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get analysis: %w", err)
+	}
+	if analysisRecord == nil {
+		return nil, fmt.Errorf("analysis not found: %s", analysisID)
+	}
+
+	// 3. Get challenge data
+	chal, err := s.challengeRepo.GetByID(ctx, analysisRecord.ChallengeID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get challenge: %w", err)
+	}
+	if chal == nil {
+		return nil, fmt.Errorf("challenge not found: %s", analysisRecord.ChallengeID.String())
+	}
+
+	// 4. Find current step (first non-approved, or last if all approved)
 	var currentStep *AnalysisStep
 	currentStepIndex := 0
 
@@ -460,10 +525,10 @@ func (s *Service) GetStepState(ctx context.Context, analysisID string) (*StepSta
 		currentStep = &allSteps[currentStepIndex]
 	}
 
-	// 3. Get framework metadata
+	// 5. Get framework metadata
 	frameworkMeta := GetFrameworkMeta(currentStep.FrameworkCode)
 
-	// 4. Get previous steps (read-only context)
+	// 6. Get previous steps (read-only context)
 	var previousSteps []AnalysisStep
 	if currentStepIndex > 0 {
 		previousSteps = allSteps[:currentStepIndex]
@@ -472,12 +537,15 @@ func (s *Service) GetStepState(ctx context.Context, analysisID string) (*StepSta
 	}
 
 	return &StepStateResponse{
-		AnalysisID:      analysisID,
-		CurrentStep:     currentStepIndex,
-		TotalSteps:      TotalSteps(),
-		CurrentStepData: currentStep,
-		PreviousSteps:   previousSteps,
-		FrameworkMeta:   frameworkMeta,
+		AnalysisID:           analysisID,
+		CurrentStep:          currentStepIndex,
+		TotalSteps:           TotalSteps(),
+		CurrentStepData:      currentStep,
+		PreviousSteps:        previousSteps,
+		FrameworkMeta:        frameworkMeta,
+		ChallengeDescription: chal.BusinessChallenge,
+		ChallengeCategory:    string(chal.ChallengeCategory),
+		ChallengeType:        string(chal.ChallengeType),
 	}, nil
 }
 
