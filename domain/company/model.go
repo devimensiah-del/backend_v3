@@ -265,9 +265,13 @@ type JSONMap map[string]interface{}
 
 func (j JSONMap) Value() (driver.Value, error) {
 	if j == nil {
-		return []byte("{}"), nil
+		return "{}", nil
 	}
-	return json.Marshal(j)
+	b, err := json.Marshal(j)
+	if err != nil {
+		return nil, err
+	}
+	return string(b), nil
 }
 
 func (j *JSONMap) Scan(value interface{}) error {
@@ -275,8 +279,13 @@ func (j *JSONMap) Scan(value interface{}) error {
 		*j = make(map[string]interface{})
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
+	var b []byte
+	switch v := value.(type) {
+	case []byte:
+		b = v
+	case string:
+		b = []byte(v)
+	default:
 		*j = make(map[string]interface{})
 		return nil
 	}
@@ -285,9 +294,13 @@ func (j *JSONMap) Scan(value interface{}) error {
 
 func (s StringSlice) Value() (driver.Value, error) {
 	if s == nil {
-		return []byte("[]"), nil
+		return "[]", nil
 	}
-	return json.Marshal(s)
+	b, err := json.Marshal(s)
+	if err != nil {
+		return nil, err
+	}
+	return string(b), nil // Must return string for JSONB compatibility with lib/pq
 }
 
 func (s *StringSlice) Scan(value interface{}) error {
@@ -295,8 +308,13 @@ func (s *StringSlice) Scan(value interface{}) error {
 		*s = []string{}
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
+	var b []byte
+	switch v := value.(type) {
+	case []byte:
+		b = v
+	case string:
+		b = []byte(v)
+	default:
 		*s = []string{}
 		return nil
 	}
