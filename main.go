@@ -193,10 +193,12 @@ func main() {
 		challengeRepo,
 		llmClient,
 		cfg.Frameworks,
+		cfg, // Config for LLM_MOCK_MODE and other settings
 		log.Logger,
 	)
 	log.Info().
 		Int("total_frameworks", analysisbysteps.TotalSteps()).
+		Bool("llm_mock_mode", cfg.LLMMockMode).
 		Msg("AnalysisBySteps service initialized (human editing + LLM generation enabled)")
 
 	// 7. BACKGROUND WORKER

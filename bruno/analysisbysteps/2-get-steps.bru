@@ -1,0 +1,34 @@
+meta {
+  name: 2. Get Analysis Steps
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/analyses/{{analysisId}}/steps
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{authToken}}
+}
+
+docs {
+  # Get Analysis Steps
+
+  Returns all 14 steps for an analysis, ordered by step_number.
+
+  ## Response
+  Array of AnalysisStep objects with:
+  - id: Step UUID
+  - analysis_id: Parent analysis UUID
+  - framework_code: e.g., "challenge_refinement", "pestel", etc.
+  - step_number: 0-13
+  - status: pending | generating | generated | approved | failed
+  - ai_output: JSON string (null if not generated)
+  - human_edited: JSON string (null if not edited)
+  - visible: boolean
+  - generated_at: timestamp or null
+  - approved_at: timestamp or null
+}

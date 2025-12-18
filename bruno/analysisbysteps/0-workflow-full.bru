@@ -1,0 +1,86 @@
+meta {
+  name: 0. Full Workflow (All Steps)
+  type: http
+  seq: 0
+}
+
+docs {
+  # Full Step-by-Step Analysis Workflow
+
+  This document describes the complete workflow for running a step-by-step analysis.
+
+  ## Prerequisites
+
+  1. **Create a submission** via POST /api/v1/submit
+     - This creates: Submission → Company → Challenge
+     - Save the challenge_id from the response
+
+  2. **Get auth token** via POST /api/v1/auth/login
+     - Save the JWT token for Bearer auth
+
+  ## Workflow Steps
+
+  ### 1. Start Analysis
+  ```
+  POST /api/v1/analyses/steps/start
+  Body: { "challenge_id": "uuid" }
+  ```
+  - Creates Analysis record + 14 AnalysisStep records
+  - All steps start as "pending"
+
+  ### 2. For each step (0-13):
+
+  #### 2a. Generate
+  ```
+  POST /api/v1/analyses/:id/steps/:step/generate
+  ```
+  - Calls LLM with context from previous steps
+  - With LLM_MOCK_MODE=true, returns instant mock data
+
+  #### 2b. (Optional) Edit
+  ```
+  PUT /api/v1/analyses/:id/steps/:step/edit
+  Body: { "human_edited": { ... } }
+  ```
+  - Save human edits without changing status
+
+  #### 2c. Approve
+  ```
+  POST /api/v1/analyses/:id/steps/:step/approve
+  ```
+  - Marks step as approved
+  - Advances current_step
+
+  ### 3. Check Progress
+  ```
+  GET /api/v1/analyses/:id/steps/state
+  ```
+  - Returns current step + previous steps context
+
+  ## Framework Order (14 Steps)
+
+  | Step | Code | Name |
+  |------|------|------|
+  | 0 | challenge_refinement | Challenge Refinement |
+  | 1 | pestel | PESTEL Analysis |
+  | 2 | porter | Porter's 5 Forces |
+  | 3 | benchmarking | Competitive Benchmarking |
+  | 4 | swot | SWOT Analysis |
+  | 5 | swotcross | SWOT Cross Strategies |
+  | 6 | tam_sam_som | TAM-SAM-SOM |
+  | 7 | blue_ocean | Blue Ocean Strategy |
+  | 8 | growth_hacking | Growth Hacking |
+  | 9 | scenarios | Scenario Planning |
+  | 10 | decision_matrix | Decision Matrix |
+  | 11 | okrs | OKRs (90-day plan) |
+  | 12 | bsc | Balanced Scorecard |
+  | 13 | synthesis | Executive Synthesis |
+
+  ## Testing with Mock Mode
+
+  Set `LLM_MOCK_MODE=true` in .env for:
+  - Instant responses (no LLM latency)
+  - Predictable mock data
+  - Fast frontend development
+  - Integration testing
+}

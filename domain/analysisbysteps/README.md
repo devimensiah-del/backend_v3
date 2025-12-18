@@ -265,4 +265,17 @@ analysisByStepsSvc := analysisbysteps.NewService(
 ## Jira Reference
 
 - **IAH-2**: "Domínio e modelo do fluxo por etapas" - Domain package created ✅
-- **IAH-3**: "Service e API do fluxo por etapas" - Service layer implemented ✅, API handlers pending
+- **IAH-3**: "Service e API do fluxo por etapas" - Service layer + API handlers ✅
+
+## API Endpoints (IAH-3)
+
+| Method | Endpoint | Handler | Purpose |
+|--------|----------|---------|---------|
+| POST | `/api/v1/analyses/steps/start` | `StartAnalysisBySteps` | Start new analysis |
+| POST | `/api/v1/analyses/:id/steps/:step/generate` | `GenerateStep` | Generate AI output |
+| PUT | `/api/v1/analyses/:id/steps/:step/edit` | `SaveHumanEdit` | Save human edit |
+| POST | `/api/v1/analyses/:id/steps/:step/approve` | `ApproveAndAdvance` | Approve and advance |
+| GET | `/api/v1/analyses/:id/steps/state` | `GetStepState` | Get current state |
+| GET | `/api/v1/analyses/:id/steps` | `GetAnalysisSteps` | Get all steps |
+
+See `docs/API.md` for full frontend integration documentation.

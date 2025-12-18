@@ -1,0 +1,53 @@
+meta {
+  name: 1. Start Analysis By Steps
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/analyses/steps/start
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{authToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "challenge_id": "{{challengeId}}"
+  }
+}
+
+script:post-response {
+  if (res.status === 200 || res.status === 201) {
+    bru.setVar("analysisId", res.body.analysis_id);
+    console.log("Analysis ID saved:", res.body.analysis_id);
+  }
+}
+
+docs {
+  # Start Analysis By Steps
+
+  Creates a new step-by-step analysis for a given challenge.
+
+  ## Prerequisites
+  - Valid JWT auth token
+  - Existing challenge_id (from a submission)
+
+  ## Response
+  - analysis_id: UUID of the created analysis
+  - challenge_id: The input challenge ID
+  - total_steps: Number of frameworks (14)
+  - current_step: Starting step (0)
+  - steps: Array of all 14 step records in pending status
+
+  ## Notes
+  - LLM_MOCK_MODE=true returns instant mock responses
+  - All steps start with status="pending"
+}

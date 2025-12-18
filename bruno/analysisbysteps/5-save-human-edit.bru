@@ -1,0 +1,72 @@
+meta {
+  name: 5. Save Human Edit
+  type: http
+  seq: 5
+}
+
+put {
+  url: {{baseUrl}}/analyses/{{analysisId}}/steps/0/edit
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{authToken}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "human_edited": {
+      "challenge_analysis": {
+        "declared_challenge": "Editado pelo humano - Desafio original",
+        "is_real_problem": true,
+        "diagnosis": "Diagnóstico revisado manualmente",
+        "root_cause_hypothesis": "Causa raiz ajustada",
+        "refined_challenge": "Desafio refinado pelo analista"
+      },
+      "measurement": {
+        "primary_metric": "Market Share (%)",
+        "current_value": "15%",
+        "target_value": "25%",
+        "measurement_method": "Relatórios trimestrais"
+      },
+      "summary": "Resumo editado manualmente pelo analista",
+      "confidence_score": 90
+    }
+  }
+}
+
+docs {
+  # Save Human Edit
+
+  Saves human-edited JSON for a step WITHOUT changing status.
+
+  ## URL Parameters
+  - :id - Analysis UUID
+  - :step - Step number (0-13)
+
+  ## Request Body
+  ```json
+  {
+    "human_edited": { ... framework-specific JSON ... }
+  }
+  ```
+
+  ## Behavior
+  - Validates JSON structure
+  - Saves to human_edited column
+  - Does NOT change status
+  - Does NOT overwrite ai_output
+
+  ## Response
+  Updated AnalysisStep with human_edited populated
+
+  ## Notes
+  - Call this whenever user edits in the frontend
+  - Can be called multiple times (auto-save)
+  - GetEffectiveOutput() prioritizes human_edited over ai_output
+}

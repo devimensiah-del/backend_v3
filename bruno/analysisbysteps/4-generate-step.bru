@@ -1,0 +1,45 @@
+meta {
+  name: 4. Generate Step (LLM)
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/analyses/{{analysisId}}/steps/0/generate
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{authToken}}
+}
+
+docs {
+  # Generate Step
+
+  Calls LLM to generate output for a specific step.
+
+  ## URL Parameters
+  - :id - Analysis UUID
+  - :step - Step number (0-13)
+
+  ## Behavior
+  1. Validates all previous steps are approved
+  2. Sets status to "generating"
+  3. Builds context from company, challenge, macro, previous steps
+  4. Calls LLM (or returns mock if LLM_MOCK_MODE=true)
+  5. Sets status to "generated" on success
+
+  ## Response
+  Updated AnalysisStep with ai_output populated
+
+  ## Errors
+  - 400: Previous step not approved
+  - 404: Analysis or step not found
+  - 500: LLM call failed
+
+  ## Notes
+  - Step 0 (challenge_refinement) has no prerequisites
+  - Steps 1-13 require all previous steps approved
+  - With LLM_MOCK_MODE=true, returns instant mock data
+}

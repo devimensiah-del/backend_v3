@@ -82,6 +82,10 @@ type Config struct {
 	MaxTokensAnalysis   int     `envconfig:"AI_MAX_TOKENS_ANALYSIS" default:"8000"`   // Max tokens for analysis (default: 8000)
 	MaxTokensSynthesis  int     `envconfig:"AI_MAX_TOKENS_SYNTHESIS" default:"6000"`  // Max tokens for synthesis (default: 6000)
 
+	// LLM Mock Mode: Returns canned responses instead of calling OpenRouter (for testing)
+	// Set to true for fast integration tests and frontend development
+	LLMMockMode bool `envconfig:"LLM_MOCK_MODE" default:"false"`
+
 	// Framework-specific configurations (auto-generated from above settings)
 	Frameworks map[string]FrameworkConfig `ignored:"true"`
 

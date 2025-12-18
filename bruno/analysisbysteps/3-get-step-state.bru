@@ -1,0 +1,35 @@
+meta {
+  name: 3. Get Step State
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/analyses/{{analysisId}}/steps/state
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{authToken}}
+}
+
+docs {
+  # Get Step State
+
+  Returns current step context with previous steps as read-only context.
+
+  ## Response
+  - analysis_id: Analysis UUID
+  - current_step: Current step number (0-13)
+  - total_steps: 14
+  - current_step_data: Full AnalysisStep object for current step
+  - previous_steps: Array of all approved previous steps
+  - framework_meta: Metadata about current framework (name, description, guidance)
+
+  ## Use Case
+  Frontend uses this to display:
+  - Current step for editing
+  - Previous steps as accordion/expandable context
+  - Framework guidance text
+}

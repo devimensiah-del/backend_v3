@@ -1,0 +1,52 @@
+meta {
+  name: 6. Approve and Advance
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/analyses/{{analysisId}}/steps/0/approve
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{authToken}}
+}
+
+docs {
+  # Approve and Advance
+
+  Approves the current step and advances to the next.
+
+  ## URL Parameters
+  - :id - Analysis UUID
+  - :step - Step number (0-13)
+
+  ## Behavior
+  1. Validates step has content (ai_output or human_edited)
+  2. Sets status to "approved"
+  3. Sets approved_at timestamp
+  4. If last step (13), marks analysis as completed
+
+  ## Response
+  ```json
+  {
+    "approved_step": { ... AnalysisStep ... },
+    "next_step": { ... AnalysisStep or null ... },
+    "is_complete": false,
+    "current_step": 1
+  }
+  ```
+
+  ## Workflow
+  1. Generate step → status=generated
+  2. (Optional) Edit step → human_edited saved
+  3. Approve step → status=approved, can proceed to next
+  4. Repeat for all 14 steps
+
+  ## Notes
+  - Cannot approve step without content
+  - Cannot skip steps (must approve in order)
+  - Last step approval marks analysis complete
+}

@@ -1,6 +1,6 @@
 # IMENSIAH API Reference
 
-> **Version**: v1.0 | **Base URL**: `/api/v1` | **Updated**: 2025-12-06
+> **Version**: v3.0 (IAH-3) | **Base URL**: `/api/v1` | **Updated**: 2025-12-14
 
 Complete API reference for frontend developers. All routes are under `/api/v1` unless noted.
 
@@ -13,10 +13,11 @@ Complete API reference for frontend developers. All routes are under `/api/v1` u
 | [Auth](#auth) | 7 | Mixed |
 | [Submissions](#submissions) | 4 | Mixed |
 | [Companies](#companies) | 3 | Required |
-| [Wizard](#wizard-human-in-the-loop) | 6 | Required |
+| [**Analysis By Steps (IAH-3)**](#analysis-by-steps-iah-3---human-editable-analysis) | 6 | Required |
 | [Frameworks](#frameworks) | 1 | Required |
 | [Public Report](#public-report) | 1 | Optional |
 | [Admin](#admin-endpoints) | 13 | Admin |
+| [Wizard (Legacy)](#wizard-legacy--deprecated) | - | Deprecated |
 
 ---
 
@@ -458,177 +459,615 @@ Get company details (must be owner or in allowed_users).
 
 ---
 
-## Wizard (Human-in-the-Loop)
+## Analysis By Steps (IAH-3) - Human-Editable Analysis
 
-The wizard enables step-by-step analysis with human validation at each stage.
+> **⚠️ IMPORTANT**: This is the NEW step-by-step analysis API (IAH-3). It replaces the legacy Wizard API.
 
-### Workflow
+The Analysis By Steps feature enables step-by-step strategic analysis with **direct human editing** of AI-generated outputs. Unlike the legacy Wizard (which only allowed adding context for regeneration), this API allows users to directly edit the JSON output of each framework.
+
+### 🎯 Key Concepts for Frontend Developers
+
+1. **14 Steps** (0-13): Each step corresponds to a strategic framework
+2. **Strict Order**: Cannot generate step N until step N-1 is **approved**
+3. **Direct Editing**: Human can directly edit AI output (not just add context)
+4. **Effective Output**: Always use `effective_output` field (returns human edit if exists, else AI output)
+5. **Idempotent Start**: Safe to call `/start` multiple times - returns existing analysis
+
+### 📋 The 14 Frameworks (Step Order)
+
+| Step | Code | Name (PT-BR) | Guidance Text |
+|------|------|--------------|---------------|
+| 0 | `challenge_refinement` | Refinamento do Desafio | Revise se o desafio está claro e específico |
+| 1 | `pestel` | Análise PESTEL | Considere quais fatores externos impactam |
+| 2 | `porter` | 5 Forças de Porter | Avalie a intensidade competitiva |
+| 3 | `benchmarking` | Benchmarking | Os players comparados são relevantes? |
+| 4 | `swot` | Análise SWOT | As forças listadas geram valor? |
+| 5 | `swotcross` | SWOT Cruzado | As estratégias cruzadas são viáveis? |
+| 6 | `tam_sam_som` | TAM-SAM-SOM | O dimensionamento está realista? |
+| 7 | `blue_ocean` | Blue Ocean | A curva de valor diferencia? |
+| 8 | `growth_hacking` | Growth Hacking | Táticas aplicáveis ao estágio atual? |
+| 9 | `scenarios` | Cenários | Os cenários cobrem riscos relevantes? |
+| 10 | `decision_matrix` | Matriz de Decisão | Critérios refletem prioridades? |
+| 11 | `okrs` | OKRs | Objetivos ambiciosos mas alcançáveis? |
+| 12 | `bsc` | Balanced Scorecard | Perspectivas balanceadas? |
+| 13 | `synthesis` | Síntese Executiva | Captura as principais conclusões? |
+
+### 🔄 Step Status State Machine
 
 ```
-Start Wizard → Generate Step → Review → Approve/Refine → Next Step → ... → Complete
+pending ──► generating ──► generated ──┬──► approved
+                │                       │
+                │         (human edits) │
+                ▼                       │
+              failed                    │
+                                        │
+              ◄─────────────────────────┘
+        (can re-generate after approved,
+         resets status to "generated")
 ```
 
-**Key Rules:**
-- Wizard only moves **forward** - no going back
-- Human provides **context**, AI **regenerates** - no direct edits
-- Each refinement creates a **version snapshot**
-- 12 steps (0-11) + auto-generated synthesis
+**Status Values:**
+| Status | Meaning | Can Generate? | Can Approve? | Can Edit? |
+|--------|---------|---------------|--------------|-----------|
+| `pending` | Step created, AI not called | ✅ Yes | ❌ No | ❌ No |
+| `generating` | LLM request in progress | ❌ No | ❌ No | ❌ No |
+| `generated` | AI output ready for review | ✅ Yes (re-gen) | ✅ Yes | ✅ Yes |
+| `approved` | Human approved the output | ✅ Yes (re-gen) | ❌ Already | ✅ Yes |
+| `failed` | AI generation failed | ✅ Yes (retry) | ❌ No | ❌ No |
 
-### `POST /wizard/start` *(Auth Required)*
+### 🚨 Order Enforcement (CRITICAL)
 
-Start or resume wizard for a company + challenge.
+**The API enforces strict sequential order:**
+
+```
+❌ REJECTED: Generate step 3 when step 2 is not approved
+   Error: "cannot generate step 3: previous step 2 (porter) is not approved yet"
+
+✅ ALLOWED: Generate step 0 (first step, no prerequisites)
+✅ ALLOWED: Generate step 3 when steps 0, 1, 2 are approved
+✅ ALLOWED: Re-generate step 0 even if already generated/approved
+```
+
+**Frontend UX Implication**:
+- Disable "Generate" button for step N if step N-1 is not approved
+- Show clear message: "Complete previous step first"
+
+---
+
+### Endpoints
+
+Base path: `/api/v1/analyses`
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/steps/start` | Start new analysis (returns all 14 steps) |
+| POST | `/:id/steps/:step/generate` | Generate AI output for step |
+| PUT | `/:id/steps/:step/edit` | Save human edit |
+| POST | `/:id/steps/:step/approve` | Approve step and advance |
+| GET | `/:id/steps/state` | Get current state (for UI) |
+| GET | `/:id/steps` | Get all steps |
+
+---
+
+### `POST /analyses/steps/start` *(Auth Required)*
+
+Start a new step-by-step analysis for a challenge. **Idempotent** - safe to call multiple times.
 
 **Request:**
 ```json
 {
-  "company_id": "uuid",
-  "challenge_id": "uuid"
+  "challenge_id": "550e8400-e29b-41d4-a716-446655440000"
 }
 ```
 
 **Response `200`:**
 ```json
 {
-  "analysisId": "uuid",
-  "currentStep": 0,
-  "totalSteps": 12,
-  "framework": {
-    "step": 0,
-    "code": "challenge_refinement",
-    "name": "Refinamento do Desafio",
-    "description": "Refine o desafio de negócio...",
-    "questions": [
-      { "id": "q1", "question": "Qual o principal impacto esperado?" },
-      { "id": "q2", "question": "Quais métricas definiriam sucesso?" }
-    ]
+  "analysis_id": "660e8400-e29b-41d4-a716-446655440001",
+  "challenge_id": "550e8400-e29b-41d4-a716-446655440000",
+  "total_steps": 14,
+  "current_step": 0,
+  "steps": [
+    {
+      "id": "step-uuid-0",
+      "analysis_id": "660e8400-e29b-41d4-a716-446655440001",
+      "framework_code": "challenge_refinement",
+      "step_number": 0,
+      "status": "pending",
+      "visible": true,
+      "created_at": "2025-01-01T10:00:00Z",
+      "updated_at": "2025-01-01T10:00:00Z",
+      "is_edited": false
+    },
+    {
+      "id": "step-uuid-1",
+      "analysis_id": "660e8400-e29b-41d4-a716-446655440001",
+      "framework_code": "pestel",
+      "step_number": 1,
+      "status": "pending",
+      "visible": true,
+      "created_at": "2025-01-01T10:00:00Z",
+      "updated_at": "2025-01-01T10:00:00Z",
+      "is_edited": false
+    }
+    // ... 12 more steps (steps 2-13)
+  ]
+}
+```
+
+**Error Responses:**
+| Code | Error | When |
+|------|-------|------|
+| 400 | `challenge_id must be a valid UUID` | Invalid UUID format |
+| 404 | `challenge not found` | Challenge doesn't exist |
+
+---
+
+### `POST /analyses/:id/steps/:step/generate` *(Auth Required)*
+
+Generate AI output for a specific step. Requires all previous steps to be approved.
+
+**Path Parameters:**
+- `id` - Analysis UUID
+- `step` - Step number (0-13)
+
+**Request:** No body required
+
+**Response `200`:**
+```json
+{
+  "id": "step-uuid-1",
+  "analysis_id": "660e8400-e29b-41d4-a716-446655440001",
+  "framework_code": "pestel",
+  "step_number": 1,
+  "ai_output": "{\"political\":[...],\"economic\":[...],\"social\":[...]}",
+  "status": "generated",
+  "visible": true,
+  "generated_at": "2025-01-01T10:05:00Z",
+  "created_at": "2025-01-01T10:00:00Z",
+  "updated_at": "2025-01-01T10:05:00Z",
+  "effective_output": "{\"political\":[...],\"economic\":[...],\"social\":[...]}",
+  "is_edited": false
+}
+```
+
+**Error Responses:**
+| Code | Error | When |
+|------|-------|------|
+| 400 | `Step number must be 0-13` | Invalid step number |
+| 400 | `cannot generate step N: previous step N-1 (code) is not approved yet` | Order violation |
+| 404 | `analysis not found` | Analysis doesn't exist |
+
+**⚠️ IMPORTANT for Frontend:**
+```typescript
+// Before calling generate, check if previous step is approved:
+if (stepNumber > 0) {
+  const prevStep = steps[stepNumber - 1];
+  if (prevStep.status !== 'approved') {
+    showError('Complete previous step first');
+    return;
+  }
+}
+```
+
+---
+
+### `PUT /analyses/:id/steps/:step/edit` *(Auth Required)*
+
+Save human edits to a step. Does NOT regenerate - just saves the edit.
+
+**Path Parameters:**
+- `id` - Analysis UUID
+- `step` - Step number (0-13)
+
+**Request:**
+```json
+{
+  "edited_content": "{\"political\":[\"Updated point 1\"],\"economic\":[\"Updated point 2\"]}"
+}
+```
+
+**⚠️ CRITICAL**: `edited_content` must be valid JSON string. The backend validates JSON structure.
+
+**Response `200`:**
+```json
+{
+  "id": "step-uuid-1",
+  "analysis_id": "660e8400-e29b-41d4-a716-446655440001",
+  "framework_code": "pestel",
+  "step_number": 1,
+  "ai_output": "{\"political\":[\"Original AI output\"]}",
+  "human_edited": "{\"political\":[\"Updated point 1\"],\"economic\":[\"Updated point 2\"]}",
+  "status": "generated",
+  "visible": true,
+  "generated_at": "2025-01-01T10:05:00Z",
+  "created_at": "2025-01-01T10:00:00Z",
+  "updated_at": "2025-01-01T10:07:00Z",
+  "effective_output": "{\"political\":[\"Updated point 1\"],\"economic\":[\"Updated point 2\"]}",
+  "is_edited": true
+}
+```
+
+**Error Responses:**
+| Code | Error | When |
+|------|-------|------|
+| 400 | `invalid JSON` | `edited_content` is not valid JSON |
+| 404 | `Step not found` | Step doesn't exist |
+
+**Frontend Integration Pattern:**
+```typescript
+// Parse effective_output to edit
+const content = JSON.parse(step.effective_output);
+
+// User edits in form...
+
+// Save back as JSON string
+const edited = JSON.stringify(formValues);
+await api.put(`/analyses/${analysisId}/steps/${stepNumber}/edit`, {
+  edited_content: edited
+});
+```
+
+---
+
+### `POST /analyses/:id/steps/:step/approve` *(Auth Required)*
+
+Approve the current step and advance to the next. Step must have content (AI or human edited).
+
+**Path Parameters:**
+- `id` - Analysis UUID
+- `step` - Step number (0-13)
+
+**Request:** No body required
+
+**Response `200`:**
+```json
+{
+  "approved_step": {
+    "id": "step-uuid-1",
+    "framework_code": "pestel",
+    "step_number": 1,
+    "status": "approved",
+    "approved_at": "2025-01-01T10:10:00Z",
+    "effective_output": "{...}",
+    "is_edited": true
   },
-  "stepStatus": "pending"
-}
-```
-
-### `GET /analyses/:id/wizard` *(Auth Required)*
-
-Get current wizard state.
-
-**Response `200`:**
-```json
-{
-  "analysisId": "uuid",
-  "currentStep": 3,
-  "totalSteps": 12,
-  "framework": {
-    "step": 3,
-    "code": "benchmarking",
-    "name": "Benchmarking",
-    "description": "Compare com concorrentes...",
-    "questions": [...]
+  "next_step": {
+    "id": "step-uuid-2",
+    "framework_code": "porter",
+    "step_number": 2,
+    "status": "pending"
   },
-  "stepStatus": "generated",
-  "output": { ... },
-  "humanContext": "Previous context provided",
-  "humanAnswers": { "q1": "answer1" },
-  "previousSteps": [
-    { "step": 0, "frameworkCode": "challenge_refinement", "status": "approved" },
-    { "step": 1, "frameworkCode": "pestel", "status": "approved" },
-    { "step": 2, "frameworkCode": "porter", "status": "approved" }
+  "is_complete": false,
+  "current_step": 2
+}
+```
+
+**When last step (13 - synthesis) is approved:**
+```json
+{
+  "approved_step": {
+    "id": "step-uuid-13",
+    "framework_code": "synthesis",
+    "step_number": 13,
+    "status": "approved",
+    "approved_at": "2025-01-01T12:00:00Z"
+  },
+  "is_complete": true,
+  "current_step": 13
+}
+```
+
+**Error Responses:**
+| Code | Error | When |
+|------|-------|------|
+| 400 | `cannot approve step: no content` | Step has no AI or human output |
+| 404 | `Step not found` | Step doesn't exist |
+
+---
+
+### `GET /analyses/:id/steps/state` *(Auth Required)*
+
+Get the current state of the analysis. **Use this for UI rendering.**
+
+**Path Parameters:**
+- `id` - Analysis UUID
+
+**Response `200`:**
+```json
+{
+  "analysis_id": "660e8400-e29b-41d4-a716-446655440001",
+  "current_step": 2,
+  "total_steps": 14,
+  "current_step_data": {
+    "id": "step-uuid-2",
+    "framework_code": "porter",
+    "step_number": 2,
+    "status": "pending",
+    "visible": true,
+    "is_edited": false
+  },
+  "previous_steps": [
+    {
+      "id": "step-uuid-0",
+      "framework_code": "challenge_refinement",
+      "step_number": 0,
+      "status": "approved",
+      "approved_at": "2025-01-01T10:05:00Z",
+      "effective_output": "{...}",
+      "is_edited": false
+    },
+    {
+      "id": "step-uuid-1",
+      "framework_code": "pestel",
+      "step_number": 1,
+      "status": "approved",
+      "approved_at": "2025-01-01T10:10:00Z",
+      "effective_output": "{...}",
+      "is_edited": true
+    }
   ],
-  "iterationCount": 1
-}
-```
-
-### `POST /analyses/:id/wizard/generate` *(Auth Required)*
-
-Generate output for current step.
-
-**Request:**
-```json
-{
-  "humanContext": "Optional context to guide AI",
-  "humanAnswers": {
-    "q1": "Answer to question 1",
-    "q2": "Answer to question 2"
+  "framework_meta": {
+    "Code": "porter",
+    "Name": "5 Forças de Porter",
+    "GuidanceText": "Avalie a intensidade competitiva. Os concorrentes listados estão corretos? Algum foi esquecido?"
   }
 }
 ```
 
+**Frontend Usage:**
+```typescript
+// Fetch state on page load
+const state = await api.get(`/analyses/${analysisId}/steps/state`);
+
+// Render progress bar
+const progress = (state.current_step / state.total_steps) * 100;
+
+// Show guidance text to user
+showGuidance(state.framework_meta.GuidanceText);
+
+// Show previous steps as read-only accordion
+state.previous_steps.forEach(step => {
+  renderPreviousStep(step);
+});
+
+// Show current step form
+if (state.current_step_data) {
+  renderCurrentStepForm(state.current_step_data);
+}
+```
+
+---
+
+### `GET /analyses/:id/steps` *(Auth Required)*
+
+Get all 14 steps for an analysis.
+
+**Path Parameters:**
+- `id` - Analysis UUID
+
 **Response `200`:**
 ```json
 {
-  "analysisId": "uuid",
-  "currentStep": 3,
-  "stepStatus": "generated",
-  "output": {
-    "competitors_analyzed": ["Competitor A", "Competitor B"],
-    "performance_gaps": ["Gap 1", "Gap 2"],
-    "best_practices": ["Practice 1", "Practice 2"],
-    "summary": "Executive summary..."
+  "steps": [
+    {
+      "id": "step-uuid-0",
+      "framework_code": "challenge_refinement",
+      "step_number": 0,
+      "status": "approved",
+      "effective_output": "{...}",
+      "is_edited": false
+    },
+    {
+      "id": "step-uuid-1",
+      "framework_code": "pestel",
+      "step_number": 1,
+      "status": "generated",
+      "effective_output": "{...}",
+      "is_edited": true
+    },
+    {
+      "id": "step-uuid-2",
+      "framework_code": "porter",
+      "step_number": 2,
+      "status": "pending",
+      "is_edited": false
+    }
+    // ... 11 more steps
+  ]
+}
+```
+
+---
+
+### 🎨 Complete Frontend Integration Example
+
+```typescript
+// types.ts
+interface AnalysisStep {
+  id: string;
+  analysis_id: string;
+  framework_code: string;
+  step_number: number;
+  ai_output?: string;
+  human_edited?: string;
+  effective_output?: string;
+  visible: boolean;
+  status: 'pending' | 'generating' | 'generated' | 'approved' | 'failed';
+  generated_at?: string;
+  approved_at?: string;
+  created_at: string;
+  updated_at: string;
+  is_edited: boolean;
+}
+
+interface StepState {
+  analysis_id: string;
+  current_step: number;
+  total_steps: number;
+  current_step_data?: AnalysisStep;
+  previous_steps: AnalysisStep[];
+  framework_meta?: {
+    Code: string;
+    Name: string;
+    GuidanceText: string;
+  };
+}
+
+// api.ts
+const analysisByStepsApi = {
+  // Start new analysis
+  start: (challengeId: string) =>
+    fetch('/api/v1/analyses/steps/start', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ challenge_id: challengeId })
+    }),
+
+  // Get current state (use this for UI)
+  getState: (analysisId: string) =>
+    fetch(`/api/v1/analyses/${analysisId}/steps/state`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }),
+
+  // Generate AI output for step
+  generate: (analysisId: string, stepNumber: number) =>
+    fetch(`/api/v1/analyses/${analysisId}/steps/${stepNumber}/generate`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    }),
+
+  // Save human edit
+  edit: (analysisId: string, stepNumber: number, editedContent: object) =>
+    fetch(`/api/v1/analyses/${analysisId}/steps/${stepNumber}/edit`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ edited_content: JSON.stringify(editedContent) })
+    }),
+
+  // Approve and advance
+  approve: (analysisId: string, stepNumber: number) =>
+    fetch(`/api/v1/analyses/${analysisId}/steps/${stepNumber}/approve`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    }),
+};
+
+// StepWorkflow.tsx - React component example
+function StepWorkflow({ analysisId }: { analysisId: string }) {
+  const [state, setState] = useState<StepState | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    loadState();
+  }, [analysisId]);
+
+  const loadState = async () => {
+    const res = await analysisByStepsApi.getState(analysisId);
+    setState(await res.json());
+  };
+
+  const handleGenerate = async () => {
+    if (!state?.current_step_data) return;
+
+    setLoading(true);
+    try {
+      await analysisByStepsApi.generate(analysisId, state.current_step);
+      await loadState(); // Refresh UI
+    } catch (err) {
+      // Handle "previous step not approved" error
+      alert(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveEdit = async (editedContent: object) => {
+    if (!state?.current_step_data) return;
+
+    await analysisByStepsApi.edit(analysisId, state.current_step, editedContent);
+    await loadState();
+  };
+
+  const handleApprove = async () => {
+    if (!state?.current_step_data) return;
+
+    const res = await analysisByStepsApi.approve(analysisId, state.current_step);
+    const result = await res.json();
+
+    if (result.is_complete) {
+      // Redirect to completed analysis view
+      router.push(`/analysis/${analysisId}/complete`);
+    } else {
+      await loadState();
+    }
+  };
+
+  return (
+    <div>
+      {/* Progress bar */}
+      <ProgressBar
+        current={state?.current_step ?? 0}
+        total={state?.total_steps ?? 14}
+      />
+
+      {/* Previous steps (read-only) */}
+      <Accordion>
+        {state?.previous_steps.map(step => (
+          <AccordionItem key={step.id} title={`${step.step_number}. ${step.framework_code}`}>
+            <pre>{step.effective_output}</pre>
+            {step.is_edited && <Badge>Edited</Badge>}
+          </AccordionItem>
+        ))}
+      </Accordion>
+
+      {/* Current step */}
+      {state?.current_step_data && (
+        <CurrentStepCard
+          step={state.current_step_data}
+          meta={state.framework_meta}
+          onGenerate={handleGenerate}
+          onSaveEdit={handleSaveEdit}
+          onApprove={handleApprove}
+          loading={loading}
+        />
+      )}
+    </div>
+  );
+}
+```
+
+---
+
+### 🔁 Re-Generation Behavior
+
+**Important**: Re-generating an already-approved step **resets its status** to `generated`:
+
+```
+Step 0: approved → call generate → status becomes "generated"
+                                   → requires re-approval before step 1
+```
+
+**Frontend should warn users:**
+```typescript
+const handleRegenerate = async () => {
+  if (step.status === 'approved') {
+    const confirmed = await confirm(
+      'Re-generating will require re-approval. Continue?'
+    );
+    if (!confirmed) return;
   }
-}
+  await generate();
+};
 ```
 
-### `POST /analyses/:id/wizard/approve` *(Auth Required)*
+---
 
-Approve current step and advance to next.
+## Wizard (Legacy) ⚠️ DEPRECATED
 
-**Response `200`:**
-```json
-{
-  "analysisId": "uuid",
-  "previousStep": 3,
-  "currentStep": 4,
-  "stepStatus": "pending",
-  "framework": {
-    "step": 4,
-    "code": "swot",
-    "name": "SWOT",
-    "description": "Análise SWOT...",
-    "questions": [...]
-  }
-}
-```
+> **Note**: The legacy Wizard API is deprecated. Use [Analysis By Steps (IAH-3)](#analysis-by-steps-iah-3---human-editable-analysis) instead.
 
-### `POST /analyses/:id/wizard/refine` *(Auth Required)*
-
-Add context and regenerate current step (creates version).
-
-**Request:**
-```json
-{
-  "humanContext": "Please focus more on...",
-  "humanAnswers": {
-    "q1": "Updated answer"
-  }
-}
-```
-
-**Response `200`:**
-```json
-{
-  "analysisId": "uuid",
-  "currentStep": 3,
-  "stepStatus": "generated",
-  "iterationCount": 2,
-  "output": { ... }
-}
-```
-
-### `GET /analyses/:id/wizard/summary` *(Auth Required)*
-
-Get summary of all completed steps.
-
-**Response `200`:**
-```json
-{
-  "analysisId": "uuid",
-  "completedSteps": [
-    { "step": 0, "frameworkCode": "challenge_refinement", "frameworkName": "Refinamento do Desafio", "status": "approved", "approvedAt": "2025-01-01T10:00:00Z" },
-    { "step": 1, "frameworkCode": "pestel", "frameworkName": "PESTEL", "status": "approved", "approvedAt": "2025-01-01T10:15:00Z" }
-  ],
-  "currentStep": 2,
-  "totalSteps": 12,
-  "progress": 16
-}
-```
+The legacy wizard endpoints remain available for backwards compatibility but will be removed in a future version.
 
 ---
 
@@ -1035,7 +1474,7 @@ All errors return:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        USER FLOW                                 │
+│                    USER FLOW (IAH-3)                             │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  [Submit Form]                                                   │
@@ -1046,33 +1485,45 @@ All errors return:
 │       │  (Automatic: Company enrichment via Perplexity)          │
 │       │                                                          │
 │       ▼                                                          │
-│  [Start Wizard]                                                  │
+│  [Start Analysis By Steps]                                       │
 │       │                                                          │
 │       ▼                                                          │
-│  POST /wizard/start { company_id, challenge_id } ► Creates Analysis
-│       │                                                          │
+│  POST /analyses/steps/start { challenge_id } ► Creates Analysis  │
+│       │                                        + 14 steps        │
 │       ▼                                                          │
 │  ┌─────────────────────────────────────────────────────────┐    │
-│  │  WIZARD LOOP (12 steps)                                  │    │
+│  │  STEP-BY-STEP LOOP (14 steps: 0-13)                      │    │
 │  │                                                          │    │
-│  │  1. GET /analyses/:id/wizard     ◄── Get current state   │    │
-│  │  2. POST /.../wizard/generate    ◄── Generate AI output  │    │
-│  │  3. Review output                                        │    │
-│  │  4. POST /.../wizard/approve     ◄── Accept & advance    │    │
-│  │     OR                                                   │    │
-│  │     POST /.../wizard/refine      ◄── Add context & redo  │    │
+│  │  1. GET /analyses/:id/steps/state   ◄── Get current UI   │    │
+│  │  2. POST /.../steps/:n/generate     ◄── Generate AI      │    │
+│  │  3. Review AI output                                     │    │
+│  │  4. PUT /.../steps/:n/edit          ◄── Edit JSON (opt)  │    │
+│  │  5. POST /.../steps/:n/approve      ◄── Approve & next   │    │
 │  │                                                          │    │
-│  │  Repeat until step 11 (BSC) approved                     │    │
+│  │  ⚠️ Order enforced: step N requires N-1 approved         │    │
+│  │                                                          │    │
+│  │  Repeat until step 13 (synthesis) approved               │    │
 │  └─────────────────────────────────────────────────────────┘    │
-│       │                                                          │
-│       ▼                                                          │
-│  [Synthesis Auto-Generated]                                      │
 │       │                                                          │
 │       ▼                                                          │
 │  [Analysis Complete] ─────► Status: "completed"                  │
 │       │                                                          │
 │       ▼                                                          │
 │  GET /submissions/:id/analysis ─────► Full analysis data         │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│              STEP STATE MACHINE (each step)                      │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│    pending ──► generating ──► generated ──┬──► approved          │
+│                     │                      │                     │
+│                     ▼                      │ (edit optional)     │
+│                   failed                   │                     │
+│                                            │                     │
+│              ◄─────────────────────────────┘                     │
+│         (re-generate resets to "generated")                      │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 
@@ -1146,7 +1597,98 @@ type ChallengeCategory = 'growth' | 'transform' | 'transition' | 'compete' | 'fu
 
 type SubmissionStatus = 'pending' | 'enriching' | 'enriched' | 'analyzing' | 'completed' | 'failed';
 
-// Wizard
+// ==================== Analysis By Steps (IAH-3) ====================
+
+// Step status values
+type StepStatus = 'pending' | 'generating' | 'generated' | 'approved' | 'failed';
+
+// Individual analysis step
+interface AnalysisStep {
+  id: string;
+  analysis_id: string;
+  framework_code: FrameworkCode;
+  step_number: number;                    // 0-13
+  ai_output?: string;                     // JSON string from AI
+  human_edited?: string;                  // JSON string from human edit
+  effective_output?: string;              // human_edited ?? ai_output (USE THIS)
+  visible: boolean;
+  status: StepStatus;
+  generated_at?: string;                  // ISO timestamp
+  approved_at?: string;                   // ISO timestamp
+  created_at: string;
+  updated_at: string;
+  is_edited: boolean;                     // true if human_edited exists
+}
+
+// Framework codes in order (0-13)
+type FrameworkCode =
+  | 'challenge_refinement'  // Step 0
+  | 'pestel'                // Step 1
+  | 'porter'                // Step 2
+  | 'benchmarking'          // Step 3
+  | 'swot'                  // Step 4
+  | 'swotcross'             // Step 5
+  | 'tam_sam_som'           // Step 6
+  | 'blue_ocean'            // Step 7
+  | 'growth_hacking'        // Step 8
+  | 'scenarios'             // Step 9
+  | 'decision_matrix'       // Step 10
+  | 'okrs'                  // Step 11
+  | 'bsc'                   // Step 12
+  | 'synthesis';            // Step 13
+
+// Framework metadata
+interface FrameworkMeta {
+  Code: FrameworkCode;
+  Name: string;                           // Portuguese display name
+  GuidanceText: string;                   // Human reflection prompt
+}
+
+// POST /analyses/steps/start - Request
+interface StartAnalysisRequest {
+  challenge_id: string;                   // UUID
+}
+
+// POST /analyses/steps/start - Response
+interface StartAnalysisResponse {
+  analysis_id: string;
+  challenge_id: string;
+  total_steps: number;                    // Always 14
+  current_step: number;                   // Initially 0
+  steps: AnalysisStep[];                  // All 14 steps (pending)
+}
+
+// GET /analyses/:id/steps/state - Response (USE THIS FOR UI)
+interface StepStateResponse {
+  analysis_id: string;
+  current_step: number;                   // First non-approved step
+  total_steps: number;                    // Always 14
+  current_step_data?: AnalysisStep;       // Current step to work on
+  previous_steps: AnalysisStep[];         // All approved steps (read-only)
+  framework_meta?: FrameworkMeta;         // Metadata for current step
+}
+
+// PUT /analyses/:id/steps/:step/edit - Request
+interface SaveHumanEditRequest {
+  edited_content: string;                 // MUST be valid JSON string
+}
+
+// POST /analyses/:id/steps/:step/approve - Response
+interface ApproveStepResponse {
+  approved_step: AnalysisStep;
+  next_step?: AnalysisStep;               // Undefined if last step
+  is_complete: boolean;                   // True when synthesis approved
+  current_step: number;
+}
+
+// GET /analyses/:id/steps - Response
+interface GetAllStepsResponse {
+  steps: AnalysisStep[];                  // All 14 steps
+}
+
+// ==================== Wizard (DEPRECATED) ====================
+// Use Analysis By Steps (IAH-3) types above instead
+
 interface WizardState {
   analysisId: string;
   currentStep: number;
@@ -1217,25 +1759,47 @@ interface ErrorResponse {
 
 ## Migration Notes
 
+### From Wizard API to Analysis By Steps (IAH-3)
+
+| Old Wizard Endpoint | New IAH-3 Endpoint | Notes |
+|---------------------|-------------------|-------|
+| `POST /wizard/start` | `POST /analyses/steps/start` | Takes `challenge_id` only (not company_id) |
+| `GET /analyses/:id/wizard` | `GET /analyses/:id/steps/state` | Returns `StepStateResponse` |
+| `POST /analyses/:id/wizard/generate` | `POST /analyses/:id/steps/:step/generate` | Step number in URL path |
+| `POST /analyses/:id/wizard/approve` | `POST /analyses/:id/steps/:step/approve` | Step number in URL path |
+| `POST /analyses/:id/wizard/refine` | `PUT /analyses/:id/steps/:step/edit` | Direct JSON editing (no regeneration) |
+| N/A | `GET /analyses/:id/steps` | Get all 14 steps |
+
+### Key Differences
+
+| Feature | Wizard (Deprecated) | Analysis By Steps (IAH-3) |
+|---------|---------------------|---------------------------|
+| Human input | Add context → AI regenerates | Direct JSON editing |
+| Steps | 12 frameworks | 14 frameworks (+swotcross, challenge_refinement) |
+| Storage | `analysis_steps` table | `analysis_steps_v2` table |
+| Output fields | Single `output` | `ai_output` + `human_edited` + `effective_output` |
+| Edit detection | N/A | `is_edited` boolean field |
+
 ### From Old API (v0)
 
 | Old Endpoint | New Endpoint | Notes |
 |--------------|--------------|-------|
 | `GET /submissions/:id/enrichment` | N/A | Enrichment data now on Company |
-| `POST /admin/enrichment/:id/approve` | N/A | Use wizard flow |
+| `POST /admin/enrichment/:id/approve` | N/A | Use Analysis By Steps flow |
 | `GET /admin/enrichment/:id` | N/A | Enrichment is automatic |
 | `POST /submissions/:id/retry-enrichment` | N/A | Enrichment is one-time |
 
 ### Key Changes
 
 1. **Enrichment is automatic** - Runs at company creation via Perplexity
-2. **Wizard replaces batch analysis** - Human-in-the-loop step-by-step
+2. **Analysis By Steps replaces Wizard** - Direct human editing of JSON outputs
 3. **Challenge is a separate entity** - Not embedded in submission
 4. **Company has enriched data** - Not a separate enrichment entity
 5. **Status is derived** - From company enrichment_status + analysis status
+6. **14 frameworks** - Added `challenge_refinement` (step 0) and `swotcross` (step 5)
 
 ---
 
-**Document Version**: 2.0
-**Last Updated**: 2025-12-06
+**Document Version**: 3.0 (IAH-3)
+**Last Updated**: 2025-12-14
 **Maintainer**: Backend Team

@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "name": "IMENSIAH Backend v3",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ]
+}
