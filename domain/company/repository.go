@@ -137,7 +137,8 @@ func (r *PostgresRepository) GetByID(ctx context.Context, id uuid.UUID) (*Compan
 			tam_estimate, sam_estimate, som_estimate, company_history,
 			customer_segments, pricing_model, unique_selling_points,
 			industry_growth_rate, industry_trends, regulatory_context, market_concentration, enrichment_sources,
-			linkedin_url, twitter_handle,
+			trade_name, phone, email, cnae_primary, cnae_codes, capital_social, partners, cnpj_verified,
+			linkedin_url, twitter_handle, instagram_url, facebook_url,
 			enrichment_status, enrichment_completed_at, enrichment_error,
 			allowed_users, owner_id,
 			created_at, updated_at
@@ -380,7 +381,8 @@ func (r *PostgresRepository) ListAll(ctx context.Context, limit, offset int) ([]
 			tam_estimate, sam_estimate, som_estimate, company_history,
 			customer_segments, pricing_model, unique_selling_points,
 			industry_growth_rate, industry_trends, regulatory_context, market_concentration, enrichment_sources,
-			linkedin_url, twitter_handle,
+			trade_name, phone, email, cnae_primary, cnae_codes, capital_social, partners, cnpj_verified,
+			linkedin_url, twitter_handle, instagram_url, facebook_url,
 			enrichment_status, enrichment_completed_at, enrichment_error,
 			allowed_users, owner_id,
 			created_at, updated_at
