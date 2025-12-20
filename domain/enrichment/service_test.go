@@ -7,9 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestService_parseEnrichmentResponse(t *testing.T) {
-	svc := &Service{}
-
+func TestParseEnrichmentResponse(t *testing.T) {
 	tests := []struct {
 		name    string
 		content string
@@ -73,7 +71,7 @@ func TestService_parseEnrichmentResponse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := svc.parseEnrichmentResponse(tt.content)
+			got, err := ParseEnrichmentResponse(tt.content)
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -92,7 +90,8 @@ func TestService_parseEnrichmentResponse(t *testing.T) {
 
 // Note: TestService_identifyMissingFields and TestService_buildEnrichmentPrompt
 // were removed because those methods no longer exist in the two-stage architecture.
-// The new architecture uses buildSearchPrompt and buildSynthesisPrompt.
+// The new architecture uses BuildSearchPrompt and BuildSynthesisPrompt (in prompts.go)
+// and ParseEnrichmentResponse (in parser.go).
 
 func TestEnrichedCompanyData_Structure(t *testing.T) {
 	// Test that the struct can be properly populated
