@@ -1077,7 +1077,7 @@ func (h *CompanyHandlers) ReEnrichCompany(c *gin.Context) {
 
 		c.JSON(http.StatusTooManyRequests, ErrorResponse{
 			Error:   "Rate limit exceeded",
-			Message: "Maximum 5 re-enrichments per day per company. Please try again later.",
+			Message: "Maximum enrichments per day reached. Please try again later.",
 		})
 		// Set Retry-After header for client convenience
 		c.Header("Retry-After", formatDuration(retryAfter))
@@ -1163,6 +1163,420 @@ func (h *CompanyHandlers) ReEnrichCompany(c *gin.Context) {
 			"fields_updated":       fieldsUpdated,
 			"enrichment_count_24h": h.EnrichmentLimiter.GetEnrichmentCount(companyUUID),
 			"remaining_today":      5 - h.EnrichmentLimiter.GetEnrichmentCount(companyUUID),
+		},
+	})
+}
+
+// ========================================================================
+// STEP-BASED ENRICHMENT HANDLERS
+// ========================================================================
+
+// GetEnrichmentStatus handles GET /api/v1/companies/:id/enrichment-status
+// Returns the current enrichment status for all steps
+func (h *CompanyHandlers) GetEnrichmentStatus(c *gin.Context) {
+	companyID := c.Param("id")
+
+	companyUUID, err := uuid.Parse(companyID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
+		return
+	}
+
+	// Get company to verify access
+	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
+	if err != nil || comp == nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Company not found"})
+		return
+	}
+
+	// Check access
+	if !h.checkCompanyAccess(c, comp) {
+		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Access denied to this company"})
+		return
+	}
+
+	// Get enrichment status from company_enrichment table
+	status, err := h.CompanyService.GetEnrichmentStatus(c.Request.Context(), companyUUID)
+	if err != nil {
+		if err == company.ErrEnrichmentNotConfigured {
+			c.JSON(http.StatusServiceUnavailable, ErrorResponse{Error: "Service unavailable", Message: "Enrichment service not configured"})
+			return
+		}
+		// Record not found - return default pending status
+		c.JSON(http.StatusOK, gin.H{
+			"company_id":   companyID,
+			"step1_status": "pending",
+			"step2_status": "pending",
+			"step3_status": "pending",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"company_id":         companyID,
+		"step1_status":       status.Step1Status,
+		"step1_completed_at": status.Step1CompletedAt,
+		"step1_error":        status.Step1Error,
+		"step2_status":       status.Step2Status,
+		"step2_completed_at": status.Step2CompletedAt,
+		"step2_error":        status.Step2Error,
+		"step3_status":       status.Step3Status,
+		"step3_completed_at": status.Step3CompletedAt,
+		"step3_error":        status.Step3Error,
+		"can_trigger_step2":  status.CanTriggerStep2(),
+		"can_trigger_step3":  status.CanTriggerStep3(),
+	})
+}
+
+// TriggerStep2 handles POST /api/v1/companies/:id/enrich/step2
+// Triggers Step 2 enrichment (business model) for a company
+// Requires Step 1 to be completed
+func (h *CompanyHandlers) TriggerStep2(c *gin.Context) {
+	companyID := c.Param("id")
+
+	companyUUID, err := uuid.Parse(companyID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
+		return
+	}
+
+	// Get company to verify access
+	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
+	if err != nil || comp == nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Company not found"})
+		return
+	}
+
+	// Check access (admin or user with company access)
+	if !h.checkCompanyAccess(c, comp) {
+		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Access denied to this company"})
+		return
+	}
+
+	h.Logger.Info().
+		Str("company_id", companyID).
+		Str("company_name", comp.Name).
+		Msg("Triggering Step 2 enrichment")
+
+	// Trigger Step 2
+	if err := h.CompanyService.TriggerStep2(c.Request.Context(), companyUUID); err != nil {
+		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to trigger Step 2")
+
+		switch err {
+		case company.ErrEnrichmentNotConfigured:
+			c.JSON(http.StatusServiceUnavailable, ErrorResponse{Error: "Service unavailable", Message: "Enrichment service not configured"})
+		case company.ErrStep1NotCompleted:
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Precondition failed", Message: "Step 1 enrichment must be completed first"})
+		case company.ErrStep2AlreadyRunning:
+			c.JSON(http.StatusConflict, ErrorResponse{Error: "Already running", Message: "Step 2 enrichment already in progress or completed"})
+		default:
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Enrichment failed", Message: err.Error()})
+		}
+		return
+	}
+
+	c.JSON(http.StatusAccepted, MessageResponse{
+		Message: "Step 2 enrichment started",
+		Data: map[string]interface{}{
+			"company_id":   companyID,
+			"company_name": comp.Name,
+			"step":         "2-business-model",
+			"status":       "processing",
+		},
+	})
+}
+
+// RetryStep1 handles POST /api/v1/companies/:id/enrich/step1/retry
+// Re-runs Step 1 enrichment even if already completed
+// Rate limited to MaxEnrichmentsPerDay per company per 24 hours
+func (h *CompanyHandlers) RetryStep1(c *gin.Context) {
+	companyID := c.Param("id")
+
+	companyUUID, err := uuid.Parse(companyID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
+		return
+	}
+
+	// Check rate limit first
+	if !h.EnrichmentLimiter.CanEnrich(companyUUID) {
+		retryAfter := h.EnrichmentLimiter.GetRetryAfter(companyUUID)
+		count := h.EnrichmentLimiter.GetEnrichmentCount(companyUUID)
+
+		h.Logger.Warn().
+			Str("company_id", companyID).
+			Int("enrichment_count_24h", count).
+			Dur("retry_after", retryAfter).
+			Msg("Rate limit exceeded for Step 1 re-enrichment")
+
+		c.Header("Retry-After", formatDuration(retryAfter))
+		c.JSON(http.StatusTooManyRequests, ErrorResponse{
+			Error:   "Rate limit exceeded",
+			Message: "Maximum enrichments per day reached. Please try again later.",
+		})
+		return
+	}
+
+	// Get company to verify access
+	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
+	if err != nil || comp == nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Company not found"})
+		return
+	}
+
+	// Check access (admin or user with company access)
+	if !h.checkCompanyAccess(c, comp) {
+		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Access denied to this company"})
+		return
+	}
+
+	h.Logger.Info().
+		Str("company_id", companyID).
+		Str("company_name", comp.Name).
+		Msg("Retrying Step 1 enrichment")
+
+	// Record the enrichment attempt for rate limiting
+	h.EnrichmentLimiter.RecordEnrichment(companyUUID)
+
+	// Retry Step 1
+	if err := h.CompanyService.RetryStep1(c.Request.Context(), companyUUID); err != nil {
+		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to retry Step 1")
+
+		switch err {
+		case company.ErrEnrichmentNotConfigured:
+			c.JSON(http.StatusServiceUnavailable, ErrorResponse{Error: "Service unavailable", Message: "Enrichment service not configured"})
+		default:
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Enrichment failed", Message: err.Error()})
+		}
+		return
+	}
+
+	c.JSON(http.StatusAccepted, MessageResponse{
+		Message: "Step 1 re-enrichment started",
+		Data: map[string]interface{}{
+			"company_id":      companyID,
+			"company_name":    comp.Name,
+			"step":            "1-basic-info",
+			"status":          "processing",
+			"remaining_today": MaxEnrichmentsPerDay - h.EnrichmentLimiter.GetEnrichmentCount(companyUUID),
+		},
+	})
+}
+
+// RetryStep2 handles POST /api/v1/companies/:id/enrich/step2/retry
+// Re-runs Step 2 enrichment even if already completed
+// Requires Step 1 to be completed
+// Rate limited to MaxEnrichmentsPerDay per company per 24 hours
+func (h *CompanyHandlers) RetryStep2(c *gin.Context) {
+	companyID := c.Param("id")
+
+	companyUUID, err := uuid.Parse(companyID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
+		return
+	}
+
+	// Check rate limit first
+	if !h.EnrichmentLimiter.CanEnrich(companyUUID) {
+		retryAfter := h.EnrichmentLimiter.GetRetryAfter(companyUUID)
+		count := h.EnrichmentLimiter.GetEnrichmentCount(companyUUID)
+
+		h.Logger.Warn().
+			Str("company_id", companyID).
+			Int("enrichment_count_24h", count).
+			Dur("retry_after", retryAfter).
+			Msg("Rate limit exceeded for Step 2 re-enrichment")
+
+		c.Header("Retry-After", formatDuration(retryAfter))
+		c.JSON(http.StatusTooManyRequests, ErrorResponse{
+			Error:   "Rate limit exceeded",
+			Message: "Maximum enrichments per day reached. Please try again later.",
+		})
+		return
+	}
+
+	// Get company to verify access
+	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
+	if err != nil || comp == nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Company not found"})
+		return
+	}
+
+	// Check access (admin or user with company access)
+	if !h.checkCompanyAccess(c, comp) {
+		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Access denied to this company"})
+		return
+	}
+
+	h.Logger.Info().
+		Str("company_id", companyID).
+		Str("company_name", comp.Name).
+		Msg("Retrying Step 2 enrichment")
+
+	// Record the enrichment attempt for rate limiting
+	h.EnrichmentLimiter.RecordEnrichment(companyUUID)
+
+	// Retry Step 2
+	if err := h.CompanyService.RetryStep2(c.Request.Context(), companyUUID); err != nil {
+		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to retry Step 2")
+
+		switch err {
+		case company.ErrEnrichmentNotConfigured:
+			c.JSON(http.StatusServiceUnavailable, ErrorResponse{Error: "Service unavailable", Message: "Enrichment service not configured"})
+		case company.ErrStep1NotCompleted:
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Precondition failed", Message: "Step 1 enrichment must be completed first"})
+		default:
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Enrichment failed", Message: err.Error()})
+		}
+		return
+	}
+
+	c.JSON(http.StatusAccepted, MessageResponse{
+		Message: "Step 2 re-enrichment started",
+		Data: map[string]interface{}{
+			"company_id":        companyID,
+			"company_name":      comp.Name,
+			"step":              "2-business-model",
+			"status":            "processing",
+			"remaining_today":   MaxEnrichmentsPerDay - h.EnrichmentLimiter.GetEnrichmentCount(companyUUID),
+		},
+	})
+}
+
+// TriggerStep3 handles POST /api/v1/companies/:id/enrich/step3
+// Triggers Step 3 enrichment (competitive intelligence) for a company
+// Requires Step 2 to be completed
+func (h *CompanyHandlers) TriggerStep3(c *gin.Context) {
+	companyID := c.Param("id")
+
+	companyUUID, err := uuid.Parse(companyID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
+		return
+	}
+
+	// Get company to verify access
+	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
+	if err != nil || comp == nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Company not found"})
+		return
+	}
+
+	// Check access (admin or user with company access)
+	if !h.checkCompanyAccess(c, comp) {
+		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Access denied to this company"})
+		return
+	}
+
+	h.Logger.Info().
+		Str("company_id", companyID).
+		Str("company_name", comp.Name).
+		Msg("Triggering Step 3 enrichment")
+
+	// Trigger Step 3
+	if err := h.CompanyService.TriggerStep3(c.Request.Context(), companyUUID); err != nil {
+		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to trigger Step 3")
+
+		switch err {
+		case company.ErrEnrichmentNotConfigured:
+			c.JSON(http.StatusServiceUnavailable, ErrorResponse{Error: "Service unavailable", Message: "Enrichment service not configured"})
+		case company.ErrStep2NotCompleted:
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Precondition failed", Message: "Step 2 enrichment must be completed first"})
+		case company.ErrStep3AlreadyRunning:
+			c.JSON(http.StatusConflict, ErrorResponse{Error: "Already running", Message: "Step 3 enrichment already in progress or completed"})
+		default:
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Enrichment failed", Message: err.Error()})
+		}
+		return
+	}
+
+	c.JSON(http.StatusAccepted, MessageResponse{
+		Message: "Step 3 enrichment started",
+		Data: map[string]interface{}{
+			"company_id":   companyID,
+			"company_name": comp.Name,
+			"step":         "3-competitive-intel",
+			"status":       "processing",
+		},
+	})
+}
+
+// RetryStep3 handles POST /api/v1/companies/:id/enrich/step3/retry
+// Re-runs Step 3 enrichment even if already completed
+// Requires Step 2 to be completed
+// Rate limited to MaxEnrichmentsPerDay per company per 24 hours
+func (h *CompanyHandlers) RetryStep3(c *gin.Context) {
+	companyID := c.Param("id")
+
+	companyUUID, err := uuid.Parse(companyID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
+		return
+	}
+
+	// Check rate limit first
+	if !h.EnrichmentLimiter.CanEnrich(companyUUID) {
+		retryAfter := h.EnrichmentLimiter.GetRetryAfter(companyUUID)
+		count := h.EnrichmentLimiter.GetEnrichmentCount(companyUUID)
+
+		h.Logger.Warn().
+			Str("company_id", companyID).
+			Int("enrichment_count_24h", count).
+			Dur("retry_after", retryAfter).
+			Msg("Rate limit exceeded for Step 3 re-enrichment")
+
+		c.Header("Retry-After", formatDuration(retryAfter))
+		c.JSON(http.StatusTooManyRequests, ErrorResponse{
+			Error:   "Rate limit exceeded",
+			Message: "Maximum enrichments per day reached. Please try again later.",
+		})
+		return
+	}
+
+	// Get company to verify access
+	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
+	if err != nil || comp == nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Company not found"})
+		return
+	}
+
+	// Check access (admin or user with company access)
+	if !h.checkCompanyAccess(c, comp) {
+		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Access denied to this company"})
+		return
+	}
+
+	h.Logger.Info().
+		Str("company_id", companyID).
+		Str("company_name", comp.Name).
+		Msg("Retrying Step 3 enrichment")
+
+	// Record the enrichment attempt for rate limiting
+	h.EnrichmentLimiter.RecordEnrichment(companyUUID)
+
+	// Retry Step 3
+	if err := h.CompanyService.RetryStep3(c.Request.Context(), companyUUID); err != nil {
+		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to retry Step 3")
+
+		switch err {
+		case company.ErrEnrichmentNotConfigured:
+			c.JSON(http.StatusServiceUnavailable, ErrorResponse{Error: "Service unavailable", Message: "Enrichment service not configured"})
+		case company.ErrStep2NotCompleted:
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Precondition failed", Message: "Step 2 enrichment must be completed first"})
+		default:
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Enrichment failed", Message: err.Error()})
+		}
+		return
+	}
+
+	c.JSON(http.StatusAccepted, MessageResponse{
+		Message: "Step 3 re-enrichment started",
+		Data: map[string]interface{}{
+			"company_id":        companyID,
+			"company_name":      comp.Name,
+			"step":              "3-competitive-intel",
+			"status":            "processing",
+			"remaining_today":   MaxEnrichmentsPerDay - h.EnrichmentLimiter.GetEnrichmentCount(companyUUID),
 		},
 	})
 }

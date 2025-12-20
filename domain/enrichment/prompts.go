@@ -1,169 +1,308 @@
 package enrichment
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // =============================================================================
-// STAGE 1: PERPLEXITY SEARCH PROMPTS
+// MODEL CONFIGURATION
 // =============================================================================
 
-// SearchSystemPrompt is the system prompt for Perplexity web search
-const SearchSystemPrompt = `Você é um pesquisador de inteligência de mercado. Sua tarefa é encontrar informações factuais sobre empresas brasileiras.
+const (
+	// Stage 1: Perplexity for web search (ONLY model with real-time data)
+	ModelSearch         = "perplexity/sonar-pro"
+	ModelSearchFallback = "perplexity/sonar"
+
+	// Stage 2: Gemini 3 Flash for JSON formatting (replaces Claude)
+	// Fast, cheap, reliable JSON output
+	ModelFormat         = "google/gemini-3-flash-preview"
+	ModelFormatFallback = "google/gemini-2.0-flash-001"
+)
+
+// =============================================================================
+// STEP 1: BASIC INFO PROMPTS
+// Fields: CNPJ, razão social, fundação, sede, funcionários, website, redes sociais, executivos
+// =============================================================================
+
+// Step1SearchSystemPrompt is the system prompt for Perplexity Step 1 search
+const Step1SearchSystemPrompt = `Você é um pesquisador de inteligência de mercado.
+Foco: Encontrar dados básicos e públicos sobre empresas brasileiras.
 
 INSTRUÇÕES:
-1. Busque informações públicas e verificáveis
-2. Inclua dados de: site oficial, LinkedIn, notícias recentes, Glassdoor, Reclame Aqui
-3. Liste TODOS os concorrentes que encontrar
-4. Inclua notícias dos últimos 12 meses
-5. Retorne os dados de forma organizada (pode ser texto estruturado)
-6. SEMPRE cite as fontes com URLs`
+1. Busque informações públicas verificáveis
+2. Inclua dados de: site oficial, LinkedIn, Receita Federal, notícias
+3. Retorne dados de forma organizada
+4. SEMPRE cite as fontes com URLs
 
-// BuildSearchPrompt creates the user prompt for Perplexity web search
-func BuildSearchPrompt(company *CompanyInput) string {
-	prompt := fmt.Sprintf(`Pesquise informações sobre a empresa brasileira: %s`, company.Name)
+IMPORTANTE: Busque apenas dados básicos, não análise de mercado ou concorrentes.`
 
+// BuildStep1SearchPrompt creates the user prompt for Step 1 Perplexity search
+func BuildStep1SearchPrompt(company *CompanyInput) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Pesquise DADOS BÁSICOS sobre a empresa brasileira: %s", company.Name))
+
+	if company.CNPJ != nil && *company.CNPJ != "" {
+		sb.WriteString(fmt.Sprintf("\nCNPJ: %s", *company.CNPJ))
+	}
 	if company.Website != nil && *company.Website != "" {
-		prompt += fmt.Sprintf("\nWebsite: %s", *company.Website)
-	}
-	if company.Industry != nil && *company.Industry != "" {
-		prompt += fmt.Sprintf("\nSetor: %s", *company.Industry)
-	}
-	if company.Location != nil && *company.Location != "" {
-		prompt += fmt.Sprintf("\nLocalização: %s", *company.Location)
+		sb.WriteString(fmt.Sprintf("\nWebsite: %s", *company.Website))
 	}
 
-	prompt += `
+	sb.WriteString(`
 
-ENCONTRE E LISTE:
-1. **Dados Básicos**: CNPJ, razão social, fundação, sede, funcionários
-2. **Negócio**: Produtos/serviços, modelo de negócio, público-alvo, proposta de valor
-3. **Concorrentes**: Liste TODOS os concorrentes diretos e indiretos com breve descrição
-4. **Mercado**: Tamanho do mercado, crescimento, tendências, regulamentações
-5. **Notícias Recentes**: Eventos dos últimos 12 meses (lançamentos, funding, expansões)
-6. **Reputação**: Notas no Glassdoor, Reclame Aqui, avaliações
-7. **Executivos**: CEO, fundadores, liderança
-8. **Forças e Fraquezas**: O que a empresa faz bem? Onde falha?
-9. **Redes Sociais**: LinkedIn, Twitter/X
+ENCONTRE APENAS:
+1. **Identificação**: CNPJ completo, razão social, nome fantasia
+2. **Fundação**: Ano de fundação, breve história
+3. **Sede**: Localização da sede principal (cidade, estado)
+4. **Tamanho**: Número de funcionários (faixa estimada)
+5. **Website**: URL oficial
+6. **Redes Sociais**: LinkedIn, Twitter/X, Instagram, Facebook
+7. **Executivos**: CEO, fundadores, principais líderes (nome e cargo)
 
-Seja específico e factual. Cite as fontes.`
+NÃO busque: modelo de negócio, produtos, concorrentes, análise de mercado.
+Seja específico e factual. Cite as fontes.`)
 
-	return prompt
+	return sb.String()
 }
 
-// =============================================================================
-// STAGE 2: CLAUDE SYNTHESIS PROMPTS
-// =============================================================================
+// Step1FormatSystemPrompt is the system prompt for Gemini Step 1 JSON formatting
+const Step1FormatSystemPrompt = `Você é um extrator de dados JSON.
+Extraia APENAS os dados presentes na pesquisa.
+NUNCA invente dados. Use null para campos não encontrados.
+Retorne APENAS JSON válido, sem texto antes ou depois.`
 
-// SynthesisSystemPrompt is the system prompt for Claude synthesis
-const SynthesisSystemPrompt = `Você é um extrator de dados. Sua ÚNICA tarefa é extrair dados da pesquisa e retornar JSON.
-
-REGRA CRÍTICA DE INTEGRIDADE:
-- Use APENAS dados do texto de pesquisa fornecido
-- NUNCA use seu conhecimento prévio para "corrigir" ou substituir valores
-- Se a pesquisa diz "SELIC = 15%", retorne 15%, mesmo que pareça diferente do que você "sabe"
-
-REGRAS DE FORMATO:
-1. Retorne APENAS JSON válido, SEM texto antes ou depois
-2. JSON deve ser PLANO (sem objetos aninhados)
-3. Arrays devem conter APENAS strings, NUNCA objetos
-4. SEMPRE preencha: competitors, strengths, weaknesses (mínimo 3 itens cada)
-5. Se dado não existir na pesquisa, use "N/A" ou infira do setor
-
-FORMATO DOS ARRAYS (OBRIGATÓRIO):
-- ✅ CORRETO: "competitors": ["Empresa A", "Empresa B"]
-- ❌ ERRADO: "competitors": [{"nome": "Empresa A"}]
-- ✅ CORRETO: "recent_news": ["Jan/2024: Notícia X", "Fev/2024: Notícia Y"]
-- ❌ ERRADO: "recent_news": [{"data": "Jan/2024", "titulo": "Notícia X"}]`
-
-// synthesisJSONTemplate is the expected JSON structure for synthesis output
-const synthesisJSONTemplate = `{
-  "cnpj": "XX.XXX.XXX/XXXX-XX",
-  "website": "https://...",
-  "industry": "Setor",
-  "company_size": "Micro/Pequena/Média/Grande",
-  "location": "Cidade, Estado",
-  "target_market": "B2B/B2C/B2B2C",
-  "funding_stage": "Bootstrap/Seed/Series A/B/C",
-  "foundation_year": "YYYY",
-  "legal_name": "Razão Social",
-  "headquarters": "Cidade, Estado",
-  "sector": "Subsetor",
-  "target_audience": "Público-alvo",
-  "value_proposition": "Proposta de valor",
-  "employees_range": "50-100",
-  "revenue_estimate": "R$ XM - YM/ano",
-  "business_model": "SaaS/Marketplace/etc",
-  "market_share_status": "Líder/Desafiador/Nicho",
-  "digital_maturity": 7,
-
-  "main_products": ["Produto 1", "Produto 2"],
-  "service_areas": ["Brasil", "LATAM"],
-  "key_partnerships": ["Parceiro 1"],
-  "recent_news": ["Dez/2024: Notícia 1", "Nov/2024: Notícia 2"],
-  "key_executives": ["Nome - Cargo"],
-  "company_history": "Breve história",
-  "customer_segments": ["Segmento 1", "Segmento 2"],
-  "pricing_model": "Assinatura/Uso/Freemium",
-  "market_position": "Posicionamento",
-  "unique_selling_points": ["USP 1", "USP 2"],
-
-  "competitors": ["Concorrente 1", "Concorrente 2", "Concorrente 3"],
-  "competitor_details": ["Conc 1: descrição", "Conc 2: descrição"],
-  "competitive_advantage": "Vantagem principal",
-  "market_share": "X%% estimado",
-
-  "strengths": ["Força 1", "Força 2", "Força 3"],
-  "weaknesses": ["Fraqueza 1", "Fraqueza 2"],
-  "opportunities": ["Oportunidade 1", "Oportunidade 2"],
-  "threats": ["Ameaça 1", "Ameaça 2"],
-  "strategic_challenges": ["Desafio 1"],
-
-  "industry_growth_rate": "+X%% CAGR",
-  "industry_trends": ["Tendência 1", "Tendência 2"],
-  "regulatory_context": "Marco regulatório",
-  "market_concentration": "Fragmentado/Concentrado",
-
-  "tam_estimate": "R$ XXB",
-  "sam_estimate": "R$ XXB",
-  "som_estimate": "R$ XXM",
-
-  "linkedin_url": "https://linkedin.com/company/...",
-  "twitter_handle": "@empresa",
-
+// Step1JSONTemplate is the expected JSON structure for Step 1
+const Step1JSONTemplate = `{
+  "cnpj": "XX.XXX.XXX/XXXX-XX ou null",
+  "website": "https://... ou null",
+  "legal_name": "Razão Social ou null",
+  "trade_name": "Nome Fantasia ou null",
+  "foundation_year": "YYYY ou null",
+  "headquarters": "Cidade, Estado ou null",
+  "employees_range": "50-100 ou null",
+  "linkedin_url": "https://linkedin.com/company/... ou null",
+  "twitter_handle": "@empresa ou null",
+  "instagram_url": "https://instagram.com/... ou null",
+  "facebook_url": "https://facebook.com/... ou null",
+  "key_executives": ["Nome - Cargo", "Nome - Cargo"],
   "confidence_score": 75,
   "sources": ["fonte1.com", "fonte2.com"]
 }`
 
-// BuildSynthesisPrompt creates the user prompt for Claude synthesis
-func BuildSynthesisPrompt(company *CompanyInput, rawData string) string {
-	prompt := fmt.Sprintf(`# TAREFA: Sintetizar Dados em Análise Estratégica
+// =============================================================================
+// STEP 2: BUSINESS MODEL PROMPTS
+// Fields: modelo de negócio, produtos/serviços, público alvo, proposta de valor, região geográfica
+// =============================================================================
 
-## EMPRESA
-Nome: %s`, company.Name)
+// Step2SearchSystemPrompt is the system prompt for Perplexity Step 2 search
+const Step2SearchSystemPrompt = `Você é um analista de modelos de negócio.
+Foco: Entender como a empresa gera valor e para quem.
 
-	if company.Industry != nil && *company.Industry != "" {
-		prompt += fmt.Sprintf("\nSetor: %s", *company.Industry)
+INSTRUÇÕES:
+1. Use o contexto fornecido sobre a empresa
+2. Busque informações sobre produtos, serviços, clientes
+3. Identifique proposta de valor e diferenciação
+4. Mapeie regiões de atuação geográfica
+
+IMPORTANTE: Não busque concorrentes ou análise SWOT neste momento.`
+
+// BuildStep2SearchPrompt creates the user prompt for Step 2 Perplexity search
+// websiteContent is optional - if provided, it will be included as primary source
+func BuildStep2SearchPrompt(company *CompanyInput, step1Data *Step1BasicInfo, websiteContent string) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Analise o MODELO DE NEGÓCIO de: %s", company.Name))
+
+	// Include Step 1 context for richer search
+	if step1Data != nil {
+		if step1Data.LegalName != nil && *step1Data.LegalName != "" {
+			sb.WriteString(fmt.Sprintf("\nRazão Social: %s", *step1Data.LegalName))
+		}
+		if step1Data.Headquarters != nil && *step1Data.Headquarters != "" {
+			sb.WriteString(fmt.Sprintf("\nSede: %s", *step1Data.Headquarters))
+		}
+		if step1Data.EmployeesRange != nil && *step1Data.EmployeesRange != "" {
+			sb.WriteString(fmt.Sprintf("\nFuncionários: %s", *step1Data.EmployeesRange))
+		}
+		if step1Data.Website != nil && *step1Data.Website != "" {
+			sb.WriteString(fmt.Sprintf("\nWebsite: %s", *step1Data.Website))
+		}
+		if step1Data.LinkedInURL != nil && *step1Data.LinkedInURL != "" {
+			sb.WriteString(fmt.Sprintf("\nLinkedIn: %s", *step1Data.LinkedInURL))
+		}
 	}
 
-	prompt += fmt.Sprintf(`
+	if company.Industry != nil && *company.Industry != "" {
+		sb.WriteString(fmt.Sprintf("\nSetor informado: %s", *company.Industry))
+	}
 
-## DADOS BRUTOS DA PESQUISA (Perplexity)
+	// Include website content if available (crawled via Jina Reader)
+	if websiteContent != "" {
+		sb.WriteString(`
+
+=== CONTEÚDO DO SITE DA EMPRESA ===
+`)
+		sb.WriteString(websiteContent)
+		sb.WriteString(`
+=== FIM DO CONTEÚDO DO SITE ===
+
+IMPORTANTE: Use o conteúdo do site acima como FONTE PRIMÁRIA de informações.
+Busque informações ADICIONAIS na web para complementar (LinkedIn, notícias, app stores, etc).
+`)
+	}
+
+	sb.WriteString(`
+
+ENCONTRE:
+1. **Modelo de Negócio**: SaaS, Marketplace, Serviços, Indústria, Varejo, etc.
+2. **Setor/Subsetor**: Classificação do setor de atuação
+3. **Produtos/Serviços**: Principais ofertas da empresa
+4. **Modelo de Preço**: Assinatura, uso, freemium, licença, etc.
+5. **Público-Alvo**: B2B, B2C, B2B2C, segmentos específicos
+6. **Proposta de Valor**: O que diferencia a empresa
+7. **Diferenciais**: USPs (Unique Selling Points)
+8. **Região Geográfica**: Onde a empresa opera (Brasil, estados, LATAM, global)
+
+NÃO busque: concorrentes, análise SWOT, notícias, reputação.
+Seja específico. Cite as fontes.`)
+
+	return sb.String()
+}
+
+// Step2FormatSystemPrompt is the system prompt for Gemini Step 2 JSON formatting
+const Step2FormatSystemPrompt = `Você é um extrator de dados JSON para modelos de negócio.
+Extraia APENAS dados da pesquisa fornecida.
+Retorne APENAS JSON válido, sem texto antes ou depois.`
+
+// Step2JSONTemplate is the expected JSON structure for Step 2
+const Step2JSONTemplate = `{
+  "business_model": "SaaS/Marketplace/Serviços/etc ou null",
+  "industry": "Setor ou null",
+  "sector": "Subsetor ou null",
+  "main_products": ["Produto 1", "Produto 2"],
+  "pricing_model": "Assinatura/Uso/Freemium ou null",
+  "target_market": "B2B/B2C/B2B2C ou null",
+  "target_audience": "Descrição do público ou null",
+  "customer_segments": ["Segmento 1", "Segmento 2"],
+  "value_proposition": "Proposta de valor ou null",
+  "unique_selling_points": ["USP 1", "USP 2"],
+  "geographic_regions": ["Brasil", "LATAM"],
+  "service_areas": ["SP", "RJ", "MG"],
+  "confidence_score": 75,
+  "sources": ["fonte1.com"]
+}`
+
+// =============================================================================
+// STEP 3: COMPETITIVE INTELLIGENCE PROMPTS
+// Fields: concorrentes, informações do setor, reputação, notícias recentes
+// =============================================================================
+
+// Step3SearchSystemPrompt is the system prompt for Perplexity Step 3 search
+const Step3SearchSystemPrompt = `Você é um analista de inteligência competitiva.
+Foco: Concorrentes, informações do setor, reputação e notícias.
+
+INSTRUÇÕES:
+1. Use todo o contexto fornecido sobre a empresa
+2. Busque concorrentes diretos e indiretos
+3. Identifique informações do setor (crescimento, tendências)
+4. Busque reputação (Glassdoor, Reclame Aqui)
+5. Busque notícias recentes (últimos 12 meses)
+
+IMPORTANTE: NÃO faça análise SWOT ou estimativa de TAM/SAM/SOM.`
+
+// BuildStep3SearchPrompt creates the user prompt for Step 3 Perplexity search
+func BuildStep3SearchPrompt(company *CompanyInput, step1Data *Step1BasicInfo, step2Data *Step2BusinessModel) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Análise de INTELIGÊNCIA COMPETITIVA para: %s", company.Name))
+
+	// Include Step 1 context
+	if step1Data != nil {
+		if step1Data.Headquarters != nil && *step1Data.Headquarters != "" {
+			sb.WriteString(fmt.Sprintf("\nSede: %s", *step1Data.Headquarters))
+		}
+		if step1Data.EmployeesRange != nil && *step1Data.EmployeesRange != "" {
+			sb.WriteString(fmt.Sprintf("\nFuncionários: %s", *step1Data.EmployeesRange))
+		}
+	}
+
+	// Include Step 2 context (rich business model data)
+	if step2Data != nil {
+		if step2Data.BusinessModel != nil && *step2Data.BusinessModel != "" {
+			sb.WriteString(fmt.Sprintf("\nModelo: %s", *step2Data.BusinessModel))
+		}
+		if step2Data.Industry != nil && *step2Data.Industry != "" {
+			sb.WriteString(fmt.Sprintf("\nSetor: %s", *step2Data.Industry))
+		}
+		if len(step2Data.MainProducts) > 0 {
+			sb.WriteString(fmt.Sprintf("\nProdutos: %s", strings.Join(step2Data.MainProducts, ", ")))
+		}
+		if step2Data.TargetAudience != nil && *step2Data.TargetAudience != "" {
+			sb.WriteString(fmt.Sprintf("\nPúblico: %s", *step2Data.TargetAudience))
+		}
+		if len(step2Data.GeographicRegions) > 0 {
+			sb.WriteString(fmt.Sprintf("\nRegiões: %s", strings.Join(step2Data.GeographicRegions, ", ")))
+		}
+	}
+
+	sb.WriteString(`
+
+ENCONTRE:
+1. **Concorrentes**: Liste TODOS os concorrentes diretos e indiretos
+2. **Detalhes dos Concorrentes**: Breve descrição de cada um
+3. **Crescimento do Setor**: Taxa de crescimento anual (CAGR)
+4. **Tendências do Setor**: Principais tendências de mercado
+5. **Concentração de Mercado**: Fragmentado ou concentrado
+6. **Contexto Regulatório**: Marco regulatório relevante
+7. **Posição no Mercado**: Líder, desafiador, nicho
+8. **Reputação Glassdoor**: Nota e percepção dos funcionários
+9. **Reputação Reclame Aqui**: Nota e percepção dos clientes
+10. **Notícias Recentes**: Eventos dos últimos 12 meses (lançamentos, funding, expansões, crises)
+
+NÃO faça: análise SWOT, estimativa de TAM/SAM/SOM, recomendações estratégicas.
+Seja específico e factual. Cite as fontes.`)
+
+	return sb.String()
+}
+
+// Step3FormatSystemPrompt is the system prompt for Gemini Step 3 JSON formatting
+const Step3FormatSystemPrompt = `Você é um extrator de dados JSON para análise competitiva.
+Extraia APENAS dados da pesquisa fornecida.
+Preencha arrays com pelo menos 3 itens quando dados estiverem disponíveis.
+Retorne APENAS JSON válido, sem texto antes ou depois.`
+
+// Step3JSONTemplate is the expected JSON structure for Step 3
+const Step3JSONTemplate = `{
+  "competitors": ["Concorrente 1", "Concorrente 2", "Concorrente 3"],
+  "competitor_details": ["Conc 1: descrição", "Conc 2: descrição"],
+  "industry_growth_rate": "+X% CAGR ou null",
+  "industry_trends": ["Tendência 1", "Tendência 2"],
+  "market_concentration": "Fragmentado/Concentrado ou null",
+  "regulatory_context": "Marco regulatório ou null",
+  "market_position": "Líder/Desafiador/Nicho ou null",
+  "glassdoor_rating": "4.2/5 ou null",
+  "reclame_aqui_rating": "8.5/10 ou null",
+  "reputation_summary": "Resumo da reputação ou null",
+  "recent_news": ["Dez/2024: Notícia 1", "Nov/2024: Notícia 2"],
+  "confidence_score": 75,
+  "sources": ["fonte1.com"]
+}`
+
+// =============================================================================
+// SHARED HELPERS
+// =============================================================================
+
+// BuildFormatPrompt creates the JSON formatting prompt for Gemini
+func BuildFormatPrompt(stepName, rawData, jsonTemplate string) string {
+	return fmt.Sprintf(`# TAREFA: Extrair %s para JSON
+
+## DADOS DA PESQUISA
 %s
 
 ## INSTRUÇÕES
+Extraia os dados acima para o formato JSON abaixo.
+Use null para campos não encontrados.
+Retorne APENAS o JSON, sem texto adicional.
 
-Analise os dados acima e retorne um JSON estruturado com análise estratégica.
-
-IMPORTANTE:
-- Extraia TODOS os concorrentes mencionados
-- Identifique forças e fraquezas baseado nos dados
-- Infira oportunidades e ameaças do contexto de mercado
-- Se algum dado não existir, use seu conhecimento do setor para inferir
-
-## FORMATO DE RESPOSTA (JSON ESTRITO)
-
-Retorne APENAS o JSON abaixo, preenchido com dados reais:
-
-%s`, rawData, synthesisJSONTemplate)
-
-	return prompt
+## FORMATO ESPERADO
+%s`, stepName, rawData, jsonTemplate)
 }

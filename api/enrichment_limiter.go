@@ -7,6 +7,9 @@ import (
 	"github.com/google/uuid"
 )
 
+// MaxEnrichmentsPerDay is the maximum number of enrichments allowed per company per 24 hours
+const MaxEnrichmentsPerDay = 10
+
 // EnrichmentRateLimiter tracks enrichment requests per company to enforce rate limits
 // Thread-safe implementation using sync.RWMutex
 type EnrichmentRateLimiter struct {
@@ -23,7 +26,7 @@ func NewEnrichmentRateLimiter() *EnrichmentRateLimiter {
 
 // CanEnrich checks if the company can be enriched based on rate limits
 // Returns true if enrichment is allowed, false if rate limit exceeded
-// Rate limit: Max 5 enrichments per 24 hours per company
+// Rate limit: Max MaxEnrichmentsPerDay enrichments per 24 hours per company
 func (l *EnrichmentRateLimiter) CanEnrich(companyID uuid.UUID) bool {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
@@ -38,8 +41,8 @@ func (l *EnrichmentRateLimiter) CanEnrich(companyID uuid.UUID) bool {
 	cutoff := now.Add(-24 * time.Hour)
 	validTimestamps := filterRecentTimestamps(timestamps, cutoff)
 
-	// Check if under limit (5 per 24h)
-	return len(validTimestamps) < 5
+	// Check if under limit
+	return len(validTimestamps) < MaxEnrichmentsPerDay
 }
 
 // RecordEnrichment records a new enrichment for rate limiting
@@ -79,7 +82,7 @@ func (l *EnrichmentRateLimiter) GetRetryAfter(companyID uuid.UUID) time.Duration
 	cutoff := now.Add(-24 * time.Hour)
 	validTimestamps := filterRecentTimestamps(timestamps, cutoff)
 
-	if len(validTimestamps) < 5 {
+	if len(validTimestamps) < MaxEnrichmentsPerDay {
 		return 0 // Under limit, can enrich now
 	}
 

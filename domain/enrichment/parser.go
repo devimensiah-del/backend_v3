@@ -7,10 +7,66 @@ import (
 )
 
 // =============================================================================
-// JSON PARSING
+// STEP-SPECIFIC PARSING
+// =============================================================================
+
+// ParseStep1Response parses the LLM response into Step1BasicInfo
+func ParseStep1Response(content string) (*Step1BasicInfo, error) {
+	cleanJSON := extractJSON(content)
+
+	var result Step1BasicInfo
+	if err := json.Unmarshal([]byte(cleanJSON), &result); err != nil {
+		return nil, fmt.Errorf("failed to parse step1 JSON: %w (content: %.500s)", err, cleanJSON)
+	}
+
+	// Validate confidence score
+	if result.ConfidenceScore < 0 || result.ConfidenceScore > 100 {
+		result.ConfidenceScore = 50
+	}
+
+	return &result, nil
+}
+
+// ParseStep2Response parses the LLM response into Step2BusinessModel
+func ParseStep2Response(content string) (*Step2BusinessModel, error) {
+	cleanJSON := extractJSON(content)
+
+	var result Step2BusinessModel
+	if err := json.Unmarshal([]byte(cleanJSON), &result); err != nil {
+		return nil, fmt.Errorf("failed to parse step2 JSON: %w (content: %.500s)", err, cleanJSON)
+	}
+
+	// Validate confidence score
+	if result.ConfidenceScore < 0 || result.ConfidenceScore > 100 {
+		result.ConfidenceScore = 50
+	}
+
+	return &result, nil
+}
+
+// ParseStep3Response parses the LLM response into Step3CompetitiveIntel
+func ParseStep3Response(content string) (*Step3CompetitiveIntel, error) {
+	cleanJSON := extractJSON(content)
+
+	var result Step3CompetitiveIntel
+	if err := json.Unmarshal([]byte(cleanJSON), &result); err != nil {
+		return nil, fmt.Errorf("failed to parse step3 JSON: %w (content: %.500s)", err, cleanJSON)
+	}
+
+	// Validate confidence score
+	if result.ConfidenceScore < 0 || result.ConfidenceScore > 100 {
+		result.ConfidenceScore = 50
+	}
+
+	return &result, nil
+}
+
+// =============================================================================
+// LEGACY JSON PARSING
 // =============================================================================
 
 // ParseEnrichmentResponse parses the LLM response into EnrichedCompanyData
+// DEPRECATED: Use ParseStep1Response, ParseStep2Response, ParseStep3Response
 // Handles flexible JSON structures where models may return objects instead of strings
 func ParseEnrichmentResponse(content string) (*EnrichedCompanyData, error) {
 	// Clean and extract JSON

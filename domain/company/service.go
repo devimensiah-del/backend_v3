@@ -16,6 +16,7 @@ type Service struct {
 	repo              Repository
 	logger            zerolog.Logger
 	enrichmentService *enrichment.Service
+	enrichmentRepo    enrichment.Repository // For company_enrichment table
 	enrichmentTimeout time.Duration
 }
 
@@ -36,6 +37,11 @@ func NewService(repo Repository, logger zerolog.Logger, enrichmentTimeoutSeconds
 // SetEnrichmentService injects the enrichment service (optional)
 func (s *Service) SetEnrichmentService(enrichSvc *enrichment.Service) {
 	s.enrichmentService = enrichSvc
+}
+
+// SetEnrichmentRepository injects the enrichment repository for company_enrichment table
+func (s *Service) SetEnrichmentRepository(enrichRepo enrichment.Repository) {
+	s.enrichmentRepo = enrichRepo
 }
 
 // CreateDirect creates a company directly (without a submission)

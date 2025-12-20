@@ -180,6 +180,14 @@ func SetupRouter(
 		protectedAPI.GET("/companies/:id/challenges", mainHandler.CompanyHandlers.GetCompanyChallenges)
 		// NOTE: PUT /companies/:id removed - edit company in Supabase directly
 
+		// Enrichment step triggers (human-validated enrichment pipeline)
+		protectedAPI.GET("/companies/:id/enrichment-status", mainHandler.CompanyHandlers.GetEnrichmentStatus)
+		protectedAPI.POST("/companies/:id/enrich/step1/retry", mainHandler.CompanyHandlers.RetryStep1)
+		protectedAPI.POST("/companies/:id/enrich/step2", mainHandler.CompanyHandlers.TriggerStep2)
+		protectedAPI.POST("/companies/:id/enrich/step2/retry", mainHandler.CompanyHandlers.RetryStep2)
+		protectedAPI.POST("/companies/:id/enrich/step3", mainHandler.CompanyHandlers.TriggerStep3)
+		protectedAPI.POST("/companies/:id/enrich/step3/retry", mainHandler.CompanyHandlers.RetryStep3)
+
 		// Challenge routes - create challenges for existing companies
 		protectedAPI.POST("/challenges", mainHandler.CompanyHandlers.CreateChallenge)
 

@@ -63,6 +63,10 @@ type Company struct {
 	PricingModel         *string     `json:"pricing_model,omitempty" db:"pricing_model"`
 	UniqueSellingPoints  StringSlice `json:"unique_selling_points,omitempty" db:"unique_selling_points"`
 
+	// Geographic context (from Step 2 enrichment)
+	GeographicRegions StringSlice `json:"geographic_regions,omitempty" db:"geographic_regions"`
+	ServiceAreas      StringSlice `json:"service_areas,omitempty" db:"service_areas"`
+
 	// Industry context (enrichment v2 - deeper market intelligence)
 	IndustryGrowthRate  *string     `json:"industry_growth_rate,omitempty" db:"industry_growth_rate"`
 	IndustryTrends      StringSlice `json:"industry_trends,omitempty" db:"industry_trends"`
