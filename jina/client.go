@@ -274,39 +274,52 @@ func parseCNPJContent(content, cnpjDigits string) *CNPJData {
 			}
 		}
 
-		// Email
+		// Email - can be plain text or markdown link format [email](mailto:email)
 		if strings.Contains(lineLower, "email") || strings.Contains(lineLower, "e-mail") {
-			emailRegex := regexp.MustCompile(`[\w\.\-]+@[\w\.\-]+\.\w+`)
-			if matches := emailRegex.FindString(line); matches != "" {
-				data.Email = matches
+			// Try to extract from markdown link first: [EMAIL](mailto:EMAIL)
+			mailtoRegex := regexp.MustCompile(`mailto:([\w\.\-]+@[\w\.\-]+\.\w+)`)
+			if matches := mailtoRegex.FindStringSubmatch(line); len(matches) > 1 {
+				data.Email = strings.ToLower(matches[1])
+			} else {
+				// Fallback to plain email
+				emailRegex := regexp.MustCompile(`[\w\.\-]+@[\w\.\-]+\.\w+`)
+				if matches := emailRegex.FindString(line); matches != "" {
+					data.Email = strings.ToLower(matches)
+				}
 			}
 		}
 
-		// Capital Social
-		if strings.Contains(lineLower, "capital") {
+		// Capital Social - look for "Capital Social:" followed by R$ value
+		if strings.Contains(lineLower, "capital social") {
 			capitalRegex := regexp.MustCompile(`R\$\s*[\d\.,]+`)
 			if matches := capitalRegex.FindString(line); matches != "" {
 				data.CapitalSocial = matches
 			}
 		}
 
-		// CNAE Primary
-		if strings.Contains(lineLower, "primary") && strings.Contains(lineLower, "activity") ||
-			strings.Contains(lineLower, "atividade principal") ||
-			strings.Contains(lineLower, "primary business") {
-			// Next line or after colon often has the description
+		// CNAE Principal - casadosdados uses "CNAE Principal:" format
+		if strings.Contains(lineLower, "cnae principal") {
+			// Format: "CNAE Principal:" on one line, then "7990200 - Description" on next or same line
 			if colonIdx := strings.Index(line, ":"); colonIdx != -1 {
-				data.CNAEPrimary = strings.TrimSpace(line[colonIdx+1:])
+				afterColon := strings.TrimSpace(line[colonIdx+1:])
+				if afterColon != "" {
+					data.CNAEPrimary = afterColon
+				}
 			}
 		}
 
-		// CNAE codes - look for patterns like "XX.XX-X-XX"
-		cnaeRegex := regexp.MustCompile(`\d{2}\.\d{2}-\d-\d{2}`)
-		if matches := cnaeRegex.FindAllString(line, -1); len(matches) > 0 {
-			for _, code := range matches {
-				if !contains(data.CNAECodes, code) {
-					data.CNAECodes = append(data.CNAECodes, code)
-				}
+		// CNAEs Secundários - casadosdados lists them after "CNAEs Secundários:"
+		// Each line has format: "6202300 - Description"
+		if strings.Contains(lineLower, "cnaes secundários") || strings.Contains(lineLower, "cnaes secundarias") {
+			// Mark that we're in the secondary CNAEs section (handled below)
+		}
+
+		// CNAE codes - look for 7-digit codes at start of line (casadosdados format: "7990200 - Description")
+		cnaeRegex := regexp.MustCompile(`^(\d{7})\s*-\s*(.+)`)
+		if matches := cnaeRegex.FindStringSubmatch(line); len(matches) > 2 {
+			codeWithDesc := matches[1] + " - " + matches[2]
+			if !contains(data.CNAECodes, codeWithDesc) {
+				data.CNAECodes = append(data.CNAECodes, codeWithDesc)
 			}
 		}
 
