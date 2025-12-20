@@ -322,9 +322,21 @@ type EnrichedCompanyData struct {
 	SAMEstimate *string `json:"sam_estimate,omitempty"`
 	SOMEstimate *string `json:"som_estimate,omitempty"`
 
+	// CNPJ Registry data (from casadosdados.com.br)
+	TradeName     *string  `json:"trade_name,omitempty"`
+	Phone         *string  `json:"phone,omitempty"`
+	Email         *string  `json:"email,omitempty"`
+	CNAEPrimary   *string  `json:"cnae_primary,omitempty"`
+	CNAECodes     []string `json:"cnae_codes,omitempty"`
+	CapitalSocial *string  `json:"capital_social,omitempty"`
+	Partners      []string `json:"partners,omitempty"`
+	CNPJVerified  bool     `json:"cnpj_verified"`
+
 	// Social links
 	LinkedInURL   *string `json:"linkedin_url,omitempty"`
 	TwitterHandle *string `json:"twitter_handle,omitempty"`
+	InstagramURL  *string `json:"instagram_url,omitempty"`
+	FacebookURL   *string `json:"facebook_url,omitempty"`
 
 	// Meta
 	ConfidenceScore float64  `json:"confidence_score"`

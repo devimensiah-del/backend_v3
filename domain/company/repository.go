@@ -499,9 +499,21 @@ func (r *PostgresRepository) SetEnrichmentCompleted(ctx context.Context, id uuid
 			regulatory_context = COALESCE(regulatory_context, $45),
 			market_concentration = COALESCE(market_concentration, $46),
 			enrichment_sources = CASE WHEN enrichment_sources IS NULL OR jsonb_typeof(enrichment_sources) != 'array' OR jsonb_array_length(enrichment_sources) = 0 THEN $47 ELSE enrichment_sources END,
-			linkedin_url = COALESCE(linkedin_url, $48),
-			twitter_handle = COALESCE(twitter_handle, $49),
-			updated_at = $50
+			-- CNPJ Registry fields
+			trade_name = COALESCE(trade_name, $48),
+			phone = COALESCE(phone, $49),
+			email = COALESCE(email, $50),
+			cnae_primary = COALESCE(cnae_primary, $51),
+			cnae_codes = CASE WHEN cnae_codes IS NULL OR jsonb_typeof(cnae_codes) != 'array' OR jsonb_array_length(cnae_codes) = 0 THEN $52 ELSE cnae_codes END,
+			capital_social = COALESCE(capital_social, $53),
+			partners = CASE WHEN partners IS NULL OR jsonb_typeof(partners) != 'array' OR jsonb_array_length(partners) = 0 THEN $54 ELSE partners END,
+			cnpj_verified = CASE WHEN cnpj_verified = false THEN $55 ELSE cnpj_verified END,
+			-- Social links
+			linkedin_url = COALESCE(linkedin_url, $56),
+			twitter_handle = COALESCE(twitter_handle, $57),
+			instagram_url = COALESCE(instagram_url, $58),
+			facebook_url = COALESCE(facebook_url, $59),
+			updated_at = $60
 		WHERE id = $1
 	`
 
@@ -522,6 +534,9 @@ func (r *PostgresRepository) SetEnrichmentCompleted(ctx context.Context, id uuid
 	// Industry context arrays
 	industryTrendsJSON, _ := json.Marshal(data.IndustryTrends)
 	sourcesJSON, _ := json.Marshal(data.Sources)
+	// CNPJ Registry arrays
+	cnaeCodesJSON, _ := json.Marshal(data.CNAECodes)
+	partnersJSON, _ := json.Marshal(data.Partners)
 
 	_, err := r.querier().ExecContext(ctx, query,
 		id, EnrichmentCompleted, now,
@@ -539,7 +554,10 @@ func (r *PostgresRepository) SetEnrichmentCompleted(ctx context.Context, id uuid
 		customerSegmentsJSON, data.PricingModel, uniqueSellingPointsJSON,
 		// Industry context
 		data.IndustryGrowthRate, industryTrendsJSON, data.RegulatoryContext, data.MarketConcentration, sourcesJSON,
-		data.LinkedInURL, data.TwitterHandle,
+		// CNPJ Registry fields
+		data.TradeName, data.Phone, data.Email, data.CNAEPrimary, cnaeCodesJSON, data.CapitalSocial, partnersJSON, data.CNPJVerified,
+		// Social links
+		data.LinkedInURL, data.TwitterHandle, data.InstagramURL, data.FacebookURL,
 		now,
 	)
 	if err != nil {

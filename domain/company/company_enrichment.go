@@ -127,14 +127,27 @@ func (s *Service) runStep1Enrichment(ctx context.Context, companyID uuid.UUID) {
 // step1ToLegacyData converts Step1BasicInfo to EnrichedCompanyData for backward compatibility
 func step1ToLegacyData(step1 *enrichment.Step1BasicInfo) *enrichment.EnrichedCompanyData {
 	return &enrichment.EnrichedCompanyData{
-		CNPJ:            step1.CNPJ,
-		Website:         step1.Website,
-		LegalName:       step1.LegalName,
-		FoundationYear:  step1.FoundationYear.ToStringPtr(),
-		Headquarters:    step1.Headquarters,
-		EmployeesRange:  step1.EmployeesRange,
-		LinkedInURL:     step1.LinkedInURL,
-		TwitterHandle:   step1.TwitterHandle,
+		CNPJ:           step1.CNPJ,
+		Website:        step1.Website,
+		LegalName:      step1.LegalName,
+		FoundationYear: step1.FoundationYear.ToStringPtr(),
+		Headquarters:   step1.Headquarters,
+		EmployeesRange: step1.EmployeesRange,
+		// CNPJ Registry data
+		TradeName:     step1.TradeName,
+		Phone:         step1.Phone,
+		Email:         step1.Email,
+		CNAEPrimary:   step1.CNAEPrimary,
+		CNAECodes:     step1.CNAECodes,
+		CapitalSocial: step1.CapitalSocial,
+		Partners:      step1.Partners,
+		CNPJVerified:  step1.CNPJVerified,
+		// Social links
+		LinkedInURL:   step1.LinkedInURL,
+		TwitterHandle: step1.TwitterHandle,
+		InstagramURL:  step1.InstagramURL,
+		FacebookURL:   step1.FacebookURL,
+		// Other
 		KeyExecutives:   step1.KeyExecutives,
 		ConfidenceScore: step1.ConfidenceScore,
 		Sources:         step1.Sources,

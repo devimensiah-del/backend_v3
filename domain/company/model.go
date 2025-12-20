@@ -74,9 +74,21 @@ type Company struct {
 	MarketConcentration *string     `json:"market_concentration,omitempty" db:"market_concentration"`
 	EnrichmentSources   StringSlice `json:"enrichment_sources,omitempty" db:"enrichment_sources"`
 
+	// CNPJ Registry data (from casadosdados.com.br via Jina)
+	TradeName     *string     `json:"trade_name,omitempty" db:"trade_name"`         // Nome fantasia
+	Phone         *string     `json:"phone,omitempty" db:"phone"`                   // Corporate phone
+	Email         *string     `json:"email,omitempty" db:"email"`                   // Corporate email
+	CNAEPrimary   *string     `json:"cnae_primary,omitempty" db:"cnae_primary"`     // Primary CNAE (code + description)
+	CNAECodes     StringSlice `json:"cnae_codes,omitempty" db:"cnae_codes"`         // All CNAE codes
+	CapitalSocial *string     `json:"capital_social,omitempty" db:"capital_social"` // Registered capital
+	Partners      StringSlice `json:"partners,omitempty" db:"partners"`             // Partners with roles
+	CNPJVerified  bool        `json:"cnpj_verified" db:"cnpj_verified"`             // True if data from official registry
+
 	// Social links
 	LinkedInURL   *string `json:"linkedin_url,omitempty" db:"linkedin_url"`
 	TwitterHandle *string `json:"twitter_handle,omitempty" db:"twitter_handle"`
+	InstagramURL  *string `json:"instagram_url,omitempty" db:"instagram_url"`
+	FacebookURL   *string `json:"facebook_url,omitempty" db:"facebook_url"`
 
 	// Enrichment status (company-level tracking)
 	EnrichmentStatus      string     `json:"enrichment_status" db:"enrichment_status"` // pending, processing, completed, failed
