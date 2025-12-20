@@ -41,14 +41,12 @@ func (s *Service) SetChallengeService(challengeSvc ChallengeServiceInterface) {
 // MAIN WORKFLOW: SubmitForm
 // =============================================================================
 
-// SubmitForm handles the complete public submission workflow.
-// Creates: Submission → Company → Challenge using saga pattern.
-// If any step fails, performs compensating transactions to rollback previous steps.
+// SubmitForm handles the complete public submission workflow
 func (s *Service) SubmitForm(ctx context.Context, req *SubmitRequest) (*SubmitFormResponse, error) {
 	// Normalize input first (handles URL schemes, case normalization)
 	s.normalizeRequest(req)
 
-	// Validate input (no side effects after normalization)
+	// Validate input
 	if err := s.validateSubmitRequest(req); err != nil {
 		return nil, err
 	}

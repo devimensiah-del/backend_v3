@@ -290,11 +290,11 @@ func (s *Service) parseEnrichmentResponse(content string) (*EnrichedCompanyData,
 	cleanJSON := strings.TrimSpace(content)
 
 	// Remove markdown code blocks if present
-	if strings.HasPrefix(cleanJSON, "```json") {
-		cleanJSON = strings.TrimPrefix(cleanJSON, "```json")
+	if after, ok := strings.CutPrefix(cleanJSON, "```json"); ok {
+		cleanJSON = after
 	}
-	if strings.HasPrefix(cleanJSON, "```") {
-		cleanJSON = strings.TrimPrefix(cleanJSON, "```")
+	if after, ok := strings.CutPrefix(cleanJSON, "```"); ok {
+		cleanJSON = after
 	}
 	if strings.HasSuffix(cleanJSON, "```") {
 		cleanJSON = strings.TrimSuffix(cleanJSON, "```")
