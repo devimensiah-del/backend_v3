@@ -66,10 +66,68 @@ Seja específico e factual. Cite as fontes.`)
 	return sb.String()
 }
 
+// BuildStep1SearchPromptWithCNPJ creates the user prompt for Step 1 with CNPJ registry content
+// The CNPJ content is included as additional context for Perplexity
+func BuildStep1SearchPromptWithCNPJ(company *CompanyInput, cnpjContent string) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Pesquise DADOS BÁSICOS sobre a empresa brasileira: %s", company.Name))
+
+	if company.CNPJ != nil && *company.CNPJ != "" {
+		sb.WriteString(fmt.Sprintf("\nCNPJ: %s", *company.CNPJ))
+	}
+	if company.Website != nil && *company.Website != "" {
+		sb.WriteString(fmt.Sprintf("\nWebsite: %s", *company.Website))
+	}
+
+	sb.WriteString(`
+
+## DADOS OFICIAIS DO CNPJ (casadosdados.com.br)
+Os dados abaixo são oficiais da Receita Federal. Use como referência principal para:
+- Razão Social, Nome Fantasia
+- Data de Abertura (ano de fundação)
+- Endereço da Sede
+- CNAE (atividades econômicas)
+- Capital Social
+- Sócios/Administradores
+- Telefone, Email
+
+`)
+	sb.WriteString(cnpjContent)
+
+	sb.WriteString(`
+
+## BUSCAR ADICIONALMENTE:
+1. **Website**: URL oficial (se não constar acima)
+2. **Redes Sociais**: LinkedIn, Twitter/X, Instagram, Facebook
+3. **Executivos**: CEO, fundadores, principais líderes (além dos sócios acima)
+4. **Informações complementares**: Tamanho atual, notícias recentes
+
+NÃO busque: modelo de negócio, produtos, concorrentes, análise de mercado.
+Seja específico e factual. Cite as fontes.`)
+
+	return sb.String()
+}
+
 // Step1FormatSystemPrompt is the system prompt for Gemini Step 1 JSON formatting
 const Step1FormatSystemPrompt = `Você é um extrator de dados JSON.
 Extraia APENAS os dados presentes na pesquisa.
 NUNCA invente dados. Use null para campos não encontrados.
+
+PRIORIDADE MÁXIMA: Se houver "Dados Oficiais do CNPJ (casadosdados.com.br)", use esses dados como fonte principal para:
+- legal_name (Razão Social)
+- trade_name (Nome Fantasia)
+- foundation_year (extrair ano da Data de Abertura)
+- headquarters (Município + Estado)
+- phone, email
+- cnae_primary (CNAE Principal com código e descrição)
+- cnae_codes (lista de todos os CNAEs)
+- capital_social
+- partners (lista de sócios com qualificação e data)
+
+Para sócios (partners), extraia APENAS as linhas com nomes de pessoas no formato:
+"NOME COMPLETO - Qualificação - Data"
+NÃO inclua cabeçalhos como "Sócios:" ou "Nome do sócio - Qualificação - Data de entrada".
+
 Retorne APENAS JSON válido, sem texto antes ou depois.`
 
 // Step1JSONTemplate is the expected JSON structure for Step 1
@@ -80,14 +138,20 @@ const Step1JSONTemplate = `{
   "trade_name": "Nome Fantasia ou null",
   "foundation_year": "YYYY ou null",
   "headquarters": "Cidade, Estado ou null",
-  "employees_range": "50-100 ou null",
+  "employees_range": "50-100 ou Micro Empresa ou null",
+  "phone": "telefone ou null",
+  "email": "email@empresa.com ou null",
+  "cnae_primary": "7990200 - Descrição da atividade ou null",
+  "cnae_codes": ["7990200 - Descrição", "6202300 - Outra atividade"],
+  "capital_social": "R$ 1.000,00 ou null",
+  "partners": ["NOME COMPLETO - Sócio-Administrador - 01/01/2023", "OUTRO NOME - Sócio - 01/01/2023"],
   "linkedin_url": "https://linkedin.com/company/... ou null",
   "twitter_handle": "@empresa ou null",
   "instagram_url": "https://instagram.com/... ou null",
   "facebook_url": "https://facebook.com/... ou null",
   "key_executives": ["Nome - Cargo", "Nome - Cargo"],
   "confidence_score": 75,
-  "sources": ["fonte1.com", "fonte2.com"]
+  "sources": ["fonte1.com", "casadosdados.com.br"]
 }`
 
 // =============================================================================

@@ -289,26 +289,6 @@ func (s *Service) runStep2Enrichment(ctx context.Context, companyID uuid.UUID) {
 		return
 	}
 
-	// 3.5. CNPJ Backfill: If CNPJ was discovered in Step 1 but not verified, fetch from casadosdados
-	if updatedStep1 := s.enrichmentService.BackfillCNPJData(ctx, step1Data); updatedStep1 != nil {
-		s.logger.Info().
-			Str("company_id", companyID.String()).
-			Msg("CNPJ backfill completed, updating Step 1 data")
-
-		// Save updated Step 1 data
-		if err := s.enrichmentRepo.SetStep1Completed(ctx, companyID, updatedStep1); err != nil {
-			s.logger.Warn().Err(err).Msg("Failed to save backfilled step1 data, continuing")
-		}
-
-		// Update company with backfilled data
-		if err := s.updateCompanyWithStep1Backfill(ctx, companyID, updatedStep1); err != nil {
-			s.logger.Warn().Err(err).Msg("Failed to update company with backfilled data, continuing")
-		}
-
-		// Use updated step1Data for the rest of Step 2
-		step1Data = updatedStep1
-	}
-
 	// 4. Build company input
 	companyInput := &enrichment.CompanyInput{
 		ID:       company.ID,
@@ -344,31 +324,6 @@ func (s *Service) runStep2Enrichment(ctx context.Context, companyID uuid.UUID) {
 		Float64("confidence_score", step2Data.ConfidenceScore).
 		Int("products_count", len(step2Data.MainProducts)).
 		Msg("Step 2 enrichment completed successfully")
-}
-
-// updateCompanyWithStep1Backfill updates the company record with backfilled CNPJ registry data
-func (s *Service) updateCompanyWithStep1Backfill(ctx context.Context, companyID uuid.UUID, data *enrichment.Step1BasicInfo) error {
-	company, err := s.repo.GetByID(ctx, companyID)
-	if err != nil {
-		return err
-	}
-
-	// Update Step 1 fields from backfilled data
-	if data.LegalName != nil {
-		company.LegalName = data.LegalName
-	}
-	if data.FoundationYear != "" {
-		fy := data.FoundationYear.String()
-		company.FoundationYear = &fy
-	}
-	if data.Headquarters != nil {
-		company.Headquarters = data.Headquarters
-	}
-	if data.EmployeesRange != nil {
-		company.EmployeesRange = data.EmployeesRange
-	}
-
-	return s.repo.Update(ctx, company)
 }
 
 // updateCompanyWithStep2Data updates the company record with Step 2 enriched data

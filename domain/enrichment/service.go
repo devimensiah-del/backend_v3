@@ -67,27 +67,32 @@ func (s *Service) ExecuteStep1(ctx context.Context, company *CompanyInput) (*Ste
 		Str("step", "1-basic-info").
 		Msg("Starting Step 1 enrichment")
 
-	// Stage 0: Try to fetch CNPJ registry data if CNPJ is provided
-	var cnpjData *jina.CNPJData
+	// Stage 0: Try to fetch CNPJ registry content if CNPJ is provided
+	// We pass raw content to LLM for extraction (more robust than Go parsing)
+	var cnpjContent *jina.CNPJRegistryContent
 	if company.CNPJ != nil && *company.CNPJ != "" && s.jinaClient != nil {
 		log.Info().
 			Str("company_id", company.ID.String()).
 			Str("cnpj", *company.CNPJ).
-			Msg("Fetching CNPJ registry data from casadosdados")
+			Msg("Fetching CNPJ registry content from casadosdados")
 
-		cnpjData = s.jinaClient.FetchCNPJDataSafe(ctx, *company.CNPJ)
+		cnpjContent = s.jinaClient.FetchCNPJDataSafe(ctx, *company.CNPJ)
 
-		if cnpjData != nil {
+		if cnpjContent != nil {
 			log.Info().
 				Str("company_id", company.ID.String()).
-				Str("legal_name", cnpjData.LegalName).
-				Int("partners_count", len(cnpjData.Partners)).
-				Msg("CNPJ registry data fetched successfully")
+				Int("content_length", len(cnpjContent.Content)).
+				Msg("CNPJ registry content fetched successfully")
 		}
 	}
 
-	// Stage 1: Perplexity search
-	rawData, err := s.executeSearch(ctx, Step1SearchSystemPrompt, BuildStep1SearchPrompt(company))
+	// Stage 1: Perplexity search (include CNPJ content for context)
+	searchPrompt := BuildStep1SearchPrompt(company)
+	if cnpjContent != nil && cnpjContent.Content != "" {
+		searchPrompt = BuildStep1SearchPromptWithCNPJ(company, cnpjContent.Content)
+	}
+
+	rawData, err := s.executeSearch(ctx, Step1SearchSystemPrompt, searchPrompt)
 	if err != nil {
 		log.Error().Err(err).Str("company_id", company.ID.String()).Msg("Step 1 search failed")
 		return nil, fmt.Errorf("step 1 search failed: %w", err)
@@ -95,11 +100,16 @@ func (s *Service) ExecuteStep1(ctx context.Context, company *CompanyInput) (*Ste
 
 	log.Debug().
 		Int("raw_data_length", len(rawData)).
-		Bool("has_cnpj_data", cnpjData != nil).
+		Bool("has_cnpj_content", cnpjContent != nil).
 		Msg("Step 1 search complete")
 
-	// Stage 2: Gemini JSON formatting
-	formatPrompt := BuildFormatPrompt("Dados Básicos", rawData, Step1JSONTemplate)
+	// Stage 2: Gemini JSON formatting (include CNPJ content for extraction)
+	formatInput := rawData
+	if cnpjContent != nil && cnpjContent.Content != "" {
+		formatInput = fmt.Sprintf("## Dados da Pesquisa (Perplexity)\n%s\n\n## Dados Oficiais do CNPJ (casadosdados.com.br) - PRIORIDADE MÁXIMA\n%s", rawData, cnpjContent.Content)
+	}
+
+	formatPrompt := BuildFormatPrompt("Dados Básicos", formatInput, Step1JSONTemplate)
 	formattedJSON, err := s.executeFormat(ctx, Step1FormatSystemPrompt, formatPrompt)
 	if err != nil {
 		log.Error().Err(err).Str("company_id", company.ID.String()).Msg("Step 1 format failed")
@@ -113,13 +123,9 @@ func (s *Service) ExecuteStep1(ctx context.Context, company *CompanyInput) (*Ste
 		return nil, fmt.Errorf("step 1 parse failed: %w", err)
 	}
 
-	// Stage 3: Merge CNPJ registry data (official data takes priority)
-	if cnpjData != nil {
-		result = mergeCNPJData(result, cnpjData)
+	// Mark as CNPJ verified if we had registry content
+	if cnpjContent != nil {
 		result.CNPJVerified = true
-		log.Info().
-			Str("company_id", company.ID.String()).
-			Msg("Merged CNPJ registry data into Step 1 result")
 	}
 
 	log.Info().
@@ -132,137 +138,9 @@ func (s *Service) ExecuteStep1(ctx context.Context, company *CompanyInput) (*Ste
 	return result, nil
 }
 
-// mergeCNPJData merges official CNPJ registry data into Step1BasicInfo
-// Registry data takes priority for official fields (legal name, address, partners, etc.)
-// Perplexity data fills gaps (website, social links, etc.)
-func mergeCNPJData(result *Step1BasicInfo, cnpjData *jina.CNPJData) *Step1BasicInfo {
-	// Official data - always use if available
-	if cnpjData.CNPJ != "" {
-		result.CNPJ = &cnpjData.CNPJ
-	}
-	if cnpjData.LegalName != "" {
-		result.LegalName = &cnpjData.LegalName
-	}
-	if cnpjData.TradeName != "" {
-		result.TradeName = &cnpjData.TradeName
-	}
-	if cnpjData.FoundationYear != "" {
-		result.FoundationYear = FlexibleString(cnpjData.FoundationYear)
-	}
-
-	// Address - build full address
-	if cnpjData.Address != "" || cnpjData.City != "" {
-		address := cnpjData.Address
-		if cnpjData.City != "" && cnpjData.State != "" {
-			if address != "" {
-				address += " | "
-			}
-			address += cnpjData.City + ", " + cnpjData.State
-		}
-		if address != "" {
-			result.Headquarters = &address
-		}
-	}
-
-	// Contact info
-	if cnpjData.Phone != "" {
-		result.Phone = &cnpjData.Phone
-	}
-	if cnpjData.Email != "" {
-		result.Email = &cnpjData.Email
-	}
-
-	// CNAE
-	if cnpjData.CNAEPrimary != "" {
-		result.CNAEPrimary = &cnpjData.CNAEPrimary
-	}
-	if len(cnpjData.CNAECodes) > 0 {
-		result.CNAECodes = cnpjData.CNAECodes
-	}
-
-	// Financial
-	if cnpjData.CapitalSocial != "" {
-		result.CapitalSocial = &cnpjData.CapitalSocial
-	}
-
-	// Partners - use registry data as more accurate than key_executives guess
-	if len(cnpjData.Partners) > 0 {
-		result.Partners = cnpjData.Partners
-	}
-
-	// Company type to employees range mapping
-	if cnpjData.CompanyType != "" && (result.EmployeesRange == nil || *result.EmployeesRange == "") {
-		switch cnpjData.CompanyType {
-		case "Micro Empresa":
-			me := "1-9 funcionários (Micro Empresa)"
-			result.EmployeesRange = &me
-		case "Empresa de Pequeno Porte":
-			epp := "10-49 funcionários (Pequeno Porte)"
-			result.EmployeesRange = &epp
-		case "Empresa de Médio Porte":
-			emp := "50-99 funcionários (Médio Porte)"
-			result.EmployeesRange = &emp
-		}
-	}
-
-	// Add casadosdados as source if not already present
-	hasCasadosdados := false
-	for _, source := range result.Sources {
-		if source == "casadosdados.com.br" {
-			hasCasadosdados = true
-			break
-		}
-	}
-	if !hasCasadosdados {
-		result.Sources = append(result.Sources, "casadosdados.com.br")
-	}
-
-	return result
-}
-
 // =============================================================================
 // STEP 2: BUSINESS MODEL
 // =============================================================================
-
-// BackfillCNPJData fetches and merges CNPJ registry data into existing Step 1 data
-// Used when CNPJ was discovered during Step 1 enrichment (not provided upfront)
-// Returns nil if no backfill is needed or if the fetch fails (non-blocking)
-func (s *Service) BackfillCNPJData(ctx context.Context, step1Data *Step1BasicInfo) *Step1BasicInfo {
-	// Skip if already verified or no CNPJ available
-	if step1Data == nil || step1Data.CNPJVerified {
-		return nil
-	}
-	if step1Data.CNPJ == nil || *step1Data.CNPJ == "" {
-		return nil
-	}
-	if s.jinaClient == nil {
-		return nil
-	}
-
-	log.Info().
-		Str("cnpj", *step1Data.CNPJ).
-		Msg("Backfilling CNPJ registry data (discovered during Step 1)")
-
-	cnpjData := s.jinaClient.FetchCNPJDataSafe(ctx, *step1Data.CNPJ)
-	if cnpjData == nil {
-		log.Warn().
-			Str("cnpj", *step1Data.CNPJ).
-			Msg("CNPJ backfill failed, continuing without registry data")
-		return nil
-	}
-
-	// Merge and mark as verified
-	updatedStep1 := mergeCNPJData(step1Data, cnpjData)
-	updatedStep1.CNPJVerified = true
-
-	log.Info().
-		Str("cnpj", *step1Data.CNPJ).
-		Str("legal_name", cnpjData.LegalName).
-		Int("partners_count", len(cnpjData.Partners)).
-		Msg("CNPJ registry data backfilled successfully")
-
-	return updatedStep1
-}
 
 // ExecuteStep2 runs Step 2 enrichment: Business Model
 // Fields: modelo de negócio, produtos/serviços, público alvo, proposta de valor, região geográfica

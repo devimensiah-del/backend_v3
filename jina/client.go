@@ -5,31 +5,17 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
 )
 
-// CNPJData contains structured data extracted from CNPJ registry (casadosdados.com.br)
-type CNPJData struct {
-	CNPJ           string   // Formatted CNPJ (e.g., "52.530.745/0001-66")
-	LegalName      string   // Razão social
-	TradeName      string   // Nome fantasia
-	FoundationDate string   // Data de abertura (e.g., "16/10/2023")
-	FoundationYear string   // Extracted year (e.g., "2023")
-	Address        string   // Full address
-	City           string   // City
-	State          string   // State
-	Phone          string   // Phone number
-	Email          string   // Email
-	CNAEPrimary    string   // Primary CNAE description
-	CNAECodes      []string // All CNAE codes
-	CapitalSocial  string   // Capital social
-	CompanyType    string   // Micro Empresa, etc.
-	Partners       []string // Partners with roles
-	Status         string   // Ativa, Inativa, etc.
+// CNPJRegistryContent contains raw content from CNPJ registry (casadosdados.com.br)
+// We pass this raw content to the LLM for extraction instead of parsing in Go
+type CNPJRegistryContent struct {
+	CNPJ    string // Formatted CNPJ (e.g., "52.530.745/0001-66")
+	Content string // Raw markdown content from casadosdados
 }
 
 // Client is a simple HTTP client for Jina Reader API
@@ -137,9 +123,10 @@ func (c *Client) ReadPageSafe(ctx context.Context, url string) string {
 	return content
 }
 
-// FetchCNPJData fetches company data from casadosdados.com.br using the CNPJ number
+// FetchCNPJData fetches raw CNPJ registry content from casadosdados.com.br
+// Returns the raw markdown content to be passed to LLM for extraction
 // Returns nil if the CNPJ is invalid or data cannot be fetched
-func (c *Client) FetchCNPJData(ctx context.Context, cnpj string) (*CNPJData, error) {
+func (c *Client) FetchCNPJData(ctx context.Context, cnpj string) (*CNPJRegistryContent, error) {
 	// Normalize CNPJ - extract only digits
 	cnpjDigits := extractDigits(cnpj)
 	if len(cnpjDigits) != 14 {
@@ -163,21 +150,25 @@ func (c *Client) FetchCNPJData(ctx context.Context, cnpj string) (*CNPJData, err
 		return nil, fmt.Errorf("empty response from casadosdados")
 	}
 
-	// Parse the markdown content
-	data := parseCNPJContent(content, cnpjDigits)
+	// Format CNPJ for display
+	formattedCNPJ := fmt.Sprintf("%s.%s.%s/%s-%s",
+		cnpjDigits[0:2], cnpjDigits[2:5], cnpjDigits[5:8],
+		cnpjDigits[8:12], cnpjDigits[12:14])
 
 	log.Info().
-		Str("cnpj", cnpj).
-		Str("legal_name", data.LegalName).
-		Int("partners_count", len(data.Partners)).
-		Msg("CNPJ data fetched successfully")
+		Str("cnpj", formattedCNPJ).
+		Int("content_length", len(content)).
+		Msg("CNPJ registry content fetched successfully")
 
-	return data, nil
+	return &CNPJRegistryContent{
+		CNPJ:    formattedCNPJ,
+		Content: content,
+	}, nil
 }
 
 // FetchCNPJDataSafe is like FetchCNPJData but never returns an error
 // Returns nil on any failure - use this when you want non-blocking behavior
-func (c *Client) FetchCNPJDataSafe(ctx context.Context, cnpj string) *CNPJData {
+func (c *Client) FetchCNPJDataSafe(ctx context.Context, cnpj string) *CNPJRegistryContent {
 	data, err := c.FetchCNPJData(ctx, cnpj)
 	if err != nil {
 		log.Warn().
@@ -198,202 +189,4 @@ func extractDigits(s string) string {
 		}
 	}
 	return digits.String()
-}
-
-// parseCNPJContent extracts structured data from casadosdados markdown content
-func parseCNPJContent(content, cnpjDigits string) *CNPJData {
-	data := &CNPJData{}
-
-	// Format CNPJ
-	if len(cnpjDigits) == 14 {
-		data.CNPJ = fmt.Sprintf("%s.%s.%s/%s-%s",
-			cnpjDigits[0:2], cnpjDigits[2:5], cnpjDigits[5:8],
-			cnpjDigits[8:12], cnpjDigits[12:14])
-	}
-
-	lines := strings.Split(content, "\n")
-
-	for i, line := range lines {
-		line = strings.TrimSpace(line)
-		lineLower := strings.ToLower(line)
-
-		// Legal Name - usually in a heading or after "Razão Social:"
-		if strings.Contains(lineLower, "razão social") || strings.Contains(lineLower, "legal name") {
-			if colonIdx := strings.Index(line, ":"); colonIdx != -1 {
-				data.LegalName = strings.TrimSpace(line[colonIdx+1:])
-			} else if i+1 < len(lines) {
-				data.LegalName = strings.TrimSpace(lines[i+1])
-			}
-		}
-
-		// Trade Name
-		if strings.Contains(lineLower, "nome fantasia") || strings.Contains(lineLower, "trade name") {
-			if colonIdx := strings.Index(line, ":"); colonIdx != -1 {
-				data.TradeName = strings.TrimSpace(line[colonIdx+1:])
-			}
-		}
-
-		// Foundation date
-		if strings.Contains(lineLower, "abertura") || strings.Contains(lineLower, "established") || strings.Contains(lineLower, "founded") {
-			// Look for date pattern DD/MM/YYYY
-			dateRegex := regexp.MustCompile(`(\d{2}/\d{2}/\d{4})`)
-			if matches := dateRegex.FindStringSubmatch(line); len(matches) > 0 {
-				data.FoundationDate = matches[1]
-				// Extract year
-				parts := strings.Split(matches[1], "/")
-				if len(parts) == 3 {
-					data.FoundationYear = parts[2]
-				}
-			}
-		}
-
-		// Address
-		if strings.Contains(lineLower, "address") || strings.Contains(lineLower, "endereço") || strings.Contains(lineLower, "location") {
-			if colonIdx := strings.Index(line, ":"); colonIdx != -1 {
-				data.Address = strings.TrimSpace(line[colonIdx+1:])
-			}
-		}
-
-		// City/State from location patterns
-		if strings.Contains(lineLower, "são paulo") || strings.Contains(lineLower, "rio de janeiro") {
-			// Try to extract city, state pattern
-			cityStateRegex := regexp.MustCompile(`([A-Za-záéíóúãõâêîôûÁÉÍÓÚÃÕÂÊÎÔÛ\s]+),?\s*([A-Z]{2})`)
-			if matches := cityStateRegex.FindStringSubmatch(line); len(matches) > 2 {
-				if data.City == "" {
-					data.City = strings.TrimSpace(matches[1])
-					data.State = matches[2]
-				}
-			}
-		}
-
-		// Phone
-		if strings.Contains(lineLower, "phone") || strings.Contains(lineLower, "telefone") || strings.Contains(lineLower, "tel:") {
-			phoneRegex := regexp.MustCompile(`\+?[\d\s\(\)\-]{10,}`)
-			if matches := phoneRegex.FindString(line); matches != "" {
-				data.Phone = strings.TrimSpace(matches)
-			}
-		}
-
-		// Email - can be plain text or markdown link format [email](mailto:email)
-		if strings.Contains(lineLower, "email") || strings.Contains(lineLower, "e-mail") {
-			// Try to extract from markdown link first: [EMAIL](mailto:EMAIL)
-			mailtoRegex := regexp.MustCompile(`mailto:([\w\.\-]+@[\w\.\-]+\.\w+)`)
-			if matches := mailtoRegex.FindStringSubmatch(line); len(matches) > 1 {
-				data.Email = strings.ToLower(matches[1])
-			} else {
-				// Fallback to plain email
-				emailRegex := regexp.MustCompile(`[\w\.\-]+@[\w\.\-]+\.\w+`)
-				if matches := emailRegex.FindString(line); matches != "" {
-					data.Email = strings.ToLower(matches)
-				}
-			}
-		}
-
-		// Capital Social - look for "Capital Social:" followed by R$ value
-		if strings.Contains(lineLower, "capital social") {
-			capitalRegex := regexp.MustCompile(`R\$\s*[\d\.,]+`)
-			if matches := capitalRegex.FindString(line); matches != "" {
-				data.CapitalSocial = matches
-			}
-		}
-
-		// CNAE Principal - casadosdados uses "CNAE Principal:" format
-		if strings.Contains(lineLower, "cnae principal") {
-			// Format: "CNAE Principal:" on one line, then "7990200 - Description" on next or same line
-			if colonIdx := strings.Index(line, ":"); colonIdx != -1 {
-				afterColon := strings.TrimSpace(line[colonIdx+1:])
-				if afterColon != "" {
-					data.CNAEPrimary = afterColon
-				}
-			}
-		}
-
-		// CNAEs Secundários - casadosdados lists them after "CNAEs Secundários:"
-		// Each line has format: "6202300 - Description"
-		if strings.Contains(lineLower, "cnaes secundários") || strings.Contains(lineLower, "cnaes secundarias") {
-			// Mark that we're in the secondary CNAEs section (handled below)
-		}
-
-		// CNAE codes - look for 7-digit codes at start of line (casadosdados format: "7990200 - Description")
-		cnaeRegex := regexp.MustCompile(`^(\d{7})\s*-\s*(.+)`)
-		if matches := cnaeRegex.FindStringSubmatch(line); len(matches) > 2 {
-			codeWithDesc := matches[1] + " - " + matches[2]
-			if !contains(data.CNAECodes, codeWithDesc) {
-				data.CNAECodes = append(data.CNAECodes, codeWithDesc)
-			}
-		}
-
-		// Company Type
-		if strings.Contains(lineLower, "micro empresa") || strings.Contains(lineLower, "microempresa") {
-			data.CompanyType = "Micro Empresa"
-		} else if strings.Contains(lineLower, "pequeno porte") || strings.Contains(lineLower, "epp") {
-			data.CompanyType = "Empresa de Pequeno Porte"
-		} else if strings.Contains(lineLower, "médio porte") {
-			data.CompanyType = "Empresa de Médio Porte"
-		}
-
-		// Partners - look for patterns with "Sócio" or "Partner"
-		if strings.Contains(lineLower, "sócio") || strings.Contains(lineLower, "partner") ||
-			strings.Contains(lineLower, "administrador") {
-			// Skip header lines
-			if strings.Contains(lineLower, "quadro de") ||
-				strings.Contains(lineLower, "partners:") ||
-				strings.Contains(lineLower, "sócios:") ||
-				strings.Contains(lineLower, "nome do sócio") ||
-				strings.Contains(lineLower, "qualificação") ||
-				strings.Contains(lineLower, "data de entrada") {
-				continue
-			}
-
-			// Extract name and role
-			// Common patterns: "Name - Role - Date" or "Name (Role)"
-			partnerLine := line
-			// Remove bullet points
-			partnerLine = strings.TrimLeft(partnerLine, "•-*123456789. ")
-
-			// Valid partner entries typically have a name in uppercase followed by a role
-			// Skip if too short or too long
-			if partnerLine != "" && len(partnerLine) >= 10 && len(partnerLine) < 150 {
-				// Clean up the partner entry
-				if !contains(data.Partners, partnerLine) {
-					data.Partners = append(data.Partners, partnerLine)
-				}
-			}
-		}
-
-		// Status
-		if strings.Contains(lineLower, "status:") || strings.Contains(lineLower, "situação:") {
-			if strings.Contains(lineLower, "ativa") || strings.Contains(lineLower, "active") {
-				data.Status = "Ativa"
-			} else if strings.Contains(lineLower, "inativa") || strings.Contains(lineLower, "inactive") {
-				data.Status = "Inativa"
-			}
-		}
-	}
-
-	// Try to extract legal name from first heading if not found
-	if data.LegalName == "" {
-		for _, line := range lines {
-			if strings.HasPrefix(line, "#") {
-				// Remove # and trim
-				name := strings.TrimSpace(strings.TrimLeft(line, "#"))
-				if len(name) > 3 && !strings.Contains(strings.ToLower(name), "cnpj") {
-					data.LegalName = name
-					break
-				}
-			}
-		}
-	}
-
-	return data
-}
-
-// contains checks if a slice contains a string
-func contains(slice []string, s string) bool {
-	for _, item := range slice {
-		if item == s {
-			return true
-		}
-	}
-	return false
 }
