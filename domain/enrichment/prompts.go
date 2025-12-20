@@ -118,15 +118,17 @@ PRIORIDADE MÁXIMA: Se houver "Dados Oficiais do CNPJ (casadosdados.com.br)", us
 - trade_name (Nome Fantasia)
 - foundation_year (extrair ano da Data de Abertura)
 - headquarters (Município + Estado)
-- phone, email
+- phone
+- email (SEMPRE em minúsculas, ex: contato@empresa.com.br)
 - cnae_primary (CNAE Principal com código e descrição)
 - cnae_codes (lista de todos os CNAEs)
 - capital_social
 - partners (lista de sócios com qualificação e data)
 
 Para sócios (partners), extraia APENAS as linhas com nomes de pessoas no formato:
-"NOME COMPLETO - Qualificação - Data"
-NÃO inclua cabeçalhos como "Sócios:" ou "Nome do sócio - Qualificação - Data de entrada".
+"Nome Completo - Qualificação - Data"
+- Converta nomes para Proper Case (ex: "JOAO SILVA" → "João Silva")
+- NÃO inclua cabeçalhos como "Sócios:" ou "Nome do sócio - Qualificação - Data de entrada".
 
 Retorne APENAS JSON válido, sem texto antes ou depois.`
 
@@ -144,7 +146,7 @@ const Step1JSONTemplate = `{
   "cnae_primary": "7990200 - Descrição da atividade ou null",
   "cnae_codes": ["7990200 - Descrição", "6202300 - Outra atividade"],
   "capital_social": "R$ 1.000,00 ou null",
-  "partners": ["NOME COMPLETO - Sócio-Administrador - 01/01/2023", "OUTRO NOME - Sócio - 01/01/2023"],
+  "partners": ["João da Silva - Sócio-Administrador - 01/01/2023", "Maria Santos - Sócio - 01/01/2023"],
   "linkedin_url": "https://linkedin.com/company/... ou null",
   "twitter_handle": "@empresa ou null",
   "instagram_url": "https://instagram.com/... ou null",
