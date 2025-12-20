@@ -322,14 +322,25 @@ func parseCNPJContent(content, cnpjDigits string) *CNPJData {
 		// Partners - look for patterns with "Sócio" or "Partner"
 		if strings.Contains(lineLower, "sócio") || strings.Contains(lineLower, "partner") ||
 			strings.Contains(lineLower, "administrador") {
+			// Skip header lines
+			if strings.Contains(lineLower, "quadro de") ||
+				strings.Contains(lineLower, "partners:") ||
+				strings.Contains(lineLower, "sócios:") ||
+				strings.Contains(lineLower, "nome do sócio") ||
+				strings.Contains(lineLower, "qualificação") ||
+				strings.Contains(lineLower, "data de entrada") {
+				continue
+			}
+
 			// Extract name and role
-			// Common patterns: "Name (Role)" or "Name - Role"
+			// Common patterns: "Name - Role - Date" or "Name (Role)"
 			partnerLine := line
 			// Remove bullet points
 			partnerLine = strings.TrimLeft(partnerLine, "•-*123456789. ")
 
-			if partnerLine != "" && !strings.Contains(lineLower, "quadro de") &&
-				!strings.Contains(lineLower, "partners:") && len(partnerLine) < 100 {
+			// Valid partner entries typically have a name in uppercase followed by a role
+			// Skip if too short or too long
+			if partnerLine != "" && len(partnerLine) >= 10 && len(partnerLine) < 150 {
 				// Clean up the partner entry
 				if !contains(data.Partners, partnerLine) {
 					data.Partners = append(data.Partners, partnerLine)
