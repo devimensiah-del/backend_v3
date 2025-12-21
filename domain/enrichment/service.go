@@ -97,13 +97,25 @@ type EnrichmentContext struct {
 
 // ExecuteStep1 runs Step 1 enrichment: Basic Info
 // Fields: razão social, fundação, sede, funcionários, website, redes sociais, executivos
-// Note: CNPJ verification is done in Step 2, not Step 1 (admin reviews Step 1 first)
-func (s *Service) ExecuteStep1(ctx context.Context, company *CompanyInput) (*Step1BasicInfo, error) {
+// If CNPJ is provided, also fetches Casa dos Dados for authoritative registry data
+// Returns: Step1BasicInfo (always), CNPJData (if CNPJ was provided and fetch succeeded)
+func (s *Service) ExecuteStep1(ctx context.Context, company *CompanyInput) (*Step1BasicInfo, *CNPJData, error) {
 	log.Info().
 		Str("company_id", company.ID.String()).
 		Str("company_name", company.Name).
 		Str("step", "1-basic-info").
+		Bool("has_cnpj", company.CNPJ != nil && *company.CNPJ != "").
 		Msg("Starting Step 1 enrichment")
+
+	// Stage 0: If CNPJ provided, fetch Casa dos Dados (non-blocking on failure)
+	var cnpjData *CNPJData
+	if company.CNPJ != nil && *company.CNPJ != "" {
+		var err error
+		cnpjData, err = s.FetchAndParseCNPJ(ctx, *company.CNPJ)
+		if err != nil {
+			log.Warn().Err(err).Str("cnpj", *company.CNPJ).Msg("CNPJ fetch failed, continuing with Perplexity only")
+		}
+	}
 
 	// Stage 1: Perplexity search for basic company info
 	searchPrompt := BuildStep1SearchPrompt(company)
@@ -111,7 +123,7 @@ func (s *Service) ExecuteStep1(ctx context.Context, company *CompanyInput) (*Ste
 	rawData, err := s.executeSearch(ctx, Step1SearchSystemPrompt, searchPrompt)
 	if err != nil {
 		log.Error().Err(err).Str("company_id", company.ID.String()).Msg("Step 1 search failed")
-		return nil, fmt.Errorf("step 1 search failed: %w", err)
+		return nil, cnpjData, fmt.Errorf("step 1 search failed: %w", err)
 	}
 
 	log.Debug().
@@ -123,27 +135,28 @@ func (s *Service) ExecuteStep1(ctx context.Context, company *CompanyInput) (*Ste
 	formattedJSON, err := s.executeFormat(ctx, Step1FormatSystemPrompt, formatPrompt)
 	if err != nil {
 		log.Error().Err(err).Str("company_id", company.ID.String()).Msg("Step 1 format failed")
-		return nil, fmt.Errorf("step 1 format failed: %w", err)
+		return nil, cnpjData, fmt.Errorf("step 1 format failed: %w", err)
 	}
 
 	// Parse response
 	result, err := ParseStep1Response(formattedJSON)
 	if err != nil {
 		log.Error().Err(err).Str("company_id", company.ID.String()).Str("raw", formattedJSON).Msg("Step 1 parse failed")
-		return nil, fmt.Errorf("step 1 parse failed: %w", err)
+		return nil, cnpjData, fmt.Errorf("step 1 parse failed: %w", err)
 	}
 
 	log.Info().
 		Str("company_id", company.ID.String()).
 		Float64("confidence", result.ConfidenceScore).
 		Int("sources_count", len(result.Sources)).
+		Bool("has_cnpj_data", cnpjData != nil).
 		Msg("Step 1 enrichment completed")
 
-	return result, nil
+	return result, cnpjData, nil
 }
 
 // =============================================================================
-// CNPJ VERIFICATION (called from Step 2)
+// CNPJ VERIFICATION (called from Step 1 if CNPJ provided, and Step 2 always)
 // =============================================================================
 
 // CNPJData contains parsed data from CNPJ registry
@@ -406,8 +419,8 @@ func (s *Service) executeFormat(ctx context.Context, systemPrompt, userPrompt st
 func (s *Service) EnrichCompany(ctx context.Context, company *CompanyInput) (*EnrichedCompanyData, error) {
 	log.Warn().Msg("EnrichCompany is deprecated - use ExecuteStep1/2/3 instead")
 
-	// Execute only Step 1 for backward compatibility
-	step1, err := s.ExecuteStep1(ctx, company)
+	// Execute only Step 1 for backward compatibility (ignore CNPJ data in legacy mode)
+	step1, _, err := s.ExecuteStep1(ctx, company)
 	if err != nil {
 		return nil, err
 	}

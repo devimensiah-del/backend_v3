@@ -86,8 +86,8 @@ func (s *Service) runStep1Enrichment(ctx context.Context, companyID uuid.UUID) {
 		Location: company.Location,
 	}
 
-	// 4. Execute Step 1
-	step1Data, err := s.enrichmentService.ExecuteStep1(ctx, companyInput)
+	// 4. Execute Step 1 (includes CNPJ fetch if CNPJ was provided)
+	step1Data, cnpjData, err := s.enrichmentService.ExecuteStep1(ctx, companyInput)
 	if err != nil {
 		s.logger.Error().
 			Err(err).
@@ -115,6 +115,20 @@ func (s *Service) runStep1Enrichment(ctx context.Context, companyID uuid.UUID) {
 			Msg("Failed to merge step1 data into company")
 		s.repo.SetEnrichmentFailed(ctx, companyID, "Failed to save enriched data")
 		return
+	}
+
+	// 7. If CNPJ data was fetched, merge it too (CNAE, partners, etc.)
+	if cnpjData != nil {
+		if err := s.repo.MergeCNPJData(ctx, companyID, cnpjData); err != nil {
+			s.logger.Warn().
+				Err(err).
+				Str("company_id", companyID.String()).
+				Msg("Failed to merge CNPJ data into company (non-blocking)")
+		} else {
+			s.logger.Info().
+				Str("company_id", companyID.String()).
+				Msg("CNPJ data merged successfully in Step 1")
+		}
 	}
 
 	s.logger.Info().
