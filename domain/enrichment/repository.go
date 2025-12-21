@@ -156,7 +156,7 @@ func (r *PostgresRepository) SetStep1Completed(ctx context.Context, companyID uu
 		WHERE company_id = $1
 	`
 	now := time.Now()
-	_, err = r.db.ExecContext(ctx, query, companyID, StatusCompleted, now, dataJSON, now)
+	_, err = r.db.ExecContext(ctx, query, companyID, StatusCompleted, now, string(dataJSON), now)
 	if err != nil {
 		return fmt.Errorf("failed to set step1 completed: %w", err)
 	}
@@ -231,7 +231,7 @@ func (r *PostgresRepository) SetStep2Completed(ctx context.Context, companyID uu
 		WHERE company_id = $1
 	`
 	now := time.Now()
-	_, err = r.db.ExecContext(ctx, query, companyID, StatusCompleted, now, dataJSON, now)
+	_, err = r.db.ExecContext(ctx, query, companyID, StatusCompleted, now, string(dataJSON), now)
 	if err != nil {
 		return fmt.Errorf("failed to set step2 completed: %w", err)
 	}
@@ -306,7 +306,7 @@ func (r *PostgresRepository) SetStep3Completed(ctx context.Context, companyID uu
 		WHERE company_id = $1
 	`
 	now := time.Now()
-	_, err = r.db.ExecContext(ctx, query, companyID, StatusCompleted, now, dataJSON, now)
+	_, err = r.db.ExecContext(ctx, query, companyID, StatusCompleted, now, string(dataJSON), now)
 	if err != nil {
 		return fmt.Errorf("failed to set step3 completed: %w", err)
 	}
