@@ -174,32 +174,47 @@ INSTRUÇÕES:
 IMPORTANTE: Não busque concorrentes ou análise SWOT neste momento.`
 
 // BuildStep2SearchPrompt creates the user prompt for Step 2 Perplexity search
+// Uses EnrichmentContext with ALL company fields for richer context
 // websiteContent is optional - if provided, it will be included as primary source
-func BuildStep2SearchPrompt(company *CompanyInput, step1Data *Step1BasicInfo, websiteContent string) string {
+func BuildStep2SearchPrompt(ctx *EnrichmentContext, websiteContent string) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Analise o MODELO DE NEGÓCIO de: %s", company.Name))
+	sb.WriteString(fmt.Sprintf("Analise o MODELO DE NEGÓCIO de: %s", ctx.Name))
 
-	// Include Step 1 context for richer search
-	if step1Data != nil {
-		if step1Data.LegalName != nil && *step1Data.LegalName != "" {
-			sb.WriteString(fmt.Sprintf("\nRazão Social: %s", *step1Data.LegalName))
-		}
-		if step1Data.Headquarters != nil && *step1Data.Headquarters != "" {
-			sb.WriteString(fmt.Sprintf("\nSede: %s", *step1Data.Headquarters))
-		}
-		if step1Data.EmployeesRange != nil && *step1Data.EmployeesRange != "" {
-			sb.WriteString(fmt.Sprintf("\nFuncionários: %s", *step1Data.EmployeesRange))
-		}
-		if step1Data.Website != nil && *step1Data.Website != "" {
-			sb.WriteString(fmt.Sprintf("\nWebsite: %s", *step1Data.Website))
-		}
-		if step1Data.LinkedInURL != nil && *step1Data.LinkedInURL != "" {
-			sb.WriteString(fmt.Sprintf("\nLinkedIn: %s", *step1Data.LinkedInURL))
-		}
+	// Include all available context from company record
+	sb.WriteString("\n\n## CONTEXTO DISPONÍVEL")
+	if ctx.LegalName != nil && *ctx.LegalName != "" {
+		sb.WriteString(fmt.Sprintf("\n- Razão Social: %s", *ctx.LegalName))
 	}
-
-	if company.Industry != nil && *company.Industry != "" {
-		sb.WriteString(fmt.Sprintf("\nSetor informado: %s", *company.Industry))
+	if ctx.TradeName != nil && *ctx.TradeName != "" {
+		sb.WriteString(fmt.Sprintf("\n- Nome Fantasia: %s", *ctx.TradeName))
+	}
+	if ctx.Headquarters != nil && *ctx.Headquarters != "" {
+		sb.WriteString(fmt.Sprintf("\n- Sede: %s", *ctx.Headquarters))
+	} else if ctx.Location != nil && *ctx.Location != "" {
+		sb.WriteString(fmt.Sprintf("\n- Localização: %s", *ctx.Location))
+	}
+	if ctx.EmployeesRange != nil && *ctx.EmployeesRange != "" {
+		sb.WriteString(fmt.Sprintf("\n- Funcionários: %s", *ctx.EmployeesRange))
+	} else if ctx.CompanySize != nil && *ctx.CompanySize != "" {
+		sb.WriteString(fmt.Sprintf("\n- Tamanho: %s", *ctx.CompanySize))
+	}
+	if ctx.Website != nil && *ctx.Website != "" {
+		sb.WriteString(fmt.Sprintf("\n- Website: %s", *ctx.Website))
+	}
+	if ctx.LinkedInURL != nil && *ctx.LinkedInURL != "" {
+		sb.WriteString(fmt.Sprintf("\n- LinkedIn: %s", *ctx.LinkedInURL))
+	}
+	if ctx.Industry != nil && *ctx.Industry != "" {
+		sb.WriteString(fmt.Sprintf("\n- Setor: %s", *ctx.Industry))
+	}
+	if ctx.FoundationYear != nil && *ctx.FoundationYear != "" {
+		sb.WriteString(fmt.Sprintf("\n- Ano de Fundação: %s", *ctx.FoundationYear))
+	}
+	if ctx.FundingStage != nil && *ctx.FundingStage != "" {
+		sb.WriteString(fmt.Sprintf("\n- Estágio de Funding: %s", *ctx.FundingStage))
+	}
+	if len(ctx.KeyExecutives) > 0 {
+		sb.WriteString(fmt.Sprintf("\n- Executivos: %s", strings.Join(ctx.KeyExecutives, ", ")))
 	}
 
 	// Include website content if available (crawled via Jina Reader)
@@ -277,43 +292,62 @@ INSTRUÇÕES:
 IMPORTANTE: NÃO faça análise SWOT ou estimativa de TAM/SAM/SOM.`
 
 // BuildStep3SearchPrompt creates the user prompt for Step 3 Perplexity search
-func BuildStep3SearchPrompt(company *CompanyInput, step1Data *Step1BasicInfo, step2Data *Step2BusinessModel) string {
+// Uses EnrichmentContext with ALL company fields for comprehensive competitor search
+func BuildStep3SearchPrompt(ctx *EnrichmentContext) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Análise de INTELIGÊNCIA COMPETITIVA para: %s", company.Name))
+	sb.WriteString(fmt.Sprintf("Análise de INTELIGÊNCIA COMPETITIVA para: %s", ctx.Name))
 
-	// Include Step 1 context
-	if step1Data != nil {
-		if step1Data.Headquarters != nil && *step1Data.Headquarters != "" {
-			sb.WriteString(fmt.Sprintf("\nSede: %s", *step1Data.Headquarters))
-		}
-		if step1Data.EmployeesRange != nil && *step1Data.EmployeesRange != "" {
-			sb.WriteString(fmt.Sprintf("\nFuncionários: %s", *step1Data.EmployeesRange))
-		}
+	// Include all available context from company record
+	sb.WriteString("\n\n## CONTEXTO DO NEGÓCIO")
+	if ctx.LegalName != nil && *ctx.LegalName != "" {
+		sb.WriteString(fmt.Sprintf("\n- Razão Social: %s", *ctx.LegalName))
 	}
-
-	// Include Step 2 context (rich business model data)
-	if step2Data != nil {
-		if step2Data.BusinessModel != nil && *step2Data.BusinessModel != "" {
-			sb.WriteString(fmt.Sprintf("\nModelo: %s", *step2Data.BusinessModel))
-		}
-		if step2Data.Industry != nil && *step2Data.Industry != "" {
-			sb.WriteString(fmt.Sprintf("\nSetor: %s", *step2Data.Industry))
-		}
-		if len(step2Data.MainProducts) > 0 {
-			sb.WriteString(fmt.Sprintf("\nProdutos: %s", strings.Join(step2Data.MainProducts, ", ")))
-		}
-		if step2Data.TargetAudience != nil && *step2Data.TargetAudience != "" {
-			sb.WriteString(fmt.Sprintf("\nPúblico: %s", *step2Data.TargetAudience))
-		}
-		if len(step2Data.GeographicRegions) > 0 {
-			sb.WriteString(fmt.Sprintf("\nRegiões: %s", strings.Join(step2Data.GeographicRegions, ", ")))
-		}
+	if ctx.Headquarters != nil && *ctx.Headquarters != "" {
+		sb.WriteString(fmt.Sprintf("\n- Sede: %s", *ctx.Headquarters))
+	} else if ctx.Location != nil && *ctx.Location != "" {
+		sb.WriteString(fmt.Sprintf("\n- Localização: %s", *ctx.Location))
+	}
+	if ctx.EmployeesRange != nil && *ctx.EmployeesRange != "" {
+		sb.WriteString(fmt.Sprintf("\n- Funcionários: %s", *ctx.EmployeesRange))
+	}
+	if ctx.BusinessModel != nil && *ctx.BusinessModel != "" {
+		sb.WriteString(fmt.Sprintf("\n- Modelo de Negócio: %s", *ctx.BusinessModel))
+	}
+	if ctx.Industry != nil && *ctx.Industry != "" {
+		sb.WriteString(fmt.Sprintf("\n- Setor: %s", *ctx.Industry))
+	}
+	if ctx.Sector != nil && *ctx.Sector != "" {
+		sb.WriteString(fmt.Sprintf("\n- Subsetor: %s", *ctx.Sector))
+	}
+	if len(ctx.MainProducts) > 0 {
+		sb.WriteString(fmt.Sprintf("\n- Produtos/Serviços: %s", strings.Join(ctx.MainProducts, ", ")))
+	}
+	if ctx.PricingModel != nil && *ctx.PricingModel != "" {
+		sb.WriteString(fmt.Sprintf("\n- Modelo de Preço: %s", *ctx.PricingModel))
+	}
+	if ctx.TargetMarket != nil && *ctx.TargetMarket != "" {
+		sb.WriteString(fmt.Sprintf("\n- Público-Alvo: %s", *ctx.TargetMarket))
+	}
+	if ctx.TargetAudience != nil && *ctx.TargetAudience != "" {
+		sb.WriteString(fmt.Sprintf("\n- Segmento: %s", *ctx.TargetAudience))
+	}
+	if ctx.ValueProposition != nil && *ctx.ValueProposition != "" {
+		sb.WriteString(fmt.Sprintf("\n- Proposta de Valor: %s", *ctx.ValueProposition))
+	}
+	if len(ctx.CustomerSegments) > 0 {
+		sb.WriteString(fmt.Sprintf("\n- Segmentos de Clientes: %s", strings.Join(ctx.CustomerSegments, ", ")))
+	}
+	if len(ctx.UniqueSellingPoints) > 0 {
+		sb.WriteString(fmt.Sprintf("\n- Diferenciais: %s", strings.Join(ctx.UniqueSellingPoints, ", ")))
+	}
+	if len(ctx.GeographicRegions) > 0 {
+		sb.WriteString(fmt.Sprintf("\n- Regiões de Atuação: %s", strings.Join(ctx.GeographicRegions, ", ")))
 	}
 
 	sb.WriteString(`
 
 ENCONTRE:
-1. **Concorrentes**: Liste TODOS os concorrentes diretos e indiretos
+1. **Concorrentes**: Empresas que atendem clientes similares ou oferecem produtos/serviços similares
 2. **Detalhes dos Concorrentes**: Breve descrição de cada um
 3. **Crescimento do Setor**: Taxa de crescimento anual (CAGR)
 4. **Tendências do Setor**: Principais tendências de mercado

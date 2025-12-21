@@ -43,7 +43,7 @@ func NewServiceWithJina(llmClient *llm.Client, jinaClient *jina.Client) *Service
 	}
 }
 
-// CompanyInput represents the input data for enrichment
+// CompanyInput represents the input data for enrichment (used by Step 1)
 type CompanyInput struct {
 	ID       uuid.UUID
 	Name     string
@@ -51,6 +51,44 @@ type CompanyInput struct {
 	Website  *string
 	Industry *string
 	Location *string
+}
+
+// EnrichmentContext contains all available company data for enrichment prompts
+// Used by Step 2 and Step 3 - passes ALL company fields instead of separate step data
+type EnrichmentContext struct {
+	// Core identity
+	ID        uuid.UUID
+	Name      string
+	LegalName *string
+	TradeName *string
+	CNPJ      *string
+	Website   *string
+
+	// Business context
+	BusinessModel    *string
+	Industry         *string
+	Sector           *string
+	MainProducts     []string
+	PricingModel     *string
+	TargetMarket     *string // B2B, B2C, B2B2C
+	TargetAudience   *string
+	ValueProposition *string
+
+	// Location & size
+	Location          *string
+	Headquarters      *string
+	EmployeesRange    *string
+	GeographicRegions []string
+	ServiceAreas      []string
+
+	// Additional context
+	CompanySize         *string
+	FundingStage        *string
+	FoundationYear      *string
+	CustomerSegments    []string
+	UniqueSellingPoints []string
+	KeyExecutives       []string
+	LinkedInURL         *string
 }
 
 // =============================================================================
@@ -144,27 +182,25 @@ func (s *Service) ExecuteStep1(ctx context.Context, company *CompanyInput) (*Ste
 
 // ExecuteStep2 runs Step 2 enrichment: Business Model
 // Fields: modelo de negócio, produtos/serviços, público alvo, proposta de valor, região geográfica
-// Requires Step 1 data for context
+// Uses EnrichmentContext with ALL company fields for richer context
 // Optionally crawls company website via Jina Reader for richer context
-func (s *Service) ExecuteStep2(ctx context.Context, company *CompanyInput, step1Data *Step1BasicInfo) (*Step2BusinessModel, error) {
+func (s *Service) ExecuteStep2(ctx context.Context, enrichCtx *EnrichmentContext) (*Step2BusinessModel, error) {
 	log.Info().
-		Str("company_id", company.ID.String()).
-		Str("company_name", company.Name).
+		Str("company_id", enrichCtx.ID.String()).
+		Str("company_name", enrichCtx.Name).
 		Str("step", "2-business-model").
 		Msg("Starting Step 2 enrichment")
 
 	// Stage 0: Try to crawl company website via Jina Reader (non-blocking)
 	var websiteContent string
 	websiteURL := ""
-	if company.Website != nil && *company.Website != "" {
-		websiteURL = *company.Website
-	} else if step1Data != nil && step1Data.Website != nil && *step1Data.Website != "" {
-		websiteURL = *step1Data.Website
+	if enrichCtx.Website != nil && *enrichCtx.Website != "" {
+		websiteURL = *enrichCtx.Website
 	}
 
 	if websiteURL != "" && s.jinaClient != nil {
 		log.Info().
-			Str("company_id", company.ID.String()).
+			Str("company_id", enrichCtx.ID.String()).
 			Str("website", websiteURL).
 			Msg("Crawling company website via Jina Reader")
 
@@ -172,16 +208,16 @@ func (s *Service) ExecuteStep2(ctx context.Context, company *CompanyInput, step1
 
 		if websiteContent != "" {
 			log.Info().
-				Str("company_id", company.ID.String()).
+				Str("company_id", enrichCtx.ID.String()).
 				Int("content_length", len(websiteContent)).
 				Msg("Website content crawled successfully")
 		}
 	}
 
-	// Stage 1: Perplexity search with Step 1 context + website content
-	rawData, err := s.executeSearch(ctx, Step2SearchSystemPrompt, BuildStep2SearchPrompt(company, step1Data, websiteContent))
+	// Stage 1: Perplexity search with full company context + website content
+	rawData, err := s.executeSearch(ctx, Step2SearchSystemPrompt, BuildStep2SearchPrompt(enrichCtx, websiteContent))
 	if err != nil {
-		log.Error().Err(err).Str("company_id", company.ID.String()).Msg("Step 2 search failed")
+		log.Error().Err(err).Str("company_id", enrichCtx.ID.String()).Msg("Step 2 search failed")
 		return nil, fmt.Errorf("step 2 search failed: %w", err)
 	}
 
@@ -194,19 +230,19 @@ func (s *Service) ExecuteStep2(ctx context.Context, company *CompanyInput, step1
 	formatPrompt := BuildFormatPrompt("Modelo de Negócio", rawData, Step2JSONTemplate)
 	formattedJSON, err := s.executeFormat(ctx, Step2FormatSystemPrompt, formatPrompt)
 	if err != nil {
-		log.Error().Err(err).Str("company_id", company.ID.String()).Msg("Step 2 format failed")
+		log.Error().Err(err).Str("company_id", enrichCtx.ID.String()).Msg("Step 2 format failed")
 		return nil, fmt.Errorf("step 2 format failed: %w", err)
 	}
 
 	// Parse response
 	result, err := ParseStep2Response(formattedJSON)
 	if err != nil {
-		log.Error().Err(err).Str("company_id", company.ID.String()).Str("raw", formattedJSON).Msg("Step 2 parse failed")
+		log.Error().Err(err).Str("company_id", enrichCtx.ID.String()).Str("raw", formattedJSON).Msg("Step 2 parse failed")
 		return nil, fmt.Errorf("step 2 parse failed: %w", err)
 	}
 
 	log.Info().
-		Str("company_id", company.ID.String()).
+		Str("company_id", enrichCtx.ID.String()).
 		Float64("confidence", result.ConfidenceScore).
 		Int("sources_count", len(result.Sources)).
 		Int("products_count", len(result.MainProducts)).
@@ -221,18 +257,18 @@ func (s *Service) ExecuteStep2(ctx context.Context, company *CompanyInput, step1
 
 // ExecuteStep3 runs Step 3 enrichment: Competitive Intelligence
 // Fields: concorrentes, informações do setor, reputação, notícias recentes
-// Requires Step 1 and Step 2 data for context
-func (s *Service) ExecuteStep3(ctx context.Context, company *CompanyInput, step1Data *Step1BasicInfo, step2Data *Step2BusinessModel) (*Step3CompetitiveIntel, error) {
+// Uses EnrichmentContext with ALL company fields for comprehensive competitor search
+func (s *Service) ExecuteStep3(ctx context.Context, enrichCtx *EnrichmentContext) (*Step3CompetitiveIntel, error) {
 	log.Info().
-		Str("company_id", company.ID.String()).
-		Str("company_name", company.Name).
+		Str("company_id", enrichCtx.ID.String()).
+		Str("company_name", enrichCtx.Name).
 		Str("step", "3-competitive-intel").
 		Msg("Starting Step 3 enrichment")
 
-	// Stage 1: Perplexity search with Step 1+2 context
-	rawData, err := s.executeSearch(ctx, Step3SearchSystemPrompt, BuildStep3SearchPrompt(company, step1Data, step2Data))
+	// Stage 1: Perplexity search with full company context
+	rawData, err := s.executeSearch(ctx, Step3SearchSystemPrompt, BuildStep3SearchPrompt(enrichCtx))
 	if err != nil {
-		log.Error().Err(err).Str("company_id", company.ID.String()).Msg("Step 3 search failed")
+		log.Error().Err(err).Str("company_id", enrichCtx.ID.String()).Msg("Step 3 search failed")
 		return nil, fmt.Errorf("step 3 search failed: %w", err)
 	}
 
@@ -244,19 +280,19 @@ func (s *Service) ExecuteStep3(ctx context.Context, company *CompanyInput, step1
 	formatPrompt := BuildFormatPrompt("Inteligência Competitiva", rawData, Step3JSONTemplate)
 	formattedJSON, err := s.executeFormat(ctx, Step3FormatSystemPrompt, formatPrompt)
 	if err != nil {
-		log.Error().Err(err).Str("company_id", company.ID.String()).Msg("Step 3 format failed")
+		log.Error().Err(err).Str("company_id", enrichCtx.ID.String()).Msg("Step 3 format failed")
 		return nil, fmt.Errorf("step 3 format failed: %w", err)
 	}
 
 	// Parse response
 	result, err := ParseStep3Response(formattedJSON)
 	if err != nil {
-		log.Error().Err(err).Str("company_id", company.ID.String()).Str("raw", formattedJSON).Msg("Step 3 parse failed")
+		log.Error().Err(err).Str("company_id", enrichCtx.ID.String()).Str("raw", formattedJSON).Msg("Step 3 parse failed")
 		return nil, fmt.Errorf("step 3 parse failed: %w", err)
 	}
 
 	log.Info().
-		Str("company_id", company.ID.String()).
+		Str("company_id", enrichCtx.ID.String()).
 		Float64("confidence", result.ConfidenceScore).
 		Int("sources_count", len(result.Sources)).
 		Int("competitors_count", len(result.Competitors)).

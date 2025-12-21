@@ -124,6 +124,39 @@ func (s *Service) runStep1Enrichment(ctx context.Context, companyID uuid.UUID) {
 		Msg("Step 1 enrichment completed successfully")
 }
 
+// buildEnrichmentContext creates an EnrichmentContext from a Company record
+// Used by Step 2 and Step 3 to pass ALL company fields to enrichment prompts
+func buildEnrichmentContext(company *Company) *enrichment.EnrichmentContext {
+	return &enrichment.EnrichmentContext{
+		ID:                  company.ID,
+		Name:                company.Name,
+		LegalName:           company.LegalName,
+		TradeName:           company.TradeName,
+		CNPJ:                company.CNPJ,
+		Website:             company.Website,
+		BusinessModel:       company.BusinessModel,
+		Industry:            company.Industry,
+		Sector:              company.Sector,
+		MainProducts:        company.MainProducts,
+		PricingModel:        company.PricingModel,
+		TargetMarket:        company.TargetMarket,
+		TargetAudience:      company.TargetAudience,
+		ValueProposition:    company.ValueProposition,
+		Location:            company.Location,
+		Headquarters:        company.Headquarters,
+		EmployeesRange:      company.EmployeesRange,
+		GeographicRegions:   company.GeographicRegions,
+		ServiceAreas:        company.ServiceAreas,
+		CompanySize:         company.CompanySize,
+		FundingStage:        company.FundingStage,
+		FoundationYear:      company.FoundationYear,
+		CustomerSegments:    company.CustomerSegments,
+		UniqueSellingPoints: company.UniqueSellingPoints,
+		KeyExecutives:       company.KeyExecutives,
+		LinkedInURL:         company.LinkedInURL,
+	}
+}
+
 // step1ToLegacyData converts Step1BasicInfo to EnrichedCompanyData for backward compatibility
 func step1ToLegacyData(step1 *enrichment.Step1BasicInfo) *enrichment.EnrichedCompanyData {
 	return &enrichment.EnrichedCompanyData{
@@ -273,7 +306,7 @@ func (s *Service) runStep2Enrichment(ctx context.Context, companyID uuid.UUID) {
 		return
 	}
 
-	// 2. Load company
+	// 2. Load company (contains ALL fields including Step 1 enriched data)
 	company, err := s.repo.GetByID(ctx, companyID)
 	if err != nil {
 		s.logger.Error().Err(err).Msg("Failed to load company for step2")
@@ -281,39 +314,24 @@ func (s *Service) runStep2Enrichment(ctx context.Context, companyID uuid.UUID) {
 		return
 	}
 
-	// 3. Get Step 1 data for context
-	step1Data, err := s.enrichmentRepo.GetStep1Data(ctx, companyID)
-	if err != nil {
-		s.logger.Error().Err(err).Msg("Failed to get step1 data for context")
-		s.enrichmentRepo.SetStep2Failed(ctx, companyID, "Failed to get step1 context")
-		return
-	}
+	// 3. Build enrichment context from company record (ALL fields)
+	enrichCtx := buildEnrichmentContext(company)
 
-	// 4. Build company input
-	companyInput := &enrichment.CompanyInput{
-		ID:       company.ID,
-		Name:     company.Name,
-		CNPJ:     company.CNPJ,
-		Website:  company.Website,
-		Industry: company.Industry,
-		Location: company.Location,
-	}
-
-	// 5. Execute Step 2
-	step2Data, err := s.enrichmentService.ExecuteStep2(ctx, companyInput, step1Data)
+	// 4. Execute Step 2
+	step2Data, err := s.enrichmentService.ExecuteStep2(ctx, enrichCtx)
 	if err != nil {
 		s.logger.Error().Err(err).Msg("Step 2 enrichment failed")
 		s.enrichmentRepo.SetStep2Failed(ctx, companyID, err.Error())
 		return
 	}
 
-	// 6. Store Step 2 data
+	// 5. Store Step 2 data
 	if err := s.enrichmentRepo.SetStep2Completed(ctx, companyID, step2Data); err != nil {
 		s.logger.Error().Err(err).Msg("Failed to save step2 data")
 		return
 	}
 
-	// 7. Update company with Step 2 data
+	// 6. Update company with Step 2 data
 	if err := s.updateCompanyWithStep2Data(ctx, companyID, step2Data); err != nil {
 		s.logger.Error().Err(err).Msg("Failed to update company with step2 data")
 		// Don't fail the enrichment - data is saved in enrichment table
@@ -493,7 +511,7 @@ func (s *Service) runStep3Enrichment(ctx context.Context, companyID uuid.UUID) {
 		return
 	}
 
-	// 2. Load company
+	// 2. Load company (contains ALL fields including Step 1 and Step 2 enriched data)
 	company, err := s.repo.GetByID(ctx, companyID)
 	if err != nil {
 		s.logger.Error().Err(err).Msg("Failed to load company for step3")
@@ -501,45 +519,24 @@ func (s *Service) runStep3Enrichment(ctx context.Context, companyID uuid.UUID) {
 		return
 	}
 
-	// 3. Get Step 1 and Step 2 data for context
-	step1Data, err := s.enrichmentRepo.GetStep1Data(ctx, companyID)
-	if err != nil {
-		s.logger.Error().Err(err).Msg("Failed to get step1 data for context")
-		s.enrichmentRepo.SetStep3Failed(ctx, companyID, "Failed to get step1 context")
-		return
-	}
-	step2Data, err := s.enrichmentRepo.GetStep2Data(ctx, companyID)
-	if err != nil {
-		s.logger.Error().Err(err).Msg("Failed to get step2 data for context")
-		s.enrichmentRepo.SetStep3Failed(ctx, companyID, "Failed to get step2 context")
-		return
-	}
+	// 3. Build enrichment context from company record (ALL fields)
+	enrichCtx := buildEnrichmentContext(company)
 
-	// 4. Build company input
-	companyInput := &enrichment.CompanyInput{
-		ID:       company.ID,
-		Name:     company.Name,
-		CNPJ:     company.CNPJ,
-		Website:  company.Website,
-		Industry: company.Industry,
-		Location: company.Location,
-	}
-
-	// 5. Execute Step 3
-	step3Data, err := s.enrichmentService.ExecuteStep3(ctx, companyInput, step1Data, step2Data)
+	// 4. Execute Step 3
+	step3Data, err := s.enrichmentService.ExecuteStep3(ctx, enrichCtx)
 	if err != nil {
 		s.logger.Error().Err(err).Msg("Step 3 enrichment failed")
 		s.enrichmentRepo.SetStep3Failed(ctx, companyID, err.Error())
 		return
 	}
 
-	// 6. Store Step 3 data
+	// 5. Store Step 3 data
 	if err := s.enrichmentRepo.SetStep3Completed(ctx, companyID, step3Data); err != nil {
 		s.logger.Error().Err(err).Msg("Failed to save step3 data")
 		return
 	}
 
-	// 7. Update company with Step 3 data
+	// 6. Update company with Step 3 data
 	if err := s.updateCompanyWithStep3Data(ctx, companyID, step3Data); err != nil {
 		s.logger.Error().Err(err).Msg("Failed to update company with step3 data")
 		// Don't fail the enrichment - data is saved in enrichment table
