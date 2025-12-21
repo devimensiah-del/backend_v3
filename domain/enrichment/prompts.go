@@ -163,13 +163,20 @@ const Step1JSONTemplate = `{
 
 // Step2SearchSystemPrompt is the system prompt for Perplexity Step 2 search
 const Step2SearchSystemPrompt = `Você é um analista de modelos de negócio.
-Foco: Entender como a empresa gera valor e para quem.
+Foco: Entender como a empresa gera valor, para quem, e onde atua.
 
 INSTRUÇÕES:
 1. Use o contexto fornecido sobre a empresa
 2. Busque informações sobre produtos, serviços, clientes
 3. Identifique proposta de valor e diferenciação
-4. Mapeie regiões de atuação geográfica
+4. Mapeie regiões de atuação geográfica com precisão
+
+PARA IDENTIFICAR REGIÃO GEOGRÁFICA:
+- Busque páginas "Onde Estamos", "Filiais", "Cobertura", "Áreas de Atuação"
+- Verifique se menciona "atendemos todo o Brasil", "atuação nacional/regional"
+- Identifique estados/cidades específicas onde opera
+- Verifique presença internacional (LATAM, global)
+- Considere a sede como área primária de atuação
 
 IMPORTANTE: Não busque concorrentes ou análise SWOT neste momento.`
 
@@ -242,7 +249,11 @@ ENCONTRE:
 5. **Público-Alvo**: B2B, B2C, B2B2C, segmentos específicos
 6. **Proposta de Valor**: O que diferencia a empresa
 7. **Diferenciais**: USPs (Unique Selling Points)
-8. **Região Geográfica**: Onde a empresa opera (Brasil, estados, LATAM, global)
+8. **Região Geográfica de Atuação**:
+   - Escopo: Local, Regional, Nacional, LATAM, Global
+   - Estados/cidades específicas onde opera
+   - Se tem filiais ou apenas sede
+   - Áreas de cobertura de serviços
 
 NÃO busque: concorrentes, análise SWOT, notícias, reputação.
 Seja específico. Cite as fontes.`)
@@ -253,6 +264,13 @@ Seja específico. Cite as fontes.`)
 // Step2FormatSystemPrompt is the system prompt for Gemini Step 2 JSON formatting
 const Step2FormatSystemPrompt = `Você é um extrator de dados JSON para modelos de negócio.
 Extraia APENAS dados da pesquisa fornecida.
+
+PARA REGIÃO GEOGRÁFICA:
+- geographic_regions: Escopo amplo (ex: "Brasil", "Nacional", "LATAM", "Global", "Sudeste")
+- service_areas: Estados/cidades específicas (ex: "São Paulo", "Rio de Janeiro", "Curitiba")
+- Se a empresa atua em todo o Brasil, use ["Brasil"] ou ["Nacional"]
+- Se menciona estados específicos, liste-os em service_areas
+
 Retorne APENAS JSON válido, sem texto antes ou depois.`
 
 // Step2JSONTemplate is the expected JSON structure for Step 2
@@ -267,8 +285,8 @@ const Step2JSONTemplate = `{
   "customer_segments": ["Segmento 1", "Segmento 2"],
   "value_proposition": "Proposta de valor ou null",
   "unique_selling_points": ["USP 1", "USP 2"],
-  "geographic_regions": ["Brasil", "LATAM"],
-  "service_areas": ["SP", "RJ", "MG"],
+  "geographic_regions": ["Brasil", "Nacional", "LATAM", "Global"],
+  "service_areas": ["São Paulo", "Rio de Janeiro", "Curitiba"],
   "confidence_score": 75,
   "sources": ["fonte1.com"]
 }`

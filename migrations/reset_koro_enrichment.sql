@@ -51,8 +51,8 @@ UPDATE companies SET
     updated_at = NOW()
 WHERE id = '2e153503-2e34-4785-9fab-54d3f6851f0e';
 
--- 2. Reset company_enrichments table (Step 1/2/3 status and data)
-UPDATE company_enrichments SET
+-- 2. Reset company_enrichment table (Step 1/2/3 status and data)
+UPDATE company_enrichment SET
     step1_status = 'pending',
     step1_data = NULL,
     step1_error = NULL,
@@ -76,5 +76,5 @@ FROM companies
 WHERE id = '2e153503-2e34-4785-9fab-54d3f6851f0e';
 
 SELECT company_id, step1_status, step2_status, step3_status
-FROM company_enrichments
+FROM company_enrichment
 WHERE company_id = '2e153503-2e34-4785-9fab-54d3f6851f0e';
