@@ -227,13 +227,28 @@ Stateless Perplexity client. No repository - data stored on Company.
 
 **None** - Enrichment is stateless. Data stored on `companies` table by Company domain.
 
-### Enrichment Helpers
+### Enrichment File Structure
+
+```
+enrichment/
+├── model.go    # EnrichedCompanyData response struct
+├── service.go  # Orchestration: EnrichCompany() calls stages
+├── prompts.go  # All prompts and prompt builders
+└── parser.go   # JSON parsing and normalization
+```
+
+### Enrichment Helpers (prompts.go)
 
 | Function | Purpose |
 |----------|---------|
-| `identifyMissingFields(company)` | Determine what to ask Perplexity |
-| `buildEnrichmentPrompt(company, missing)` | Build PT-BR prompt |
-| `parseEnrichmentResponse(content)` | Parse JSON, validate confidence |
+| `BuildSearchPrompt(company)` | Build Stage 1 Perplexity search prompt |
+| `BuildSynthesisPrompt(company, rawData)` | Build Stage 2 Claude synthesis prompt |
+
+### Enrichment Helpers (parser.go)
+
+| Function | Purpose |
+|----------|---------|
+| `ParseEnrichmentResponse(content)` | Parse JSON, validate confidence, normalize arrays |
 
 ---
 

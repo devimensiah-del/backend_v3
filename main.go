@@ -145,19 +145,22 @@ func main() {
 	subSvc.SetChallengeService(adapters.NewChallengeServiceAdapterForSubmission(challengeSvc))
 	log.Info().Msg("Submission service initialized (with company + challenge creation)")
 
-	// Enrichment (Two-Stage Process)
-	// Stage 1: Perplexity sonar-pro for web search (real-time data)
-	// Stage 2: Claude Sonnet 4.5 for reasoning + synthesis (no :online needed)
+	// Enrichment (3-Step Process with Human Validation)
+	// Step 1: Basic Info (auto at company creation) - Perplexity → Gemini Flash
+	// Step 2: Business Model (human-triggered) - Perplexity → Gemini Flash
+	// Step 3: Competitive Intel (human-triggered) - Perplexity → Gemini Flash
 	// Models are hardcoded in enrichment package (not configurable via env)
 	enrichSvc := enrichment.NewService(llmClient)
+	enrichRepo := enrichment.NewRepository(db)
 	log.Info().
-		Str("stage1_model", enrichment.ModelStage1Search).
-		Str("stage2_model", enrichment.ModelStage2Synthesis).
-		Msg("Enrichment service initialized (two-stage: Perplexity → Sonnet 4.5)")
+		Str("search_model", enrichment.ModelSearch).
+		Str("format_model", enrichment.ModelFormat).
+		Msg("Enrichment service initialized (3-step: Perplexity → Gemini Flash)")
 
-	// Inject enrichment service into company service
+	// Inject enrichment service and repository into company service
 	companySvc.SetEnrichmentService(enrichSvc)
-	log.Info().Msg("Enrichment service injected into company service (automatic enrichment at company creation)")
+	companySvc.SetEnrichmentRepository(enrichRepo)
+	log.Info().Msg("Enrichment service + repository injected into company service")
 
 	// Analysis (The Strategy Team)
 	// Create submission repository adapter for analysis service
