@@ -107,13 +107,12 @@ func (s *Service) runStep1Enrichment(ctx context.Context, companyID uuid.UUID) {
 		}
 	}
 
-	// 6. Update company with enriched data (convert Step1 to legacy format for backward compatibility)
-	enrichedData := step1ToLegacyData(step1Data)
-	if err := s.repo.SetEnrichmentCompleted(ctx, companyID, enrichedData); err != nil {
+	// 6. Merge Step 1 data into company record (COALESCE for scalars, merge+dedupe for arrays)
+	if err := s.repo.MergeStep1Data(ctx, companyID, step1Data); err != nil {
 		s.logger.Error().
 			Err(err).
 			Str("company_id", companyID.String()).
-			Msg("Failed to save enriched data")
+			Msg("Failed to merge step1 data into company")
 		s.repo.SetEnrichmentFailed(ctx, companyID, "Failed to save enriched data")
 		return
 	}
@@ -154,36 +153,6 @@ func buildEnrichmentContext(company *Company) *enrichment.EnrichmentContext {
 		UniqueSellingPoints: company.UniqueSellingPoints,
 		KeyExecutives:       company.KeyExecutives,
 		LinkedInURL:         company.LinkedInURL,
-	}
-}
-
-// step1ToLegacyData converts Step1BasicInfo to EnrichedCompanyData for backward compatibility
-func step1ToLegacyData(step1 *enrichment.Step1BasicInfo) *enrichment.EnrichedCompanyData {
-	return &enrichment.EnrichedCompanyData{
-		CNPJ:           step1.CNPJ,
-		Website:        step1.Website,
-		LegalName:      step1.LegalName,
-		FoundationYear: step1.FoundationYear.ToStringPtr(),
-		Headquarters:   step1.Headquarters,
-		EmployeesRange: step1.EmployeesRange,
-		// CNPJ Registry data
-		TradeName:     step1.TradeName,
-		Phone:         step1.Phone,
-		Email:         step1.Email,
-		CNAEPrimary:   step1.CNAEPrimary,
-		CNAECodes:     step1.CNAECodes,
-		CapitalSocial: step1.CapitalSocial,
-		Partners:      step1.Partners,
-		CNPJVerified:  step1.CNPJVerified,
-		// Social links
-		LinkedInURL:   step1.LinkedInURL,
-		TwitterHandle: step1.TwitterHandle,
-		InstagramURL:  step1.InstagramURL,
-		FacebookURL:   step1.FacebookURL,
-		// Other
-		KeyExecutives:   step1.KeyExecutives,
-		ConfidenceScore: step1.ConfidenceScore,
-		Sources:         step1.Sources,
 	}
 }
 
@@ -344,52 +313,10 @@ func (s *Service) runStep2Enrichment(ctx context.Context, companyID uuid.UUID) {
 		Msg("Step 2 enrichment completed successfully")
 }
 
-// updateCompanyWithStep2Data updates the company record with Step 2 enriched data
+// updateCompanyWithStep2Data merges Step 2 enriched data into the company record
+// Uses COALESCE for scalars (only update if NULL), merge+dedupe for arrays
 func (s *Service) updateCompanyWithStep2Data(ctx context.Context, companyID uuid.UUID, data *enrichment.Step2BusinessModel) error {
-	company, err := s.repo.GetByID(ctx, companyID)
-	if err != nil {
-		return err
-	}
-
-	// Update fields from Step 2
-	if data.BusinessModel != nil {
-		company.BusinessModel = data.BusinessModel
-	}
-	if data.Industry != nil {
-		company.Industry = data.Industry
-	}
-	if data.Sector != nil {
-		company.Sector = data.Sector
-	}
-	if len(data.MainProducts) > 0 {
-		company.MainProducts = data.MainProducts
-	}
-	if data.PricingModel != nil {
-		company.PricingModel = data.PricingModel
-	}
-	if data.TargetMarket != nil {
-		company.TargetMarket = data.TargetMarket
-	}
-	if data.TargetAudience != nil {
-		company.TargetAudience = data.TargetAudience
-	}
-	if len(data.CustomerSegments) > 0 {
-		company.CustomerSegments = data.CustomerSegments
-	}
-	if data.ValueProposition != nil {
-		company.ValueProposition = data.ValueProposition
-	}
-	if len(data.UniqueSellingPoints) > 0 {
-		company.UniqueSellingPoints = data.UniqueSellingPoints
-	}
-	if len(data.GeographicRegions) > 0 {
-		company.GeographicRegions = data.GeographicRegions
-	}
-	if len(data.ServiceAreas) > 0 {
-		company.ServiceAreas = data.ServiceAreas
-	}
-
-	return s.repo.Update(ctx, company)
+	return s.repo.MergeStep2Data(ctx, companyID, data)
 }
 
 // RetryStep2 re-runs Step 2 enrichment even if already completed
@@ -602,43 +529,10 @@ func (s *Service) RetryStep3(ctx context.Context, companyID uuid.UUID) error {
 	return nil
 }
 
-// updateCompanyWithStep3Data updates the company record with Step 3 enriched data
+// updateCompanyWithStep3Data merges Step 3 enriched data into the company record
+// Uses COALESCE for scalars (only update if NULL), merge+dedupe for arrays
 func (s *Service) updateCompanyWithStep3Data(ctx context.Context, companyID uuid.UUID, data *enrichment.Step3CompetitiveIntel) error {
-	company, err := s.repo.GetByID(ctx, companyID)
-	if err != nil {
-		return err
-	}
-
-	// Update fields from Step 3
-	if len(data.Competitors) > 0 {
-		company.Competitors = data.Competitors
-	}
-	if len(data.CompetitorDetails) > 0 {
-		company.CompetitorDetails = data.CompetitorDetails
-	}
-	if data.IndustryGrowthRate != nil {
-		company.IndustryGrowthRate = data.IndustryGrowthRate
-	}
-	if len(data.IndustryTrends) > 0 {
-		company.IndustryTrends = data.IndustryTrends
-	}
-	if data.MarketConcentration != nil {
-		company.MarketConcentration = data.MarketConcentration
-	}
-	if data.RegulatoryContext != nil {
-		company.RegulatoryContext = data.RegulatoryContext
-	}
-	if data.MarketPosition != nil {
-		company.MarketShareStatus = data.MarketPosition // Map to existing field
-	}
-	if len(data.RecentNews) > 0 {
-		company.RecentNews = data.RecentNews
-	}
-	if len(data.Sources) > 0 {
-		company.EnrichmentSources = data.Sources
-	}
-
-	return s.repo.Update(ctx, company)
+	return s.repo.MergeStep3Data(ctx, companyID, data)
 }
 
 // =============================================================================

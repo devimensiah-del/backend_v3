@@ -33,10 +33,15 @@ type Repository interface {
 	// Analysis history (for admin dashboard)
 	GetAnalysesHistory(ctx context.Context, companyID uuid.UUID) ([]*AnalysisHistoryItem, error)
 
-	// Enrichment status updates
+	// Enrichment status updates (legacy)
 	SetEnrichmentProcessing(ctx context.Context, id uuid.UUID) error
 	SetEnrichmentCompleted(ctx context.Context, id uuid.UUID, data *enrichment.EnrichedCompanyData) error
 	SetEnrichmentFailed(ctx context.Context, id uuid.UUID, errMsg string) error
+
+	// Enrichment merge functions (COALESCE for scalars, merge+dedupe for arrays)
+	MergeStep1Data(ctx context.Context, id uuid.UUID, data *enrichment.Step1BasicInfo) error
+	MergeStep2Data(ctx context.Context, id uuid.UUID, data *enrichment.Step2BusinessModel) error
+	MergeStep3Data(ctx context.Context, id uuid.UUID, data *enrichment.Step3CompetitiveIntel) error
 
 	// Transaction support
 	WithTx(ctx context.Context, fn func(Repository) error) error
@@ -136,6 +141,7 @@ func (r *PostgresRepository) GetByID(ctx context.Context, id uuid.UUID) (*Compan
 			strategic_challenges, competitor_details, competitive_advantage, market_share,
 			tam_estimate, sam_estimate, som_estimate, company_history,
 			customer_segments, pricing_model, unique_selling_points,
+			geographic_regions, service_areas,
 			industry_growth_rate, industry_trends, regulatory_context, market_concentration, enrichment_sources,
 			trade_name, phone, email, cnae_primary, cnae_codes, capital_social, partners, cnpj_verified,
 			linkedin_url, twitter_handle, instagram_url, facebook_url,
@@ -194,6 +200,8 @@ func (r *PostgresRepository) GetBySubmissionID(ctx context.Context, submissionID
 }
 
 // Update updates an existing company record
+// This is a FULL REPLACEMENT - used for admin edits where all fields are intentionally set
+// For enrichment updates, use MergeStep1Data/MergeStep2Data/MergeStep3Data instead
 func (r *PostgresRepository) Update(ctx context.Context, company *Company) error {
 	company.UpdatedAt = time.Now()
 
@@ -209,11 +217,13 @@ func (r *PostgresRepository) Update(ctx context.Context, company *Company) error
 			strategic_challenges = $31, competitor_details = $32, competitive_advantage = $33, market_share = $34,
 			tam_estimate = $35, sam_estimate = $36, som_estimate = $37, company_history = $38,
 			customer_segments = $39, pricing_model = $40, unique_selling_points = $41,
-			industry_growth_rate = $42, industry_trends = $43, regulatory_context = $44, market_concentration = $45, enrichment_sources = $46,
-			linkedin_url = $47, twitter_handle = $48,
-			enrichment_status = $49, enrichment_completed_at = $50, enrichment_error = $51,
-			allowed_users = $52, owner_id = $53,
-			updated_at = $54
+			geographic_regions = $42, service_areas = $43,
+			industry_growth_rate = $44, industry_trends = $45, regulatory_context = $46, market_concentration = $47, enrichment_sources = $48,
+			trade_name = $49, phone = $50, email = $51, cnae_primary = $52, cnae_codes = $53, capital_social = $54, partners = $55, cnpj_verified = $56,
+			linkedin_url = $57, twitter_handle = $58, instagram_url = $59, facebook_url = $60,
+			enrichment_status = $61, enrichment_completed_at = $62, enrichment_error = $63,
+			allowed_users = $64, owner_id = $65,
+			updated_at = $66
 		WHERE id = $1
 	`
 
@@ -228,8 +238,10 @@ func (r *PostgresRepository) Update(ctx context.Context, company *Company) error
 		company.StrategicChallenges, company.CompetitorDetails, company.CompetitiveAdvantage, company.MarketShare,
 		company.TAMEstimate, company.SAMEstimate, company.SOMEstimate, company.CompanyHistory,
 		company.CustomerSegments, company.PricingModel, company.UniqueSellingPoints,
+		company.GeographicRegions, company.ServiceAreas,
 		company.IndustryGrowthRate, company.IndustryTrends, company.RegulatoryContext, company.MarketConcentration, company.EnrichmentSources,
-		company.LinkedInURL, company.TwitterHandle,
+		company.TradeName, company.Phone, company.Email, company.CNAEPrimary, company.CNAECodes, company.CapitalSocial, company.Partners, company.CNPJVerified,
+		company.LinkedInURL, company.TwitterHandle, company.InstagramURL, company.FacebookURL,
 		company.EnrichmentStatus, company.EnrichmentCompletedAt, company.EnrichmentError,
 		company.AllowedUsers, company.OwnerID,
 		company.UpdatedAt,
@@ -338,8 +350,10 @@ func (r *PostgresRepository) GetUserCompanies(ctx context.Context, userID uuid.U
 			strategic_challenges, competitor_details, competitive_advantage, market_share,
 			tam_estimate, sam_estimate, som_estimate, company_history,
 			customer_segments, pricing_model, unique_selling_points,
+			geographic_regions, service_areas,
 			industry_growth_rate, industry_trends, regulatory_context, market_concentration, enrichment_sources,
-			linkedin_url, twitter_handle,
+			trade_name, phone, email, cnae_primary, cnae_codes, capital_social, partners, cnpj_verified,
+			linkedin_url, twitter_handle, instagram_url, facebook_url,
 			enrichment_status, enrichment_completed_at, enrichment_error,
 			allowed_users, owner_id,
 			created_at, updated_at
@@ -582,4 +596,235 @@ func (r *PostgresRepository) SetEnrichmentFailed(ctx context.Context, id uuid.UU
 		return fmt.Errorf("failed to set enrichment failed: %w", err)
 	}
 	return nil
+}
+
+// =============================================================================
+// ENRICHMENT MERGE FUNCTIONS
+// These functions merge enrichment data into company records using:
+// - COALESCE for scalar fields (only update if NULL)
+// - Array merge + deduplicate for array fields (append new items)
+// =============================================================================
+
+// MergeStep1Data merges Step 1 enrichment data into company record
+// Uses COALESCE for scalars, array merge for arrays
+// Also sets enrichment_status = 'completed' since Step 1 controls company-level status
+func (r *PostgresRepository) MergeStep1Data(ctx context.Context, id uuid.UUID, data *enrichment.Step1BasicInfo) error {
+	now := time.Now()
+
+	// Convert arrays to JSON for merge
+	cnaeCodesJSON, _ := json.Marshal(data.CNAECodes)
+	partnersJSON, _ := json.Marshal(data.Partners)
+	keyExecutivesJSON, _ := json.Marshal(data.KeyExecutives)
+	sourcesJSON, _ := json.Marshal(data.Sources)
+
+	query := `
+		UPDATE companies SET
+			-- Enrichment status (Step 1 controls company-level status)
+			enrichment_status = $2,
+			enrichment_completed_at = $3,
+			enrichment_error = NULL,
+			-- Scalar fields: COALESCE (only set if NULL)
+			cnpj = COALESCE(cnpj, $4),
+			website = COALESCE(website, $5),
+			legal_name = COALESCE(legal_name, $6),
+			trade_name = COALESCE(trade_name, $7),
+			foundation_year = COALESCE(foundation_year, $8),
+			headquarters = COALESCE(headquarters, $9),
+			employees_range = COALESCE(employees_range, $10),
+			phone = COALESCE(phone, $11),
+			email = COALESCE(email, $12),
+			cnae_primary = COALESCE(cnae_primary, $13),
+			capital_social = COALESCE(capital_social, $14),
+			linkedin_url = COALESCE(linkedin_url, $15),
+			twitter_handle = COALESCE(twitter_handle, $16),
+			instagram_url = COALESCE(instagram_url, $17),
+			facebook_url = COALESCE(facebook_url, $18),
+			-- Boolean: only set to true, never back to false
+			cnpj_verified = CASE WHEN $19 = true THEN true ELSE cnpj_verified END,
+			-- Array fields: merge + deduplicate
+			cnae_codes = CASE
+				WHEN $20::jsonb IS NULL OR jsonb_array_length($20::jsonb) = 0 THEN cnae_codes
+				WHEN cnae_codes IS NULL OR jsonb_array_length(cnae_codes) = 0 THEN $20::jsonb
+				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(cnae_codes || $20::jsonb))
+			END,
+			partners = CASE
+				WHEN $21::jsonb IS NULL OR jsonb_array_length($21::jsonb) = 0 THEN partners
+				WHEN partners IS NULL OR jsonb_array_length(partners) = 0 THEN $21::jsonb
+				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(partners || $21::jsonb))
+			END,
+			key_executives = CASE
+				WHEN $22::jsonb IS NULL OR jsonb_array_length($22::jsonb) = 0 THEN key_executives
+				WHEN key_executives IS NULL OR jsonb_array_length(key_executives) = 0 THEN $22::jsonb
+				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(key_executives || $22::jsonb))
+			END,
+			enrichment_sources = CASE
+				WHEN $23::jsonb IS NULL OR jsonb_array_length($23::jsonb) = 0 THEN enrichment_sources
+				WHEN enrichment_sources IS NULL OR jsonb_array_length(enrichment_sources) = 0 THEN $23::jsonb
+				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(enrichment_sources || $23::jsonb))
+			END,
+			updated_at = $24
+		WHERE id = $1
+	`
+
+	foundationYear := ""
+	if data.FoundationYear != "" {
+		foundationYear = data.FoundationYear.String()
+	}
+
+	_, err := r.querier().ExecContext(ctx, query,
+		id,
+		EnrichmentCompleted, now, // enrichment status
+		data.CNPJ, data.Website, data.LegalName, data.TradeName,
+		nullIfEmpty(foundationYear), data.Headquarters, data.EmployeesRange,
+		data.Phone, data.Email, data.CNAEPrimary, data.CapitalSocial,
+		data.LinkedInURL, data.TwitterHandle, data.InstagramURL, data.FacebookURL,
+		data.CNPJVerified,
+		string(cnaeCodesJSON), string(partnersJSON), string(keyExecutivesJSON), string(sourcesJSON),
+		now,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to merge step1 data: %w", err)
+	}
+	return nil
+}
+
+// MergeStep2Data merges Step 2 enrichment data into company record
+// Uses COALESCE for scalars, array merge for arrays
+func (r *PostgresRepository) MergeStep2Data(ctx context.Context, id uuid.UUID, data *enrichment.Step2BusinessModel) error {
+	now := time.Now()
+
+	// Convert arrays to JSON for merge
+	mainProductsJSON, _ := json.Marshal(data.MainProducts)
+	customerSegmentsJSON, _ := json.Marshal(data.CustomerSegments)
+	uniqueSellingPointsJSON, _ := json.Marshal(data.UniqueSellingPoints)
+	geographicRegionsJSON, _ := json.Marshal(data.GeographicRegions)
+	serviceAreasJSON, _ := json.Marshal(data.ServiceAreas)
+	sourcesJSON, _ := json.Marshal(data.Sources)
+
+	query := `
+		UPDATE companies SET
+			-- Scalar fields: COALESCE (only set if NULL)
+			business_model = COALESCE(business_model, $2),
+			industry = COALESCE(industry, $3),
+			sector = COALESCE(sector, $4),
+			pricing_model = COALESCE(pricing_model, $5),
+			target_market = COALESCE(target_market, $6),
+			target_audience = COALESCE(target_audience, $7),
+			value_proposition = COALESCE(value_proposition, $8),
+			-- Array fields: merge + deduplicate
+			main_products = CASE
+				WHEN $9::jsonb IS NULL OR jsonb_array_length($9::jsonb) = 0 THEN main_products
+				WHEN main_products IS NULL OR jsonb_array_length(main_products) = 0 THEN $9::jsonb
+				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(main_products || $9::jsonb))
+			END,
+			customer_segments = CASE
+				WHEN $10::jsonb IS NULL OR jsonb_array_length($10::jsonb) = 0 THEN customer_segments
+				WHEN customer_segments IS NULL OR jsonb_array_length(customer_segments) = 0 THEN $10::jsonb
+				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(customer_segments || $10::jsonb))
+			END,
+			unique_selling_points = CASE
+				WHEN $11::jsonb IS NULL OR jsonb_array_length($11::jsonb) = 0 THEN unique_selling_points
+				WHEN unique_selling_points IS NULL OR jsonb_array_length(unique_selling_points) = 0 THEN $11::jsonb
+				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(unique_selling_points || $11::jsonb))
+			END,
+			geographic_regions = CASE
+				WHEN $12::jsonb IS NULL OR jsonb_array_length($12::jsonb) = 0 THEN geographic_regions
+				WHEN geographic_regions IS NULL OR jsonb_array_length(geographic_regions) = 0 THEN $12::jsonb
+				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(geographic_regions || $12::jsonb))
+			END,
+			service_areas = CASE
+				WHEN $13::jsonb IS NULL OR jsonb_array_length($13::jsonb) = 0 THEN service_areas
+				WHEN service_areas IS NULL OR jsonb_array_length(service_areas) = 0 THEN $13::jsonb
+				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(service_areas || $13::jsonb))
+			END,
+			enrichment_sources = CASE
+				WHEN $14::jsonb IS NULL OR jsonb_array_length($14::jsonb) = 0 THEN enrichment_sources
+				WHEN enrichment_sources IS NULL OR jsonb_array_length(enrichment_sources) = 0 THEN $14::jsonb
+				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(enrichment_sources || $14::jsonb))
+			END,
+			updated_at = $15
+		WHERE id = $1
+	`
+
+	_, err := r.querier().ExecContext(ctx, query,
+		id,
+		data.BusinessModel, data.Industry, data.Sector,
+		data.PricingModel, data.TargetMarket, data.TargetAudience, data.ValueProposition,
+		string(mainProductsJSON), string(customerSegmentsJSON), string(uniqueSellingPointsJSON),
+		string(geographicRegionsJSON), string(serviceAreasJSON), string(sourcesJSON),
+		now,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to merge step2 data: %w", err)
+	}
+	return nil
+}
+
+// MergeStep3Data merges Step 3 enrichment data into company record
+// Uses COALESCE for scalars, array merge for arrays
+func (r *PostgresRepository) MergeStep3Data(ctx context.Context, id uuid.UUID, data *enrichment.Step3CompetitiveIntel) error {
+	now := time.Now()
+
+	// Convert arrays to JSON for merge
+	competitorsJSON, _ := json.Marshal(data.Competitors)
+	competitorDetailsJSON, _ := json.Marshal(data.CompetitorDetails)
+	industryTrendsJSON, _ := json.Marshal(data.IndustryTrends)
+	recentNewsJSON, _ := json.Marshal(data.RecentNews)
+	sourcesJSON, _ := json.Marshal(data.Sources)
+
+	query := `
+		UPDATE companies SET
+			-- Scalar fields: COALESCE (only set if NULL)
+			industry_growth_rate = COALESCE(industry_growth_rate, $2),
+			market_concentration = COALESCE(market_concentration, $3),
+			regulatory_context = COALESCE(regulatory_context, $4),
+			market_share_status = COALESCE(market_share_status, $5),
+			-- Array fields: merge + deduplicate
+			competitors = CASE
+				WHEN $6::jsonb IS NULL OR jsonb_array_length($6::jsonb) = 0 THEN competitors
+				WHEN competitors IS NULL OR jsonb_array_length(competitors) = 0 THEN $6::jsonb
+				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(competitors || $6::jsonb))
+			END,
+			competitor_details = CASE
+				WHEN $7::jsonb IS NULL OR jsonb_array_length($7::jsonb) = 0 THEN competitor_details
+				WHEN competitor_details IS NULL OR jsonb_array_length(competitor_details) = 0 THEN $7::jsonb
+				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(competitor_details || $7::jsonb))
+			END,
+			industry_trends = CASE
+				WHEN $8::jsonb IS NULL OR jsonb_array_length($8::jsonb) = 0 THEN industry_trends
+				WHEN industry_trends IS NULL OR jsonb_array_length(industry_trends) = 0 THEN $8::jsonb
+				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(industry_trends || $8::jsonb))
+			END,
+			recent_news = CASE
+				WHEN $9::jsonb IS NULL OR jsonb_array_length($9::jsonb) = 0 THEN recent_news
+				WHEN recent_news IS NULL OR jsonb_array_length(recent_news) = 0 THEN $9::jsonb
+				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(recent_news || $9::jsonb))
+			END,
+			enrichment_sources = CASE
+				WHEN $10::jsonb IS NULL OR jsonb_array_length($10::jsonb) = 0 THEN enrichment_sources
+				WHEN enrichment_sources IS NULL OR jsonb_array_length(enrichment_sources) = 0 THEN $10::jsonb
+				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(enrichment_sources || $10::jsonb))
+			END,
+			updated_at = $11
+		WHERE id = $1
+	`
+
+	_, err := r.querier().ExecContext(ctx, query,
+		id,
+		data.IndustryGrowthRate, data.MarketConcentration, data.RegulatoryContext, data.MarketPosition,
+		string(competitorsJSON), string(competitorDetailsJSON), string(industryTrendsJSON), string(recentNewsJSON), string(sourcesJSON),
+		now,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to merge step3 data: %w", err)
+	}
+	return nil
+}
+
+// nullIfEmpty returns nil if the string is empty, otherwise returns a pointer to the string
+func nullIfEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
