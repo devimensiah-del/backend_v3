@@ -263,6 +263,7 @@ func (s *Service) TriggerStep2(ctx context.Context, companyID uuid.UUID) error {
 }
 
 // runStep2Enrichment executes Step 2 enrichment (async)
+// Step 2 includes CNPJ verification (fetches from casadosdados) + website crawling + business model
 func (s *Service) runStep2Enrichment(ctx context.Context, companyID uuid.UUID) {
 	s.logger.Info().
 		Str("company_id", companyID.String()).
@@ -283,10 +284,40 @@ func (s *Service) runStep2Enrichment(ctx context.Context, companyID uuid.UUID) {
 		return
 	}
 
-	// 3. Build enrichment context from company record (ALL fields)
+	// 3. CNPJ Verification: Fetch and merge CNPJ registry data (if CNPJ provided)
+	if company.CNPJ != nil && *company.CNPJ != "" {
+		s.logger.Info().
+			Str("company_id", companyID.String()).
+			Str("cnpj", *company.CNPJ).
+			Msg("Verifying CNPJ via casadosdados")
+
+		cnpjData, err := s.enrichmentService.FetchAndParseCNPJ(ctx, *company.CNPJ)
+		if err != nil {
+			s.logger.Warn().Err(err).Msg("CNPJ verification failed, continuing with Step 2")
+		} else if cnpjData != nil {
+			// Merge CNPJ data into company record
+			if err := s.repo.MergeCNPJData(ctx, companyID, cnpjData); err != nil {
+				s.logger.Warn().Err(err).Msg("Failed to merge CNPJ data, continuing with Step 2")
+			} else {
+				s.logger.Info().
+					Str("company_id", companyID.String()).
+					Bool("has_partners", len(cnpjData.Partners) > 0).
+					Int("cnae_count", len(cnpjData.CNAECodes)).
+					Msg("CNPJ data merged successfully")
+
+				// Reload company to get updated fields for enrichment context
+				company, err = s.repo.GetByID(ctx, companyID)
+				if err != nil {
+					s.logger.Warn().Err(err).Msg("Failed to reload company after CNPJ merge")
+				}
+			}
+		}
+	}
+
+	// 4. Build enrichment context from company record (ALL fields, now including CNPJ data)
 	enrichCtx := buildEnrichmentContext(company)
 
-	// 4. Execute Step 2
+	// 5. Execute Step 2 (fetches website content + Perplexity search)
 	step2Data, err := s.enrichmentService.ExecuteStep2(ctx, enrichCtx)
 	if err != nil {
 		s.logger.Error().Err(err).Msg("Step 2 enrichment failed")
@@ -294,13 +325,13 @@ func (s *Service) runStep2Enrichment(ctx context.Context, companyID uuid.UUID) {
 		return
 	}
 
-	// 5. Store Step 2 data
+	// 6. Store Step 2 data
 	if err := s.enrichmentRepo.SetStep2Completed(ctx, companyID, step2Data); err != nil {
 		s.logger.Error().Err(err).Msg("Failed to save step2 data")
 		return
 	}
 
-	// 6. Update company with Step 2 data
+	// 7. Merge Step 2 data into company
 	if err := s.updateCompanyWithStep2Data(ctx, companyID, step2Data); err != nil {
 		s.logger.Error().Err(err).Msg("Failed to update company with step2 data")
 		// Don't fail the enrichment - data is saved in enrichment table

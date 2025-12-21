@@ -7,6 +7,16 @@ import (
 )
 
 // =============================================================================
+// GENERIC JSON PARSING
+// =============================================================================
+
+// parseJSON extracts JSON from LLM response and unmarshals into target struct
+func parseJSON(content string, target interface{}) error {
+	cleanJSON := extractJSON(content)
+	return json.Unmarshal([]byte(cleanJSON), target)
+}
+
+// =============================================================================
 // STEP-SPECIFIC PARSING
 // =============================================================================
 

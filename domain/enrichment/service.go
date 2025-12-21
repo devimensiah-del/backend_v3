@@ -96,8 +96,8 @@ type EnrichmentContext struct {
 // =============================================================================
 
 // ExecuteStep1 runs Step 1 enrichment: Basic Info
-// Fields: CNPJ, razão social, fundação, sede, funcionários, website, redes sociais, executivos
-// If CNPJ is provided, fetches official data from CNPJ registry (casadosdados) first
+// Fields: razão social, fundação, sede, funcionários, website, redes sociais, executivos
+// Note: CNPJ verification is done in Step 2, not Step 1 (admin reviews Step 1 first)
 func (s *Service) ExecuteStep1(ctx context.Context, company *CompanyInput) (*Step1BasicInfo, error) {
 	log.Info().
 		Str("company_id", company.ID.String()).
@@ -105,30 +105,8 @@ func (s *Service) ExecuteStep1(ctx context.Context, company *CompanyInput) (*Ste
 		Str("step", "1-basic-info").
 		Msg("Starting Step 1 enrichment")
 
-	// Stage 0: Try to fetch CNPJ registry content if CNPJ is provided
-	// We pass raw content to LLM for extraction (more robust than Go parsing)
-	var cnpjContent *jina.CNPJRegistryContent
-	if company.CNPJ != nil && *company.CNPJ != "" && s.jinaClient != nil {
-		log.Info().
-			Str("company_id", company.ID.String()).
-			Str("cnpj", *company.CNPJ).
-			Msg("Fetching CNPJ registry content from casadosdados")
-
-		cnpjContent = s.jinaClient.FetchCNPJDataSafe(ctx, *company.CNPJ)
-
-		if cnpjContent != nil {
-			log.Info().
-				Str("company_id", company.ID.String()).
-				Int("content_length", len(cnpjContent.Content)).
-				Msg("CNPJ registry content fetched successfully")
-		}
-	}
-
-	// Stage 1: Perplexity search (include CNPJ content for context)
+	// Stage 1: Perplexity search for basic company info
 	searchPrompt := BuildStep1SearchPrompt(company)
-	if cnpjContent != nil && cnpjContent.Content != "" {
-		searchPrompt = BuildStep1SearchPromptWithCNPJ(company, cnpjContent.Content)
-	}
 
 	rawData, err := s.executeSearch(ctx, Step1SearchSystemPrompt, searchPrompt)
 	if err != nil {
@@ -138,16 +116,10 @@ func (s *Service) ExecuteStep1(ctx context.Context, company *CompanyInput) (*Ste
 
 	log.Debug().
 		Int("raw_data_length", len(rawData)).
-		Bool("has_cnpj_content", cnpjContent != nil).
 		Msg("Step 1 search complete")
 
-	// Stage 2: Gemini JSON formatting (include CNPJ content for extraction)
-	formatInput := rawData
-	if cnpjContent != nil && cnpjContent.Content != "" {
-		formatInput = fmt.Sprintf("## Dados da Pesquisa (Perplexity)\n%s\n\n## Dados Oficiais do CNPJ (casadosdados.com.br) - PRIORIDADE MÁXIMA\n%s", rawData, cnpjContent.Content)
-	}
-
-	formatPrompt := BuildFormatPrompt("Dados Básicos", formatInput, Step1JSONTemplate)
+	// Stage 2: Gemini JSON formatting
+	formatPrompt := BuildFormatPrompt("Dados Básicos", rawData, Step1JSONTemplate)
 	formattedJSON, err := s.executeFormat(ctx, Step1FormatSystemPrompt, formatPrompt)
 	if err != nil {
 		log.Error().Err(err).Str("company_id", company.ID.String()).Msg("Step 1 format failed")
@@ -161,19 +133,102 @@ func (s *Service) ExecuteStep1(ctx context.Context, company *CompanyInput) (*Ste
 		return nil, fmt.Errorf("step 1 parse failed: %w", err)
 	}
 
-	// Mark as CNPJ verified if we had registry content
-	if cnpjContent != nil {
-		result.CNPJVerified = true
-	}
-
 	log.Info().
 		Str("company_id", company.ID.String()).
 		Float64("confidence", result.ConfidenceScore).
 		Int("sources_count", len(result.Sources)).
-		Bool("cnpj_verified", result.CNPJVerified).
 		Msg("Step 1 enrichment completed")
 
 	return result, nil
+}
+
+// =============================================================================
+// CNPJ VERIFICATION (called from Step 2)
+// =============================================================================
+
+// CNPJData contains parsed data from CNPJ registry
+type CNPJData struct {
+	TradeName     *string  `json:"trade_name,omitempty"`
+	Phone         *string  `json:"phone,omitempty"`
+	Email         *string  `json:"email,omitempty"`
+	CNAEPrimary   *string  `json:"cnae_primary,omitempty"`
+	CNAECodes     []string `json:"cnae_codes,omitempty"`
+	CapitalSocial *string  `json:"capital_social,omitempty"`
+	Partners      []string `json:"partners,omitempty"`
+	// Also include basic fields that might be more accurate from registry
+	LegalName      *string `json:"legal_name,omitempty"`
+	FoundationYear *string `json:"foundation_year,omitempty"`
+	Headquarters   *string `json:"headquarters,omitempty"`
+}
+
+// FetchAndParseCNPJ fetches CNPJ registry data and parses it using LLM
+// Returns nil if CNPJ is not provided or fetch fails (non-blocking)
+func (s *Service) FetchAndParseCNPJ(ctx context.Context, cnpj string) (*CNPJData, error) {
+	if cnpj == "" || s.jinaClient == nil {
+		return nil, nil
+	}
+
+	log.Info().
+		Str("cnpj", cnpj).
+		Msg("Fetching CNPJ registry data from casadosdados")
+
+	// Fetch raw content from casadosdados via Jina
+	cnpjContent := s.jinaClient.FetchCNPJDataSafe(ctx, cnpj)
+	if cnpjContent == nil || cnpjContent.Content == "" {
+		log.Warn().Str("cnpj", cnpj).Msg("Failed to fetch CNPJ registry content")
+		return nil, nil
+	}
+
+	log.Info().
+		Str("cnpj", cnpj).
+		Int("content_length", len(cnpjContent.Content)).
+		Msg("CNPJ registry content fetched, parsing with LLM")
+
+	// Use LLM to extract structured data from raw content
+	formatPrompt := fmt.Sprintf(`Extraia os dados do CNPJ abaixo para JSON:
+
+%s
+
+Retorne APENAS JSON válido com os campos:
+{
+  "legal_name": "Razão Social ou null",
+  "trade_name": "Nome Fantasia ou null",
+  "foundation_year": "YYYY (extrair da data de abertura) ou null",
+  "headquarters": "Cidade, Estado ou null",
+  "phone": "telefone ou null",
+  "email": "email@empresa.com (em minúsculas) ou null",
+  "cnae_primary": "código - descrição ou null",
+  "cnae_codes": ["código - descrição", ...],
+  "capital_social": "R$ X.XXX,XX ou null",
+  "partners": ["Nome - Cargo - Data", ...]
+}
+
+IMPORTANTE:
+- Converta nomes para Proper Case (ex: "JOAO SILVA" → "João Silva")
+- Email sempre em minúsculas
+- NÃO inclua cabeçalhos como "Sócios:" nos arrays`, cnpjContent.Content)
+
+	formattedJSON, err := s.executeFormat(ctx, "Você é um extrator de dados JSON. Retorne APENAS JSON válido.", formatPrompt)
+	if err != nil {
+		log.Error().Err(err).Str("cnpj", cnpj).Msg("Failed to parse CNPJ data with LLM")
+		return nil, nil // Non-blocking, return nil on error
+	}
+
+	// Parse the JSON response
+	var result CNPJData
+	if err := parseJSON(formattedJSON, &result); err != nil {
+		log.Error().Err(err).Str("cnpj", cnpj).Str("raw", formattedJSON).Msg("Failed to unmarshal CNPJ data")
+		return nil, nil
+	}
+
+	log.Info().
+		Str("cnpj", cnpj).
+		Bool("has_legal_name", result.LegalName != nil).
+		Bool("has_partners", len(result.Partners) > 0).
+		Int("cnae_count", len(result.CNAECodes)).
+		Msg("CNPJ data parsed successfully")
+
+	return &result, nil
 }
 
 // =============================================================================

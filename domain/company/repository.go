@@ -42,6 +42,7 @@ type Repository interface {
 	MergeStep1Data(ctx context.Context, id uuid.UUID, data *enrichment.Step1BasicInfo) error
 	MergeStep2Data(ctx context.Context, id uuid.UUID, data *enrichment.Step2BusinessModel) error
 	MergeStep3Data(ctx context.Context, id uuid.UUID, data *enrichment.Step3CompetitiveIntel) error
+	MergeCNPJData(ctx context.Context, id uuid.UUID, data *enrichment.CNPJData) error
 
 	// Transaction support
 	WithTx(ctx context.Context, fn func(Repository) error) error
@@ -817,6 +818,61 @@ func (r *PostgresRepository) MergeStep3Data(ctx context.Context, id uuid.UUID, d
 	)
 	if err != nil {
 		return fmt.Errorf("failed to merge step3 data: %w", err)
+	}
+	return nil
+}
+
+// MergeCNPJData merges CNPJ registry data into company record
+// Called from Step 2 when admin triggers enrichment (CNPJ verification happens in Step 2)
+// Uses COALESCE for scalars, array merge for arrays
+func (r *PostgresRepository) MergeCNPJData(ctx context.Context, id uuid.UUID, data *enrichment.CNPJData) error {
+	if data == nil {
+		return nil // Nothing to merge
+	}
+
+	now := time.Now()
+
+	// Convert arrays to JSON for merge
+	cnaeCodesJSON, _ := json.Marshal(data.CNAECodes)
+	partnersJSON, _ := json.Marshal(data.Partners)
+
+	query := `
+		UPDATE companies SET
+			-- Scalar fields: COALESCE (only set if NULL)
+			legal_name = COALESCE(legal_name, $2),
+			trade_name = COALESCE(trade_name, $3),
+			foundation_year = COALESCE(foundation_year, $4),
+			headquarters = COALESCE(headquarters, $5),
+			phone = COALESCE(phone, $6),
+			email = COALESCE(email, $7),
+			cnae_primary = COALESCE(cnae_primary, $8),
+			capital_social = COALESCE(capital_social, $9),
+			-- Boolean: set to true (CNPJ was verified)
+			cnpj_verified = true,
+			-- Array fields: merge + deduplicate
+			cnae_codes = CASE
+				WHEN $10::jsonb IS NULL OR jsonb_array_length($10::jsonb) = 0 THEN cnae_codes
+				WHEN cnae_codes IS NULL OR jsonb_array_length(cnae_codes) = 0 THEN $10::jsonb
+				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(cnae_codes || $10::jsonb))
+			END,
+			partners = CASE
+				WHEN $11::jsonb IS NULL OR jsonb_array_length($11::jsonb) = 0 THEN partners
+				WHEN partners IS NULL OR jsonb_array_length(partners) = 0 THEN $11::jsonb
+				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(partners || $11::jsonb))
+			END,
+			updated_at = $12
+		WHERE id = $1
+	`
+
+	_, err := r.querier().ExecContext(ctx, query,
+		id,
+		data.LegalName, data.TradeName, data.FoundationYear, data.Headquarters,
+		data.Phone, data.Email, data.CNAEPrimary, data.CapitalSocial,
+		string(cnaeCodesJSON), string(partnersJSON),
+		now,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to merge cnpj data: %w", err)
 	}
 	return nil
 }
