@@ -33,40 +33,22 @@ type UpdatePasswordRequest struct {
 
 // ==================== SUBMISSION REQUEST TYPES ====================
 
-// CreateSubmissionRequest matches the frontend SubmissionFormData structure
-// Frontend sends: companyName, cnpj, industry, companySize, website, challengeCategory, challengeType, businessChallenge, additionalInfo (JSON string)
-// Required: companyName, challengeCategory, challengeType, businessChallenge + contact fields in additionalInfo
+// CreateSubmissionRequest - simplified submission form
+// Required: companyName, contactName, contactEmail, contactPhone, website (unless hasNoWebsite)
+// Optional: cnpj
 type CreateSubmissionRequest struct {
 	// Required fields
-	CompanyName       string `json:"companyName" binding:"required"`
-	ChallengeCategory string `json:"challengeCategory" binding:"required"` // growth, transform, transition, compete, funding
-	ChallengeType     string `json:"challengeType" binding:"required"`     // e.g., growth_organic, transform_digital
-	BusinessChallenge string `json:"businessChallenge" binding:"required"` // Free-text challenge description
+	CompanyName  string `json:"companyName" binding:"required"`
+	ContactName  string `json:"contactName" binding:"required"`
+	ContactEmail string `json:"contactEmail" binding:"required,email"`
+	ContactPhone string `json:"contactPhone" binding:"required"`
 
-	// Optional company fields
-	CNPJ        string  `json:"cnpj"`
-	Industry    string  `json:"industry"`
-	CompanySize string  `json:"companySize"`
-	Website     *string `json:"website,omitempty"`
+	// Website: required unless hasNoWebsite is true
+	Website      *string `json:"website"`
+	HasNoWebsite bool    `json:"hasNoWebsite"`
 
-	// Additional contact and business context (JSON string)
-	AdditionalInfo *string `json:"additionalInfo,omitempty"`
-}
-
-// AdditionalInfoData represents the parsed additionalInfo JSON string from frontend
-type AdditionalInfoData struct {
-	ContactName      string   `json:"contactName"`
-	ContactEmail     string   `json:"contactEmail"`
-	ContactPhone     string   `json:"contactPhone"`
-	ContactPosition  string   `json:"contactPosition"`
-	CompanyLocation  string   `json:"companyLocation"`
-	TargetMarket     string   `json:"targetMarket"`
-	AnnualRevenueMin *float64 `json:"annualRevenueMin"`
-	AnnualRevenueMax *float64 `json:"annualRevenueMax"`
-	FundingStage     string   `json:"fundingStage"`
-	AdditionalNotes  string   `json:"additionalNotes"`
-	LinkedInURL      string   `json:"linkedinUrl"`
-	TwitterHandle    string   `json:"twitterHandle"`
+	// Optional
+	CNPJ *string `json:"cnpj"`
 }
 
 // ==================== ADMIN REQUEST TYPES ====================
@@ -113,13 +95,13 @@ type PasswordResetResponse struct {
 }
 
 // SubmissionResponse is the basic response for submission creation
-// Returns IDs of created entities (Submission, Company, Challenge)
+// Returns IDs of created entities (Submission, Company)
+// Note: Challenge is no longer created automatically from submission
 type SubmissionResponse struct {
-	ID          string     `json:"id"`
-	CompanyID   string     `json:"companyId"`   // ID of created/linked company
-	ChallengeID string     `json:"challengeId"` // ID of created challenge
-	CreatedAt   *time.Time `json:"createdAt,omitempty"`
-	UpdatedAt   *time.Time `json:"updatedAt,omitempty"`
+	ID        string     `json:"id"`
+	CompanyID string     `json:"companyId"` // ID of created/linked company
+	CreatedAt *time.Time `json:"createdAt,omitempty"`
+	UpdatedAt *time.Time `json:"updatedAt,omitempty"`
 }
 
 // SubmissionDetailResponse contains the public/admin submission payload used by the UI

@@ -141,9 +141,8 @@ func main() {
 	subSvc := submission.NewService(subRepo)
 	// Inject company service for automatic company creation on submission
 	subSvc.SetCompanyService(adapters.NewCompanyServiceAdapterForSubmission(companySvc))
-	// Inject challenge service for automatic challenge creation on submission
-	subSvc.SetChallengeService(adapters.NewChallengeServiceAdapterForSubmission(challengeSvc))
-	log.Info().Msg("Submission service initialized (with company + challenge creation)")
+	// Note: Challenge creation removed from submission flow - challenges created separately by admin/user
+	log.Info().Msg("Submission service initialized (with company creation)")
 
 	// Enrichment (3-Step Process with Human Validation)
 	// Step 1: Basic Info (auto at company creation) - Perplexity → Gemini Flash

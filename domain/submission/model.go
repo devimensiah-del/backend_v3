@@ -80,19 +80,8 @@ func (s *Submission) Validate() error {
 	if _, err := mail.ParseAddress(s.ContactEmail); err != nil {
 		return NewValidationError("contact_email", "is invalid")
 	}
-	// Validate revenue range: min must be <= max (if both provided)
-	if s.AnnualRevenueMin != nil && s.AnnualRevenueMax != nil {
-		if *s.AnnualRevenueMin > *s.AnnualRevenueMax {
-			return NewValidationError("annual_revenue", "min cannot be greater than max")
-		}
-	}
-	// Validate non-negative revenue values
-	if s.AnnualRevenueMin != nil && *s.AnnualRevenueMin < 0 {
-		return NewValidationError("annual_revenue_min", "cannot be negative")
-	}
-	if s.AnnualRevenueMax != nil && *s.AnnualRevenueMax < 0 {
-		return NewValidationError("annual_revenue_max", "cannot be negative")
-	}
+	// Note: ContactPhone validation is done at API layer for new submissions
+	// Existing records may have NULL phone values
 	return nil
 }
 

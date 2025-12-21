@@ -17,9 +17,8 @@ import (
 
 // Service provides submission business logic.
 type Service struct {
-	repo             Repository
-	companyService   CompanyServiceInterface
-	challengeService ChallengeServiceInterface
+	repo           Repository
+	companyService CompanyServiceInterface
 }
 
 // NewService creates a new submission service.
@@ -32,18 +31,15 @@ func (s *Service) SetCompanyService(companySvc CompanyServiceInterface) {
 	s.companyService = companySvc
 }
 
-// SetChallengeService injects the challenge service.
-func (s *Service) SetChallengeService(challengeSvc ChallengeServiceInterface) {
-	s.challengeService = challengeSvc
-}
-
 // =============================================================================
 // MAIN WORKFLOW: SubmitForm
 // =============================================================================
 
-// SubmitForm handles the complete public submission workflow
+// SubmitForm handles the complete public submission workflow.
+// Creates: Submission → Company (with enrichment).
+// Note: Challenge is no longer created automatically - created separately by admin/user.
 func (s *Service) SubmitForm(ctx context.Context, req *SubmitRequest) (*SubmitFormResponse, error) {
-	// Normalize input first (handles URL schemes, case normalization)
+	// Normalize input first (handles URL schemes)
 	s.normalizeRequest(req)
 
 	// Validate input
@@ -55,17 +51,14 @@ func (s *Service) SubmitForm(ctx context.Context, req *SubmitRequest) (*SubmitFo
 	if s.companyService == nil {
 		return nil, NewWorkflowError("setup", fmt.Errorf("company service not configured"))
 	}
-	if s.challengeService == nil {
-		return nil, NewWorkflowError("setup", fmt.Errorf("challenge service not configured"))
-	}
 
 	// Track created entities for saga rollback
-	var submissionID, companyID, challengeID uuid.UUID
+	var submissionID, companyID uuid.UUID
 	var rollbackNeeded bool
 
 	defer func() {
 		if rollbackNeeded {
-			s.rollbackSaga(ctx, submissionID, companyID, challengeID)
+			s.rollbackSaga(ctx, submissionID, companyID)
 		}
 	}()
 
@@ -87,21 +80,12 @@ func (s *Service) SubmitForm(ctx context.Context, req *SubmitRequest) (*SubmitFo
 
 	// Step 2: Create company (triggers enrichment)
 	companyInput := CompanyCreateInput{
-		SubmissionID:     submission.ID,
-		CompanyName:      submission.CompanyName,
-		CNPJ:             submission.CNPJ,
-		Website:          submission.CompanyWebsite,
-		Industry:         submission.CompanyIndustry,
-		CompanySize:      submission.CompanySize,
-		Location:         submission.CompanyLocation,
-		TargetMarket:     submission.TargetMarket,
-		FundingStage:     submission.FundingStage,
-		AnnualRevenueMin: submission.AnnualRevenueMin,
-		AnnualRevenueMax: submission.AnnualRevenueMax,
-		LinkedInURL:      submission.LinkedInURL,
-		TwitterHandle:    submission.TwitterHandle,
-		OwnerID:          req.UserID,
-		ContactEmail:     submission.ContactEmail, // For CNPJ duplicate detection
+		SubmissionID: submission.ID,
+		CompanyName:  submission.CompanyName,
+		CNPJ:         submission.CNPJ,
+		Website:      submission.CompanyWebsite,
+		OwnerID:      req.UserID,
+		ContactEmail: submission.ContactEmail, // For CNPJ duplicate detection
 	}
 
 	companyResult, err := s.companyService.CreateFromSubmission(ctx, companyInput)
@@ -116,57 +100,22 @@ func (s *Service) SubmitForm(ctx context.Context, req *SubmitRequest) (*SubmitFo
 		Str("company_id", companyResult.ID.String()).
 		Msg("Company created")
 
-	// Step 3: Create challenge
-	challengeInput := ChallengeCreateInput{
-		CompanyID:         companyResult.ID,
-		ChallengeCategory: req.ChallengeCategory,
-		ChallengeType:     req.ChallengeType,
-		BusinessChallenge: req.BusinessChallenge,
-	}
-
-	challengeID, err = s.challengeService.CreateFromInput(ctx, challengeInput)
-	if err != nil {
-		log.Error().Err(err).Str("submission_id", submission.ID.String()).Msg("Challenge creation failed")
-		return nil, NewWorkflowError("challenge", err)
-	}
-
-	log.Info().
-		Str("submission_id", submission.ID.String()).
-		Str("company_id", companyResult.ID.String()).
-		Str("challenge_id", challengeID.String()).
-		Str("category", req.ChallengeCategory).
-		Msg("Challenge created")
-
 	// All steps succeeded - disable rollback
 	rollbackNeeded = false
 
 	return &SubmitFormResponse{
 		SubmissionID: submission.ID,
 		CompanyID:    companyResult.ID,
-		ChallengeID:  challengeID,
 	}, nil
 }
 
 // rollbackSaga performs compensating transactions to clean up partial saga state.
 // It's best-effort - failures are logged but don't propagate.
-// Rollback order is reverse of creation: Challenge → Company → Submission.
-func (s *Service) rollbackSaga(ctx context.Context, submissionID, companyID, challengeID uuid.UUID) {
+// Rollback order is reverse of creation: Company → Submission.
+func (s *Service) rollbackSaga(ctx context.Context, submissionID, companyID uuid.UUID) {
 	logger := log.With().Str("saga", "rollback").Logger()
 
-	// Rollback in reverse order (challenge → company → submission)
-	if challengeID != uuid.Nil && s.challengeService != nil {
-		if err := s.challengeService.DeleteChallenge(ctx, challengeID); err != nil {
-			logger.Error().
-				Err(err).
-				Str("challenge_id", challengeID.String()).
-				Msg("Failed to rollback challenge")
-		} else {
-			logger.Info().
-				Str("challenge_id", challengeID.String()).
-				Msg("Rolled back challenge")
-		}
-	}
-
+	// Rollback in reverse order (company → submission)
 	if companyID != uuid.Nil && s.companyService != nil {
 		if err := s.companyService.DeleteCompany(ctx, companyID); err != nil {
 			logger.Error().
@@ -343,27 +292,6 @@ func (s *Service) LinkAnonymousToUser(ctx context.Context, userID uuid.UUID, ema
 // validateSubmitRequest validates all fields of a SubmitRequest.
 // Note: Call normalizeRequest() before this to ensure fields are normalized.
 func (s *Service) validateSubmitRequest(req *SubmitRequest) error {
-	// Challenge fields (required)
-	if req.ChallengeCategory == "" {
-		return NewValidationError("challenge_category", "is required")
-	}
-	if req.ChallengeType == "" {
-		return NewValidationError("challenge_type", "is required")
-	}
-	if req.BusinessChallenge == "" {
-		return NewValidationError("business_challenge", "is required")
-	}
-
-	// Validate using challenge service (delegates to challenge domain)
-	if s.challengeService != nil {
-		if !s.challengeService.ValidateCategory(req.ChallengeCategory) {
-			return NewValidationError("challenge_category", fmt.Sprintf("invalid value '%s'", req.ChallengeCategory))
-		}
-		if !s.challengeService.ValidateType(req.ChallengeCategory, req.ChallengeType) {
-			return NewValidationError("challenge_type", fmt.Sprintf("'%s' not valid for category '%s'", req.ChallengeType, req.ChallengeCategory))
-		}
-	}
-
 	// URL validation (does not mutate)
 	if err := s.validateURLs(req); err != nil {
 		return err
@@ -374,23 +302,12 @@ func (s *Service) validateSubmitRequest(req *SubmitRequest) error {
 		return err
 	}
 
-	// Revenue range validation
-	if req.AnnualRevenueMin != nil && req.AnnualRevenueMax != nil {
-		if *req.AnnualRevenueMin > *req.AnnualRevenueMax {
-			return NewValidationError("annual_revenue", "min cannot be greater than max")
-		}
-	}
-
 	return nil
 }
 
 // normalizeRequest normalizes fields before validation.
 // This is separate from validation to maintain single responsibility.
 func (s *Service) normalizeRequest(req *SubmitRequest) {
-	// Normalize category and type to lowercase
-	req.ChallengeCategory = strings.ToLower(strings.TrimSpace(req.ChallengeCategory))
-	req.ChallengeType = strings.ToLower(strings.TrimSpace(req.ChallengeType))
-
 	// Normalize URLs - add https:// if missing scheme
 	if req.CompanyWebsite != nil && *req.CompanyWebsite != "" {
 		website := strings.TrimSpace(*req.CompanyWebsite)
@@ -398,14 +315,6 @@ func (s *Service) normalizeRequest(req *SubmitRequest) {
 			website = "https://" + website
 		}
 		req.CompanyWebsite = &website
-	}
-
-	if req.LinkedInURL != nil && *req.LinkedInURL != "" {
-		linkedIn := strings.TrimSpace(*req.LinkedInURL)
-		if !strings.HasPrefix(linkedIn, "http://") && !strings.HasPrefix(linkedIn, "https://") {
-			linkedIn = "https://" + linkedIn
-		}
-		req.LinkedInURL = &linkedIn
 	}
 }
 
@@ -416,17 +325,6 @@ func (s *Service) validateURLs(req *SubmitRequest) error {
 			return NewValidationError("company_website", "invalid URL format")
 		}
 	}
-
-	if req.LinkedInURL != nil && *req.LinkedInURL != "" {
-		if _, err := url.ParseRequestURI(*req.LinkedInURL); err != nil {
-			return NewValidationError("linkedin_url", "invalid URL format")
-		}
-		// Must be a LinkedIn URL
-		if !strings.Contains(strings.ToLower(*req.LinkedInURL), "linkedin.com") {
-			return NewValidationError("linkedin_url", "must be a LinkedIn URL")
-		}
-	}
-
 	return nil
 }
 
@@ -441,20 +339,11 @@ func (s *Service) validateLengths(req *SubmitRequest) error {
 	if len(req.ContactEmail) > MaxEmailLength {
 		return NewValidationError("contact_email", fmt.Sprintf("exceeds %d characters", MaxEmailLength))
 	}
-	if req.ContactPhone != nil && len(*req.ContactPhone) > MaxPhoneLength {
+	if len(req.ContactPhone) > MaxPhoneLength {
 		return NewValidationError("contact_phone", fmt.Sprintf("exceeds %d characters", MaxPhoneLength))
-	}
-	if len(req.BusinessChallenge) > MaxBusinessChallengeLength {
-		return NewValidationError("business_challenge", fmt.Sprintf("exceeds %d characters", MaxBusinessChallengeLength))
-	}
-	if req.AdditionalNotes != nil && len(*req.AdditionalNotes) > MaxAdditionalNotesLength {
-		return NewValidationError("additional_notes", fmt.Sprintf("exceeds %d characters", MaxAdditionalNotesLength))
 	}
 	if req.CompanyWebsite != nil && len(*req.CompanyWebsite) > MaxURLLength {
 		return NewValidationError("company_website", fmt.Sprintf("exceeds %d characters", MaxURLLength))
-	}
-	if req.LinkedInURL != nil && len(*req.LinkedInURL) > MaxURLLength {
-		return NewValidationError("linkedin_url", fmt.Sprintf("exceeds %d characters", MaxURLLength))
 	}
 	return nil
 }
@@ -463,26 +352,15 @@ func (s *Service) validateLengths(req *SubmitRequest) error {
 func (s *Service) buildSubmissionFromRequest(req *SubmitRequest) *Submission {
 	now := time.Now()
 	return &Submission{
-		ID:               uuid.New(),
-		CompanyName:      req.CompanyName,
-		CNPJ:             req.CNPJ,
-		CompanyWebsite:   req.CompanyWebsite,
-		CompanyIndustry:  req.CompanyIndustry,
-		CompanySize:      req.CompanySize,
-		CompanyLocation:  req.CompanyLocation,
-		ContactName:      req.ContactName,
-		ContactEmail:     req.ContactEmail,
-		ContactPhone:     req.ContactPhone,
-		ContactPosition:  req.ContactPosition,
-		TargetMarket:     req.TargetMarket,
-		AnnualRevenueMin: req.AnnualRevenueMin,
-		AnnualRevenueMax: req.AnnualRevenueMax,
-		FundingStage:     req.FundingStage,
-		AdditionalNotes:  req.AdditionalNotes,
-		LinkedInURL:      req.LinkedInURL,
-		TwitterHandle:    req.TwitterHandle,
-		UserID:           req.UserID,
-		CreatedAt:        now,
-		UpdatedAt:        now,
+		ID:             uuid.New(),
+		CompanyName:    req.CompanyName,
+		CNPJ:           req.CNPJ,
+		CompanyWebsite: req.CompanyWebsite,
+		ContactName:    req.ContactName,
+		ContactEmail:   req.ContactEmail,
+		ContactPhone:   &req.ContactPhone, // ContactPhone is required string, stored as pointer
+		UserID:         req.UserID,
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 }

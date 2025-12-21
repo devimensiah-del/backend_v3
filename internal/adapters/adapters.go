@@ -165,47 +165,9 @@ func convertCompanyToAnalysisData(comp *company.Company) *analysis.AnalysisCompa
 	return result
 }
 
-// =============================================================================
-// CHALLENGE SERVICE ADAPTER
-// =============================================================================
-
-// ChallengeServiceAdapterForSubmission implements submission.ChallengeServiceInterface
-type ChallengeServiceAdapterForSubmission struct {
-	Svc *challenge.Service
-}
-
-func NewChallengeServiceAdapterForSubmission(svc *challenge.Service) *ChallengeServiceAdapterForSubmission {
-	return &ChallengeServiceAdapterForSubmission{Svc: svc}
-}
-
-func (a ChallengeServiceAdapterForSubmission) CreateFromInput(ctx context.Context, input submission.ChallengeCreateInput) (uuid.UUID, error) {
-	// Create challenge entity from input (no contact info - stays on submission)
-	ch := challenge.NewChallenge(
-		input.CompanyID,
-		challenge.ChallengeCategory(input.ChallengeCategory),
-		challenge.ChallengeType(input.ChallengeType),
-		input.BusinessChallenge,
-	)
-
-	created, err := a.Svc.Create(ctx, ch)
-	if err != nil {
-		return uuid.Nil, err
-	}
-	return created.ID, nil
-}
-
-func (a ChallengeServiceAdapterForSubmission) DeleteChallenge(ctx context.Context, id uuid.UUID) error {
-	// Delegate to the challenge service's existing Delete method
-	return a.Svc.Delete(ctx, id)
-}
-
-func (a ChallengeServiceAdapterForSubmission) ValidateCategory(category string) bool {
-	return a.Svc.ValidateCategory(category)
-}
-
-func (a ChallengeServiceAdapterForSubmission) ValidateType(category, challengeType string) bool {
-	return a.Svc.ValidateType(category, challengeType)
-}
+// NOTE: ChallengeServiceAdapterForSubmission was removed.
+// Submission no longer creates challenges automatically.
+// Challenges are created separately by admin/user.
 
 // =============================================================================
 // CHALLENGE REPOSITORY ADAPTER

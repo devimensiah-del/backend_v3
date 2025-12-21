@@ -3,10 +3,10 @@ package api
 import (
 	"backend_v3/domain/company"
 	"backend_v3/domain/submission"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -41,23 +41,20 @@ func (h *SubmissionHandlers) CreateSubmission(c *gin.Context) {
 		return
 	}
 
-	// Parse additionalInfo JSON if provided
-	var additionalInfo AdditionalInfoData
-	if req.AdditionalInfo != nil && *req.AdditionalInfo != "" {
-		if err := json.Unmarshal([]byte(*req.AdditionalInfo), &additionalInfo); err != nil {
-			respondError(c, h.Logger, http.StatusBadRequest, err, "Formato de additionalInfo inválido.")
-			return
-		}
+	// Validate website: required unless hasNoWebsite is true
+	if !req.HasNoWebsite && (req.Website == nil || strings.TrimSpace(*req.Website) == "") {
+		respondError(c, h.Logger, http.StatusBadRequest, fmt.Errorf("website required"), "Website é obrigatório (ou marque 'empresa não possui website').")
+		return
 	}
 
-	// Validate required contact fields from additionalInfo
-	if additionalInfo.ContactName == "" {
-		respondError(c, h.Logger, http.StatusBadRequest, fmt.Errorf("missing contact name"), "Nome de contato é obrigatório (em additionalInfo).")
-		return
-	}
-	if additionalInfo.ContactEmail == "" {
-		respondError(c, h.Logger, http.StatusBadRequest, fmt.Errorf("missing contact email"), "Email de contato é obrigatório (em additionalInfo).")
-		return
+	// Normalize website URL: add https:// if missing scheme
+	var normalizedWebsite *string
+	if req.Website != nil && *req.Website != "" {
+		website := strings.TrimSpace(*req.Website)
+		if !strings.HasPrefix(website, "http://") && !strings.HasPrefix(website, "https://") {
+			website = "https://" + website
+		}
+		normalizedWebsite = &website
 	}
 
 	// Get authenticated user ID if available
@@ -70,44 +67,19 @@ func (h *SubmissionHandlers) CreateSubmission(c *gin.Context) {
 		}
 	}
 
-	// Transform frontend format to domain model
+	// Transform to domain model - simplified fields only
 	submitReq := &submission.SubmitRequest{
-		// Company Information
-		CompanyName:     req.CompanyName,
-		CNPJ:            stringToPtr(req.CNPJ),
-		CompanyIndustry: stringToPtr(req.Industry),
-		CompanySize:     stringToPtr(req.CompanySize),
-		CompanyWebsite:  req.Website,
-
-		// Contact Information
-		ContactName:     additionalInfo.ContactName,
-		ContactEmail:    additionalInfo.ContactEmail,
-		ContactPhone:    stringToPtr(additionalInfo.ContactPhone),
-		ContactPosition: stringToPtr(additionalInfo.ContactPosition),
-
-		// Business Context
-		CompanyLocation:  stringToPtr(additionalInfo.CompanyLocation),
-		TargetMarket:     stringToPtr(additionalInfo.TargetMarket),
-		AnnualRevenueMin: additionalInfo.AnnualRevenueMin,
-		AnnualRevenueMax: additionalInfo.AnnualRevenueMax,
-		FundingStage:     stringToPtr(additionalInfo.FundingStage),
-
-		// Challenge Definition (required - drives the analysis)
-		ChallengeCategory: req.ChallengeCategory,
-		ChallengeType:     req.ChallengeType,
-		BusinessChallenge: req.BusinessChallenge,
-
-		// Additional fields
-		AdditionalNotes: stringToPtr(additionalInfo.AdditionalNotes),
-		LinkedInURL:     stringToPtr(additionalInfo.LinkedInURL),
-		TwitterHandle:   stringToPtr(additionalInfo.TwitterHandle),
-
-		// User association
-		UserID: userID,
+		CompanyName:    req.CompanyName,
+		CNPJ:           req.CNPJ,
+		CompanyWebsite: normalizedWebsite,
+		ContactName:    req.ContactName,
+		ContactEmail:   req.ContactEmail,
+		ContactPhone:   req.ContactPhone,
+		UserID:         userID,
 	}
 
-	// Use SubmitForm which saves to DB and creates Company + Challenge
-	// SubmitForm no longer accepts CreateOptions - it's always public workflow
+	// Use SubmitForm which saves to DB and creates Company
+	// Note: Challenge is no longer created automatically
 	resp, err := h.SubmissionService.SubmitForm(c.Request.Context(), submitReq)
 
 	if err != nil {
@@ -136,21 +108,19 @@ func (h *SubmissionHandlers) CreateSubmission(c *gin.Context) {
 		return
 	}
 
-	// NOTE: SubmitForm() handles:
-	// 1. Creating Submission (status: always "received")
+	// NOTE: SubmitForm() now handles:
+	// 1. Creating Submission
 	// 2. Creating Company (triggers async Perplexity enrichment)
-	// 3. Creating Challenge
-	// Analysis is NOT auto-triggered - user must start via wizard or admin can use generate-all
+	// Challenge creation is now separate (admin/user creates later)
 
 	// Frontend expects wrapped response: { submission: {...} }
 	now := time.Now()
 	c.JSON(http.StatusCreated, gin.H{
 		"submission": SubmissionResponse{
-			ID:          resp.SubmissionID.String(),
-			CompanyID:   resp.CompanyID.String(),
-			ChallengeID: resp.ChallengeID.String(),
-			CreatedAt:   &now,
-			UpdatedAt:   &now,
+			ID:        resp.SubmissionID.String(),
+			CompanyID: resp.CompanyID.String(),
+			CreatedAt: &now,
+			UpdatedAt: &now,
 		},
 	})
 }

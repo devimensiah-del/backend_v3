@@ -168,23 +168,22 @@ type CompanySubmission struct {
 	LinkedBy       *uuid.UUID `json:"linked_by,omitempty" db:"linked_by"`
 }
 
-// CreateFromSubmissionInput contains the data needed to create a company from a submission
+// CreateFromSubmissionInput contains data for creating a company.
+// Used by both public submission (minimal fields) and admin direct creation (all fields).
+// Public submissions only populate: CompanyName, CNPJ, Website, OwnerID, ContactEmail
+// Admin creation can populate all fields.
 type CreateFromSubmissionInput struct {
-	SubmissionID     uuid.UUID
-	CompanyName      string
-	CNPJ             *string
-	Website          *string
-	Industry         *string
-	CompanySize      *string
-	Location         *string
-	TargetMarket     *string
-	FundingStage     *string
-	AnnualRevenueMin *float64
-	AnnualRevenueMax *float64
-	LinkedInURL      *string
-	TwitterHandle    *string
-	OwnerID          *uuid.UUID // User who submitted, becomes owner
-	ContactEmail     string     // Submitter's email for duplicate detection
+	SubmissionID uuid.UUID
+	CompanyName  string
+	CNPJ         *string
+	Website      *string
+	Industry     *string  // Optional - admin only
+	CompanySize  *string  // Optional - admin only
+	Location     *string  // Optional - admin only
+	TargetMarket *string  // Optional - admin only
+	FundingStage *string  // Optional - admin only
+	OwnerID      *uuid.UUID
+	ContactEmail string // Submitter's email for duplicate detection
 }
 
 // NewCompany creates a new company from submission data
@@ -200,10 +199,6 @@ func NewCompany(input CreateFromSubmissionInput) *Company {
 		Location:         input.Location,
 		TargetMarket:     input.TargetMarket,
 		FundingStage:     input.FundingStage,
-		AnnualRevenueMin: input.AnnualRevenueMin,
-		AnnualRevenueMax: input.AnnualRevenueMax,
-		LinkedInURL:      input.LinkedInURL,
-		TwitterHandle:    input.TwitterHandle,
 		OwnerID:          input.OwnerID,
 		EnrichmentStatus: EnrichmentPending, // Start with pending status
 		CreatedAt:        now,
