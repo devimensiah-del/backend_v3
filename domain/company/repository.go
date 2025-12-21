@@ -642,25 +642,25 @@ func (r *PostgresRepository) MergeStep1Data(ctx context.Context, id uuid.UUID, d
 			facebook_url = COALESCE(facebook_url, $18),
 			-- Boolean: only set to true, never back to false
 			cnpj_verified = CASE WHEN $19 = true THEN true ELSE cnpj_verified END,
-			-- Array fields: merge + deduplicate
+			-- Array fields: merge + deduplicate (with type safety check)
 			cnae_codes = CASE
-				WHEN $20::jsonb IS NULL OR jsonb_array_length($20::jsonb) = 0 THEN cnae_codes
-				WHEN cnae_codes IS NULL OR jsonb_array_length(cnae_codes) = 0 THEN $20::jsonb
+				WHEN $20::jsonb IS NULL OR jsonb_typeof($20::jsonb) != 'array' OR jsonb_array_length($20::jsonb) = 0 THEN COALESCE(cnae_codes, '[]'::jsonb)
+				WHEN cnae_codes IS NULL OR jsonb_typeof(cnae_codes) != 'array' OR jsonb_array_length(cnae_codes) = 0 THEN $20::jsonb
 				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(cnae_codes || $20::jsonb))
 			END,
 			partners = CASE
-				WHEN $21::jsonb IS NULL OR jsonb_array_length($21::jsonb) = 0 THEN partners
-				WHEN partners IS NULL OR jsonb_array_length(partners) = 0 THEN $21::jsonb
+				WHEN $21::jsonb IS NULL OR jsonb_typeof($21::jsonb) != 'array' OR jsonb_array_length($21::jsonb) = 0 THEN COALESCE(partners, '[]'::jsonb)
+				WHEN partners IS NULL OR jsonb_typeof(partners) != 'array' OR jsonb_array_length(partners) = 0 THEN $21::jsonb
 				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(partners || $21::jsonb))
 			END,
 			key_executives = CASE
-				WHEN $22::jsonb IS NULL OR jsonb_array_length($22::jsonb) = 0 THEN key_executives
-				WHEN key_executives IS NULL OR jsonb_array_length(key_executives) = 0 THEN $22::jsonb
+				WHEN $22::jsonb IS NULL OR jsonb_typeof($22::jsonb) != 'array' OR jsonb_array_length($22::jsonb) = 0 THEN COALESCE(key_executives, '[]'::jsonb)
+				WHEN key_executives IS NULL OR jsonb_typeof(key_executives) != 'array' OR jsonb_array_length(key_executives) = 0 THEN $22::jsonb
 				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(key_executives || $22::jsonb))
 			END,
 			enrichment_sources = CASE
-				WHEN $23::jsonb IS NULL OR jsonb_array_length($23::jsonb) = 0 THEN enrichment_sources
-				WHEN enrichment_sources IS NULL OR jsonb_array_length(enrichment_sources) = 0 THEN $23::jsonb
+				WHEN $23::jsonb IS NULL OR jsonb_typeof($23::jsonb) != 'array' OR jsonb_array_length($23::jsonb) = 0 THEN COALESCE(enrichment_sources, '[]'::jsonb)
+				WHEN enrichment_sources IS NULL OR jsonb_typeof(enrichment_sources) != 'array' OR jsonb_array_length(enrichment_sources) = 0 THEN $23::jsonb
 				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(enrichment_sources || $23::jsonb))
 			END,
 			updated_at = $24
@@ -712,35 +712,35 @@ func (r *PostgresRepository) MergeStep2Data(ctx context.Context, id uuid.UUID, d
 			target_market = COALESCE(target_market, $6),
 			target_audience = COALESCE(target_audience, $7),
 			value_proposition = COALESCE(value_proposition, $8),
-			-- Array fields: merge + deduplicate
+			-- Array fields: merge + deduplicate (with type safety check)
 			main_products = CASE
-				WHEN $9::jsonb IS NULL OR jsonb_array_length($9::jsonb) = 0 THEN main_products
-				WHEN main_products IS NULL OR jsonb_array_length(main_products) = 0 THEN $9::jsonb
+				WHEN $9::jsonb IS NULL OR jsonb_typeof($9::jsonb) != 'array' OR jsonb_array_length($9::jsonb) = 0 THEN COALESCE(main_products, '[]'::jsonb)
+				WHEN main_products IS NULL OR jsonb_typeof(main_products) != 'array' OR jsonb_array_length(main_products) = 0 THEN $9::jsonb
 				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(main_products || $9::jsonb))
 			END,
 			customer_segments = CASE
-				WHEN $10::jsonb IS NULL OR jsonb_array_length($10::jsonb) = 0 THEN customer_segments
-				WHEN customer_segments IS NULL OR jsonb_array_length(customer_segments) = 0 THEN $10::jsonb
+				WHEN $10::jsonb IS NULL OR jsonb_typeof($10::jsonb) != 'array' OR jsonb_array_length($10::jsonb) = 0 THEN COALESCE(customer_segments, '[]'::jsonb)
+				WHEN customer_segments IS NULL OR jsonb_typeof(customer_segments) != 'array' OR jsonb_array_length(customer_segments) = 0 THEN $10::jsonb
 				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(customer_segments || $10::jsonb))
 			END,
 			unique_selling_points = CASE
-				WHEN $11::jsonb IS NULL OR jsonb_array_length($11::jsonb) = 0 THEN unique_selling_points
-				WHEN unique_selling_points IS NULL OR jsonb_array_length(unique_selling_points) = 0 THEN $11::jsonb
+				WHEN $11::jsonb IS NULL OR jsonb_typeof($11::jsonb) != 'array' OR jsonb_array_length($11::jsonb) = 0 THEN COALESCE(unique_selling_points, '[]'::jsonb)
+				WHEN unique_selling_points IS NULL OR jsonb_typeof(unique_selling_points) != 'array' OR jsonb_array_length(unique_selling_points) = 0 THEN $11::jsonb
 				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(unique_selling_points || $11::jsonb))
 			END,
 			geographic_regions = CASE
-				WHEN $12::jsonb IS NULL OR jsonb_array_length($12::jsonb) = 0 THEN geographic_regions
-				WHEN geographic_regions IS NULL OR jsonb_array_length(geographic_regions) = 0 THEN $12::jsonb
+				WHEN $12::jsonb IS NULL OR jsonb_typeof($12::jsonb) != 'array' OR jsonb_array_length($12::jsonb) = 0 THEN COALESCE(geographic_regions, '[]'::jsonb)
+				WHEN geographic_regions IS NULL OR jsonb_typeof(geographic_regions) != 'array' OR jsonb_array_length(geographic_regions) = 0 THEN $12::jsonb
 				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(geographic_regions || $12::jsonb))
 			END,
 			service_areas = CASE
-				WHEN $13::jsonb IS NULL OR jsonb_array_length($13::jsonb) = 0 THEN service_areas
-				WHEN service_areas IS NULL OR jsonb_array_length(service_areas) = 0 THEN $13::jsonb
+				WHEN $13::jsonb IS NULL OR jsonb_typeof($13::jsonb) != 'array' OR jsonb_array_length($13::jsonb) = 0 THEN COALESCE(service_areas, '[]'::jsonb)
+				WHEN service_areas IS NULL OR jsonb_typeof(service_areas) != 'array' OR jsonb_array_length(service_areas) = 0 THEN $13::jsonb
 				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(service_areas || $13::jsonb))
 			END,
 			enrichment_sources = CASE
-				WHEN $14::jsonb IS NULL OR jsonb_array_length($14::jsonb) = 0 THEN enrichment_sources
-				WHEN enrichment_sources IS NULL OR jsonb_array_length(enrichment_sources) = 0 THEN $14::jsonb
+				WHEN $14::jsonb IS NULL OR jsonb_typeof($14::jsonb) != 'array' OR jsonb_array_length($14::jsonb) = 0 THEN COALESCE(enrichment_sources, '[]'::jsonb)
+				WHEN enrichment_sources IS NULL OR jsonb_typeof(enrichment_sources) != 'array' OR jsonb_array_length(enrichment_sources) = 0 THEN $14::jsonb
 				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(enrichment_sources || $14::jsonb))
 			END,
 			updated_at = $15
@@ -780,30 +780,30 @@ func (r *PostgresRepository) MergeStep3Data(ctx context.Context, id uuid.UUID, d
 			market_concentration = COALESCE(market_concentration, $3),
 			regulatory_context = COALESCE(regulatory_context, $4),
 			market_share_status = COALESCE(market_share_status, $5),
-			-- Array fields: merge + deduplicate
+			-- Array fields: merge + deduplicate (with type safety check)
 			competitors = CASE
-				WHEN $6::jsonb IS NULL OR jsonb_array_length($6::jsonb) = 0 THEN competitors
-				WHEN competitors IS NULL OR jsonb_array_length(competitors) = 0 THEN $6::jsonb
+				WHEN $6::jsonb IS NULL OR jsonb_typeof($6::jsonb) != 'array' OR jsonb_array_length($6::jsonb) = 0 THEN COALESCE(competitors, '[]'::jsonb)
+				WHEN competitors IS NULL OR jsonb_typeof(competitors) != 'array' OR jsonb_array_length(competitors) = 0 THEN $6::jsonb
 				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(competitors || $6::jsonb))
 			END,
 			competitor_details = CASE
-				WHEN $7::jsonb IS NULL OR jsonb_array_length($7::jsonb) = 0 THEN competitor_details
-				WHEN competitor_details IS NULL OR jsonb_array_length(competitor_details) = 0 THEN $7::jsonb
+				WHEN $7::jsonb IS NULL OR jsonb_typeof($7::jsonb) != 'array' OR jsonb_array_length($7::jsonb) = 0 THEN COALESCE(competitor_details, '[]'::jsonb)
+				WHEN competitor_details IS NULL OR jsonb_typeof(competitor_details) != 'array' OR jsonb_array_length(competitor_details) = 0 THEN $7::jsonb
 				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(competitor_details || $7::jsonb))
 			END,
 			industry_trends = CASE
-				WHEN $8::jsonb IS NULL OR jsonb_array_length($8::jsonb) = 0 THEN industry_trends
-				WHEN industry_trends IS NULL OR jsonb_array_length(industry_trends) = 0 THEN $8::jsonb
+				WHEN $8::jsonb IS NULL OR jsonb_typeof($8::jsonb) != 'array' OR jsonb_array_length($8::jsonb) = 0 THEN COALESCE(industry_trends, '[]'::jsonb)
+				WHEN industry_trends IS NULL OR jsonb_typeof(industry_trends) != 'array' OR jsonb_array_length(industry_trends) = 0 THEN $8::jsonb
 				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(industry_trends || $8::jsonb))
 			END,
 			recent_news = CASE
-				WHEN $9::jsonb IS NULL OR jsonb_array_length($9::jsonb) = 0 THEN recent_news
-				WHEN recent_news IS NULL OR jsonb_array_length(recent_news) = 0 THEN $9::jsonb
+				WHEN $9::jsonb IS NULL OR jsonb_typeof($9::jsonb) != 'array' OR jsonb_array_length($9::jsonb) = 0 THEN COALESCE(recent_news, '[]'::jsonb)
+				WHEN recent_news IS NULL OR jsonb_typeof(recent_news) != 'array' OR jsonb_array_length(recent_news) = 0 THEN $9::jsonb
 				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(recent_news || $9::jsonb))
 			END,
 			enrichment_sources = CASE
-				WHEN $10::jsonb IS NULL OR jsonb_array_length($10::jsonb) = 0 THEN enrichment_sources
-				WHEN enrichment_sources IS NULL OR jsonb_array_length(enrichment_sources) = 0 THEN $10::jsonb
+				WHEN $10::jsonb IS NULL OR jsonb_typeof($10::jsonb) != 'array' OR jsonb_array_length($10::jsonb) = 0 THEN COALESCE(enrichment_sources, '[]'::jsonb)
+				WHEN enrichment_sources IS NULL OR jsonb_typeof(enrichment_sources) != 'array' OR jsonb_array_length(enrichment_sources) = 0 THEN $10::jsonb
 				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(enrichment_sources || $10::jsonb))
 			END,
 			updated_at = $11
@@ -849,15 +849,15 @@ func (r *PostgresRepository) MergeCNPJData(ctx context.Context, id uuid.UUID, da
 			capital_social = COALESCE(capital_social, $9),
 			-- Boolean: set to true (CNPJ was verified)
 			cnpj_verified = true,
-			-- Array fields: merge + deduplicate
+			-- Array fields: merge + deduplicate (with type safety check)
 			cnae_codes = CASE
-				WHEN $10::jsonb IS NULL OR jsonb_array_length($10::jsonb) = 0 THEN cnae_codes
-				WHEN cnae_codes IS NULL OR jsonb_array_length(cnae_codes) = 0 THEN $10::jsonb
+				WHEN $10::jsonb IS NULL OR jsonb_typeof($10::jsonb) != 'array' OR jsonb_array_length($10::jsonb) = 0 THEN COALESCE(cnae_codes, '[]'::jsonb)
+				WHEN cnae_codes IS NULL OR jsonb_typeof(cnae_codes) != 'array' OR jsonb_array_length(cnae_codes) = 0 THEN $10::jsonb
 				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(cnae_codes || $10::jsonb))
 			END,
 			partners = CASE
-				WHEN $11::jsonb IS NULL OR jsonb_array_length($11::jsonb) = 0 THEN partners
-				WHEN partners IS NULL OR jsonb_array_length(partners) = 0 THEN $11::jsonb
+				WHEN $11::jsonb IS NULL OR jsonb_typeof($11::jsonb) != 'array' OR jsonb_array_length($11::jsonb) = 0 THEN COALESCE(partners, '[]'::jsonb)
+				WHEN partners IS NULL OR jsonb_typeof(partners) != 'array' OR jsonb_array_length(partners) = 0 THEN $11::jsonb
 				ELSE (SELECT COALESCE(jsonb_agg(DISTINCT value), '[]'::jsonb) FROM jsonb_array_elements(partners || $11::jsonb))
 			END,
 			updated_at = $12
