@@ -164,11 +164,11 @@ type Step3CompetitiveIntel struct {
 	CompetitorDetails []string `json:"competitor_details,omitempty"` // Descrição breve de cada concorrente
 
 	// Industry information
-	IndustryGrowthRate  *string  `json:"industry_growth_rate,omitempty"`  // Taxa de crescimento do setor
-	IndustryTrends      []string `json:"industry_trends,omitempty"`       // Tendências do setor
-	MarketConcentration *string  `json:"market_concentration,omitempty"`  // Fragmentado/Concentrado
-	RegulatoryContext   *string  `json:"regulatory_context,omitempty"`    // Contexto regulatório
-	MarketPosition      *string  `json:"market_position,omitempty"`       // Posição no mercado
+	IndustryGrowthRate  *string  `json:"industry_growth_rate,omitempty"` // Taxa de crescimento do setor
+	IndustryTrends      []string `json:"industry_trends,omitempty"`      // Tendências do setor
+	MarketConcentration *string  `json:"market_concentration,omitempty"` // Fragmentado/Concentrado
+	RegulatoryContext   *string  `json:"regulatory_context,omitempty"`   // Contexto regulatório
+	MarketPosition      *string  `json:"market_position,omitempty"`      // Posição no mercado
 
 	// Reputation
 	GlassdoorRating   *string `json:"glassdoor_rating,omitempty"`    // Nota Glassdoor

@@ -1434,11 +1434,11 @@ func (h *CompanyHandlers) RetryStep2(c *gin.Context) {
 	c.JSON(http.StatusAccepted, MessageResponse{
 		Message: "Step 2 re-enrichment started",
 		Data: map[string]interface{}{
-			"company_id":        companyID,
-			"company_name":      comp.Name,
-			"step":              "2-business-model",
-			"status":            "processing",
-			"remaining_today":   MaxEnrichmentsPerDay - h.EnrichmentLimiter.GetEnrichmentCount(companyUUID),
+			"company_id":      companyID,
+			"company_name":    comp.Name,
+			"step":            "2-business-model",
+			"status":          "processing",
+			"remaining_today": MaxEnrichmentsPerDay - h.EnrichmentLimiter.GetEnrichmentCount(companyUUID),
 		},
 	})
 }
@@ -1572,11 +1572,11 @@ func (h *CompanyHandlers) RetryStep3(c *gin.Context) {
 	c.JSON(http.StatusAccepted, MessageResponse{
 		Message: "Step 3 re-enrichment started",
 		Data: map[string]interface{}{
-			"company_id":        companyID,
-			"company_name":      comp.Name,
-			"step":              "3-competitive-intel",
-			"status":            "processing",
-			"remaining_today":   MaxEnrichmentsPerDay - h.EnrichmentLimiter.GetEnrichmentCount(companyUUID),
+			"company_id":      companyID,
+			"company_name":    comp.Name,
+			"step":            "3-competitive-intel",
+			"status":          "processing",
+			"remaining_today": MaxEnrichmentsPerDay - h.EnrichmentLimiter.GetEnrichmentCount(companyUUID),
 		},
 	})
 }
