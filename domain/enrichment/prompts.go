@@ -271,6 +271,15 @@ PARA REGIÃO GEOGRÁFICA:
 - Se a empresa atua em todo o Brasil, use ["Brasil"] ou ["Nacional"]
 - Se menciona estados específicos, liste-os em service_areas
 
+FALLBACK PARA REGIÃO (se não houver página explícita de cobertura):
+Infira a região de atuação a partir de:
+- Sede da empresa (cidade/estado indica área primária)
+- Porte: "Grande Empresa" ou muitos funcionários → provavelmente nacional
+- E-commerce mencionado → cobertura nacional
+- Rede de distribuição/consultoras/franquias → nacional ou multi-regional
+- Apenas sede local sem indicação de expansão → regional ou local
+NUNCA retorne [] vazio - sempre infira pelo menos a região da sede.
+
 Retorne APENAS JSON válido, sem texto antes ou depois.`
 
 // Step2JSONTemplate is the expected JSON structure for Step 2
