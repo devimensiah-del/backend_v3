@@ -3,6 +3,7 @@ package company
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"backend_v3/domain/enrichment"
@@ -94,16 +95,40 @@ func (s *Service) CreateDirect(ctx context.Context, input CreateFromSubmissionIn
 	return company, nil
 }
 
-// CreateFromSubmission creates a new company record when a submission is created
-// Links company to submission via company_submissions table
-// Automatically triggers enrichment asynchronously
+// CreateFromSubmission creates a new company record when a submission is created.
+// If CNPJ is provided, checks that this email hasn't already submitted the same CNPJ.
+// Different users CAN create companies with the same CNPJ (each gets their own company).
+// Links company to submission via company_submissions table.
+// Automatically triggers enrichment asynchronously.
 func (s *Service) CreateFromSubmission(ctx context.Context, input CreateFromSubmissionInput) (*Company, error) {
 	s.logger.Info().
 		Str("submission_id", input.SubmissionID.String()).
 		Str("company_name", input.CompanyName).
 		Msg("Creating company from submission")
 
-	// Create the company
+	submitterEmail := strings.ToLower(strings.TrimSpace(input.ContactEmail))
+
+	// Check if this email has already submitted a company with this CNPJ
+	if input.CNPJ != nil && *input.CNPJ != "" {
+		exists, err := s.repo.CheckEmailCNPJExists(ctx, submitterEmail, *input.CNPJ)
+		if err != nil {
+			s.logger.Error().Err(err).Msg("Failed to check email+CNPJ")
+			return nil, fmt.Errorf("failed to check duplicate: %w", err)
+		}
+
+		if exists {
+			s.logger.Warn().
+				Str("email", submitterEmail).
+				Str("cnpj", *input.CNPJ).
+				Msg("Duplicate submission detected - same email+CNPJ")
+			return nil, &DuplicateSubmitterError{
+				CompanyName: input.CompanyName,
+				Email:       submitterEmail,
+			}
+		}
+	}
+
+	// Create new company
 	company := NewCompany(input)
 
 	// Validate before persisting
@@ -113,16 +138,16 @@ func (s *Service) CreateFromSubmission(ctx context.Context, input CreateFromSubm
 
 	// Use transaction to ensure atomicity
 	err := s.repo.WithTx(ctx, func(txRepo Repository) error {
-		// 1. Insert company
 		if err := txRepo.Create(ctx, company); err != nil {
 			return fmt.Errorf("failed to create company: %w", err)
 		}
 
-		// 2. Link to submission
+		// Link to submission
 		link := &CompanySubmission{
-			CompanyID:    company.ID,
-			SubmissionID: input.SubmissionID,
-			IsPrimary:    true,
+			CompanyID:      company.ID,
+			SubmissionID:   input.SubmissionID,
+			SubmitterEmail: submitterEmail,
+			IsPrimary:      true,
 		}
 		if err := txRepo.LinkSubmission(ctx, link); err != nil {
 			return fmt.Errorf("failed to link submission: %w", err)
@@ -142,7 +167,6 @@ func (s *Service) CreateFromSubmission(ctx context.Context, input CreateFromSubm
 		Msg("Company created successfully")
 
 	// Trigger enrichment asynchronously (fire-and-forget)
-	// Use a fresh context with timeout since this runs independently of the request
 	if s.enrichmentService != nil {
 		go func() {
 			defer func() {
@@ -305,6 +329,37 @@ func (s *Service) SetOwnerFromSubmission(ctx context.Context, submissionID, user
 		Str("company_name", company.Name).
 		Str("new_owner", userID.String()).
 		Msg("Company owner set from submission")
+
+	return nil
+}
+
+// =============================================================================
+// CNPJ DUPLICATE MANAGEMENT
+// =============================================================================
+
+// GetDuplicatesForReview returns all CNPJ duplicate pairs pending admin review
+func (s *Service) GetDuplicatesForReview(ctx context.Context) ([]*CNPJDuplicateReview, error) {
+	return s.repo.GetDuplicatesForReview(ctx)
+}
+
+// MergeCompanies merges the source company into the target company.
+// All submissions and challenges from source are moved to target, then source is soft-deleted.
+func (s *Service) MergeCompanies(ctx context.Context, targetID, sourceID, mergedBy uuid.UUID) error {
+	s.logger.Info().
+		Str("target_id", targetID.String()).
+		Str("source_id", sourceID.String()).
+		Str("merged_by", mergedBy.String()).
+		Msg("Merging companies")
+
+	if err := s.repo.MergeCompanies(ctx, targetID, sourceID, mergedBy); err != nil {
+		s.logger.Error().Err(err).Msg("Failed to merge companies")
+		return err
+	}
+
+	s.logger.Info().
+		Str("target_id", targetID.String()).
+		Str("source_id", sourceID.String()).
+		Msg("Companies merged successfully")
 
 	return nil
 }

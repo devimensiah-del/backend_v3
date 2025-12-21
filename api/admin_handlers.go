@@ -399,3 +399,110 @@ func safePercent(num, denom int) float64 {
 	}
 	return float64(num) / float64(denom) * 100
 }
+
+// =============================================================================
+// CNPJ DUPLICATE MANAGEMENT
+// =============================================================================
+
+// ListCNPJDuplicates handles GET /api/v1/admin/companies/duplicates
+// Returns all CNPJ duplicate pairs that need admin review
+func (h *AdminHandlers) ListCNPJDuplicates(c *gin.Context) {
+	duplicates, err := h.CompanyService.GetDuplicatesForReview(c.Request.Context())
+	if err != nil {
+		h.Logger.Error().Err(err).Msg("Failed to get CNPJ duplicates")
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Falha ao buscar duplicatas de CNPJ",
+		})
+		return
+	}
+
+	h.Logger.Info().
+		Int("count", len(duplicates)).
+		Msg("CNPJ duplicates retrieved")
+
+	c.JSON(http.StatusOK, gin.H{
+		"duplicates": duplicates,
+		"count":      len(duplicates),
+	})
+}
+
+// MergeCompaniesRequest is the request body for merging companies
+type MergeCompaniesRequest struct {
+	SourceCompanyID string `json:"source_company_id" binding:"required"`
+}
+
+// MergeCompanies handles POST /api/v1/admin/companies/:id/merge
+// Merges the source company into the target company (path param)
+func (h *AdminHandlers) MergeCompanies(c *gin.Context) {
+	// Parse target company ID from path
+	targetIDStr := c.Param("id")
+	targetID, err := parseUUID(targetIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "ID de empresa alvo inválido",
+		})
+		return
+	}
+
+	// Parse request body
+	var req MergeCompaniesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Requisição inválida: source_company_id é obrigatório",
+		})
+		return
+	}
+
+	sourceID, err := parseUUID(req.SourceCompanyID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "ID de empresa fonte inválido",
+		})
+		return
+	}
+
+	// Get admin user ID from context
+	var adminUserID *string
+	if rawUserID, exists := c.Get("userID"); exists {
+		if userIDStr, ok := rawUserID.(string); ok {
+			adminUserID = &userIDStr
+		}
+	}
+
+	h.Logger.Info().
+		Str("target_id", targetID.String()).
+		Str("source_id", sourceID.String()).
+		Str("admin_id", fmt.Sprintf("%v", adminUserID)).
+		Msg("Merging companies")
+
+	// Perform the merge
+	mergedByID := targetID // Default to target ID if no admin user
+	if adminUserID != nil {
+		if uid, err := parseUUID(*adminUserID); err == nil {
+			mergedByID = uid
+		}
+	}
+
+	if err := h.CompanyService.MergeCompanies(c.Request.Context(), targetID, sourceID, mergedByID); err != nil {
+		h.Logger.Error().Err(err).
+			Str("target_id", targetID.String()).
+			Str("source_id", sourceID.String()).
+			Msg("Failed to merge companies")
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Falha ao mesclar empresas: %s", err.Error()),
+		})
+		return
+	}
+
+	h.Logger.Info().
+		Str("target_id", targetID.String()).
+		Str("source_id", sourceID.String()).
+		Msg("Companies merged successfully")
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":           "Empresas mescladas com sucesso",
+		"target_company_id": targetID.String(),
+		"merged_company_id": sourceID.String(),
+	})
+}

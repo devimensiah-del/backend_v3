@@ -247,6 +247,10 @@ func SetupRouter(
 		adminAPI.POST("/companies/:id/retry-enrichment", mainHandler.CompanyHandlers.RetryEnrichment)
 		adminAPI.POST("/companies/:id/re-enrich", mainHandler.CompanyHandlers.ReEnrichCompany)
 		adminAPI.POST("/challenges/:id/analyze", mainHandler.CompanyHandlers.AnalyzeChallenge)
+
+		// CNPJ duplicate management (admin)
+		adminAPI.GET("/companies/duplicates", mainHandler.AdminHandlers.ListCNPJDuplicates)
+		adminAPI.POST("/companies/:id/merge", mainHandler.AdminHandlers.MergeCompanies)
 		// NOTE: Multi-user management removed - manage allowed_users in Supabase directly
 	}
 

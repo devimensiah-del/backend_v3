@@ -1,8 +1,10 @@
 package api
 
 import (
+	"backend_v3/domain/company"
 	"backend_v3/domain/submission"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -109,7 +111,27 @@ func (h *SubmissionHandlers) CreateSubmission(c *gin.Context) {
 	resp, err := h.SubmissionService.SubmitForm(c.Request.Context(), submitReq)
 
 	if err != nil {
-		// TODO: Add back CNPJ verification check if needed
+		// Check for duplicate submitter error (same email + CNPJ combo)
+		var dupErr *company.DuplicateSubmitterError
+		if errors.As(err, &dupErr) {
+			h.Logger.Warn().
+				Str("company_id", dupErr.CompanyID.String()).
+				Str("company_name", dupErr.CompanyName).
+				Str("email", dupErr.Email).
+				Msg("Duplicate submission attempt detected")
+
+			c.JSON(http.StatusConflict, gin.H{
+				"error": "Esta empresa já foi submetida com este email. Por favor, faça login para acompanhar sua análise.",
+				"code":  "DUPLICATE_SUBMITTER",
+				"details": gin.H{
+					"company_id":   dupErr.CompanyID.String(),
+					"company_name": dupErr.CompanyName,
+					"action":       "login",
+				},
+			})
+			return
+		}
+
 		respondError(c, h.Logger, http.StatusInternalServerError, err, "Falha ao criar submissão.")
 		return
 	}

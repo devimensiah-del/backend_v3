@@ -101,6 +101,7 @@ func (s *Service) SubmitForm(ctx context.Context, req *SubmitRequest) (*SubmitFo
 		LinkedInURL:      submission.LinkedInURL,
 		TwitterHandle:    submission.TwitterHandle,
 		OwnerID:          req.UserID,
+		ContactEmail:     submission.ContactEmail, // For CNPJ duplicate detection
 	}
 
 	companyResult, err := s.companyService.CreateFromSubmission(ctx, companyInput)

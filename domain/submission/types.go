@@ -126,6 +126,7 @@ type CompanyCreateInput struct {
 	LinkedInURL      *string
 	TwitterHandle    *string
 	OwnerID          *uuid.UUID
+	ContactEmail     string // Submitter's email for CNPJ duplicate detection
 }
 
 // ChallengeServiceInterface defines the contract for challenge service.

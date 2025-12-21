@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
 	"backend_v3/domain/enrichment"
@@ -26,9 +28,18 @@ type Repository interface {
 	GetUserCompanies(ctx context.Context, userID uuid.UUID) ([]*Company, error)
 	ListAll(ctx context.Context, limit, offset int) ([]*Company, int, error)
 
+	// CNPJ duplicate prevention (same email cannot submit same CNPJ twice)
+	CheckEmailCNPJExists(ctx context.Context, email string, cnpj string) (bool, error)
+	FindByCNPJNormalized(ctx context.Context, cnpj string) (*Company, error) // Used by admin merge
+
 	// Submission links
 	LinkSubmission(ctx context.Context, link *CompanySubmission) error
 	UnlinkSubmissions(ctx context.Context, companyID uuid.UUID) error // For saga rollback
+
+	// CNPJ duplicate management
+	GetDuplicatesForReview(ctx context.Context) ([]*CNPJDuplicateReview, error)
+	CreateDuplicateReview(ctx context.Context, review *CNPJDuplicateReview) error
+	MergeCompanies(ctx context.Context, targetID, sourceID, mergedBy uuid.UUID) error
 
 	// Analysis history (for admin dashboard)
 	GetAnalysesHistory(ctx context.Context, companyID uuid.UUID) ([]*AnalysisHistoryItem, error)
@@ -259,9 +270,12 @@ func (r *PostgresRepository) LinkSubmission(ctx context.Context, link *CompanySu
 		link.LinkedAt = time.Now()
 	}
 
+	// Normalize email for consistent matching
+	normalizedEmail := strings.ToLower(strings.TrimSpace(link.SubmitterEmail))
+
 	query := `
-		INSERT INTO company_submissions (company_id, submission_id, is_primary, linked_at, linked_by)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO company_submissions (company_id, submission_id, submitter_email, is_primary, linked_at, linked_by)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (company_id, submission_id) DO UPDATE SET
 			is_primary = EXCLUDED.is_primary,
 			linked_at = EXCLUDED.linked_at,
@@ -269,7 +283,7 @@ func (r *PostgresRepository) LinkSubmission(ctx context.Context, link *CompanySu
 	`
 
 	_, err := r.querier().ExecContext(ctx, query,
-		link.CompanyID, link.SubmissionID, link.IsPrimary, link.LinkedAt, link.LinkedBy,
+		link.CompanyID, link.SubmissionID, normalizedEmail, link.IsPrimary, link.LinkedAt, link.LinkedBy,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to link submission: %w", err)
@@ -929,4 +943,225 @@ func nullIfEmpty(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// =============================================================================
+// CNPJ DEDUPLICATION METHODS
+// =============================================================================
+
+// NormalizeCNPJ removes all non-digit characters from a CNPJ string.
+// This ensures consistent matching regardless of formatting (e.g., "12.345.678/0001-90" -> "12345678000190")
+func NormalizeCNPJ(cnpj string) string {
+	return regexp.MustCompile(`[^0-9]`).ReplaceAllString(cnpj, "")
+}
+
+// FindByCNPJNormalized finds a company by its normalized CNPJ.
+// Returns nil, nil if no company is found (not an error).
+func (r *PostgresRepository) FindByCNPJNormalized(ctx context.Context, cnpj string) (*Company, error) {
+	normalized := NormalizeCNPJ(cnpj)
+	if normalized == "" {
+		return nil, nil
+	}
+
+	query := `
+		SELECT
+			id, name, cnpj, website,
+			industry, company_size, location, target_market, funding_stage,
+			annual_revenue_min, annual_revenue_max,
+			foundation_year, legal_name, headquarters, sector, target_audience, value_proposition,
+			employees_range, revenue_estimate, business_model, competitors, market_share_status,
+			digital_maturity, strengths, weaknesses,
+			main_products, recent_news, key_executives, opportunities, threats,
+			strategic_challenges, competitor_details, competitive_advantage, market_share,
+			tam_estimate, sam_estimate, som_estimate, company_history,
+			customer_segments, pricing_model, unique_selling_points,
+			geographic_regions, service_areas,
+			industry_growth_rate, industry_trends, regulatory_context, market_concentration, enrichment_sources,
+			trade_name, phone, email, cnae_primary, cnae_codes, capital_social, partners, cnpj_verified,
+			linkedin_url, twitter_handle, instagram_url, facebook_url,
+			enrichment_status, enrichment_completed_at, enrichment_error,
+			allowed_users, owner_id,
+			created_at, updated_at
+		FROM companies
+		WHERE cnpj_normalized = $1
+		  AND deleted_at IS NULL
+		LIMIT 1
+	`
+
+	var company Company
+	err := sqlx.GetContext(ctx, r.querier(), &company, query, normalized)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("find by cnpj normalized: %w", err)
+	}
+	return &company, nil
+}
+
+// CheckEmailCNPJExists checks if an email has already submitted a company with this CNPJ.
+// This prevents the same user from creating multiple companies with the same CNPJ.
+// Different users CAN create companies with the same CNPJ.
+func (r *PostgresRepository) CheckEmailCNPJExists(ctx context.Context, email string, cnpj string) (bool, error) {
+	normalizedEmail := strings.ToLower(strings.TrimSpace(email))
+	normalizedCNPJ := NormalizeCNPJ(cnpj)
+
+	if normalizedCNPJ == "" {
+		return false, nil // No CNPJ to check
+	}
+
+	query := `
+		SELECT EXISTS(
+			SELECT 1 FROM company_submissions cs
+			JOIN companies c ON c.id = cs.company_id
+			WHERE cs.submitter_email = $1
+			  AND c.cnpj_normalized = $2
+			  AND c.deleted_at IS NULL
+		)
+	`
+
+	var exists bool
+	err := r.querier().QueryRowxContext(ctx, query, normalizedEmail, normalizedCNPJ).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check email cnpj exists: %w", err)
+	}
+	return exists, nil
+}
+
+// GetDuplicatesForReview returns all CNPJ duplicate pairs that haven't been reviewed yet.
+func (r *PostgresRepository) GetDuplicatesForReview(ctx context.Context) ([]*CNPJDuplicateReview, error) {
+	query := `
+		SELECT
+			r.id, r.cnpj_normalized, r.older_company_id, r.newer_company_id,
+			r.created_at, r.reviewed_at, r.reviewed_by, r.action_taken, r.notes
+		FROM cnpj_duplicates_review r
+		WHERE r.reviewed_at IS NULL
+		ORDER BY r.created_at DESC
+	`
+
+	rows, err := r.querier().QueryxContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("get duplicates for review: %w", err)
+	}
+	defer rows.Close()
+
+	var reviews []*CNPJDuplicateReview
+	for rows.Next() {
+		var review CNPJDuplicateReview
+		if err := rows.StructScan(&review); err != nil {
+			return nil, fmt.Errorf("scan duplicate review: %w", err)
+		}
+
+		// Load the related companies
+		olderCompany, _ := r.GetByID(ctx, review.OlderCompanyID)
+		newerCompany, _ := r.GetByID(ctx, review.NewerCompanyID)
+		review.OlderCompany = olderCompany
+		review.NewerCompany = newerCompany
+
+		reviews = append(reviews, &review)
+	}
+
+	return reviews, nil
+}
+
+// CreateDuplicateReview creates a new CNPJ duplicate review entry.
+func (r *PostgresRepository) CreateDuplicateReview(ctx context.Context, review *CNPJDuplicateReview) error {
+	if review.ID == uuid.Nil {
+		review.ID = uuid.New()
+	}
+	if review.CreatedAt.IsZero() {
+		review.CreatedAt = time.Now()
+	}
+
+	query := `
+		INSERT INTO cnpj_duplicates_review (
+			id, cnpj_normalized, older_company_id, newer_company_id, created_at
+		) VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (older_company_id, newer_company_id) DO NOTHING
+	`
+
+	_, err := r.querier().ExecContext(ctx, query,
+		review.ID, review.CNPJNormalized, review.OlderCompanyID, review.NewerCompanyID, review.CreatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("create duplicate review: %w", err)
+	}
+	return nil
+}
+
+// MergeCompanies merges the source company into the target company.
+// This moves all submissions and challenges from source to target, then soft-deletes the source.
+func (r *PostgresRepository) MergeCompanies(ctx context.Context, targetID, sourceID, mergedBy uuid.UUID) error {
+	// Verify both companies exist
+	target, err := r.GetByID(ctx, targetID)
+	if err != nil || target == nil {
+		return fmt.Errorf("target company not found: %s", targetID)
+	}
+	source, err := r.GetByID(ctx, sourceID)
+	if err != nil || source == nil {
+		return fmt.Errorf("source company not found: %s", sourceID)
+	}
+
+	now := time.Now()
+
+	// Use a transaction for atomicity
+	return r.WithTx(ctx, func(txRepo Repository) error {
+		txPgRepo := txRepo.(*PostgresRepository)
+
+		// 1. Move company_submissions from source to target
+		// Handle potential conflicts by updating existing links
+		moveSubmissionsQuery := `
+			UPDATE company_submissions
+			SET company_id = $1
+			WHERE company_id = $2
+			  AND submission_id NOT IN (
+				SELECT submission_id FROM company_submissions WHERE company_id = $1
+			  )
+		`
+		_, err := txPgRepo.querier().ExecContext(ctx, moveSubmissionsQuery, targetID, sourceID)
+		if err != nil {
+			return fmt.Errorf("move submissions: %w", err)
+		}
+
+		// Delete any remaining duplicate links
+		deleteDuplicateLinksQuery := `
+			DELETE FROM company_submissions WHERE company_id = $1
+		`
+		_, err = txPgRepo.querier().ExecContext(ctx, deleteDuplicateLinksQuery, sourceID)
+		if err != nil {
+			return fmt.Errorf("delete duplicate links: %w", err)
+		}
+
+		// 2. Move challenges from source to target
+		moveChallengesQuery := `
+			UPDATE challenges SET company_id = $1 WHERE company_id = $2
+		`
+		_, err = txPgRepo.querier().ExecContext(ctx, moveChallengesQuery, targetID, sourceID)
+		if err != nil {
+			return fmt.Errorf("move challenges: %w", err)
+		}
+
+		// 3. Soft-delete the source company
+		deleteSourceQuery := `
+			UPDATE companies SET deleted_at = $1 WHERE id = $2
+		`
+		_, err = txPgRepo.querier().ExecContext(ctx, deleteSourceQuery, now, sourceID)
+		if err != nil {
+			return fmt.Errorf("delete source company: %w", err)
+		}
+
+		// 4. Update the review record to mark as merged
+		updateReviewQuery := `
+			UPDATE cnpj_duplicates_review
+			SET reviewed_at = $1, reviewed_by = $2, action_taken = 'merged'
+			WHERE (older_company_id = $3 AND newer_company_id = $4)
+			   OR (older_company_id = $4 AND newer_company_id = $3)
+		`
+		_, err = txPgRepo.querier().ExecContext(ctx, updateReviewQuery, now, mergedBy, targetID, sourceID)
+		if err != nil {
+			return fmt.Errorf("update review record: %w", err)
+		}
+
+		return nil
+	})
 }

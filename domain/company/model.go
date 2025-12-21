@@ -160,11 +160,12 @@ func (c *Company) IsUserAllowed(userID uuid.UUID) bool {
 
 // CompanySubmission represents the link between a company and its submissions
 type CompanySubmission struct {
-	CompanyID    uuid.UUID  `json:"company_id" db:"company_id"`
-	SubmissionID uuid.UUID  `json:"submission_id" db:"submission_id"`
-	IsPrimary    bool       `json:"is_primary" db:"is_primary"`
-	LinkedAt     time.Time  `json:"linked_at" db:"linked_at"`
-	LinkedBy     *uuid.UUID `json:"linked_by,omitempty" db:"linked_by"`
+	CompanyID      uuid.UUID  `json:"company_id" db:"company_id"`
+	SubmissionID   uuid.UUID  `json:"submission_id" db:"submission_id"`
+	SubmitterEmail string     `json:"submitter_email" db:"submitter_email"` // Email of the submitter (normalized lowercase)
+	IsPrimary      bool       `json:"is_primary" db:"is_primary"`
+	LinkedAt       time.Time  `json:"linked_at" db:"linked_at"`
+	LinkedBy       *uuid.UUID `json:"linked_by,omitempty" db:"linked_by"`
 }
 
 // CreateFromSubmissionInput contains the data needed to create a company from a submission
@@ -183,6 +184,7 @@ type CreateFromSubmissionInput struct {
 	LinkedInURL      *string
 	TwitterHandle    *string
 	OwnerID          *uuid.UUID // User who submitted, becomes owner
+	ContactEmail     string     // Submitter's email for duplicate detection
 }
 
 // NewCompany creates a new company from submission data
@@ -408,4 +410,28 @@ func (s UUIDSlice) Contains(id uuid.UUID) bool {
 // Kept for backward compatibility but uses the efficient standard library implementation
 func joinStrings(strs []string, sep string) string {
 	return strings.Join(strs, sep)
+}
+
+// =============================================================================
+// CNPJ DUPLICATE REVIEW
+// =============================================================================
+
+// CNPJDuplicateReview represents a pair of companies with the same CNPJ that need admin review.
+// This is populated when:
+// 1. Migration finds existing duplicates
+// 2. Step 2 enrichment discovers a CNPJ that matches another company
+type CNPJDuplicateReview struct {
+	ID             uuid.UUID  `json:"id" db:"id"`
+	CNPJNormalized string     `json:"cnpj_normalized" db:"cnpj_normalized"`
+	OlderCompanyID uuid.UUID  `json:"older_company_id" db:"older_company_id"`
+	NewerCompanyID uuid.UUID  `json:"newer_company_id" db:"newer_company_id"`
+	CreatedAt      time.Time  `json:"created_at" db:"created_at"`
+	ReviewedAt     *time.Time `json:"reviewed_at,omitempty" db:"reviewed_at"`
+	ReviewedBy     *uuid.UUID `json:"reviewed_by,omitempty" db:"reviewed_by"`
+	ActionTaken    *string    `json:"action_taken,omitempty" db:"action_taken"` // 'merged', 'kept_separate', 'deleted_newer'
+	Notes          *string    `json:"notes,omitempty" db:"notes"`
+
+	// Populated via JOIN for display purposes
+	OlderCompany *Company `json:"older_company,omitempty" db:"-"`
+	NewerCompany *Company `json:"newer_company,omitempty" db:"-"`
 }
