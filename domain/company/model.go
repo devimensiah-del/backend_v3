@@ -177,11 +177,11 @@ type CreateFromSubmissionInput struct {
 	CompanyName  string
 	CNPJ         *string
 	Website      *string
-	Industry     *string  // Optional - admin only
-	CompanySize  *string  // Optional - admin only
-	Location     *string  // Optional - admin only
-	TargetMarket *string  // Optional - admin only
-	FundingStage *string  // Optional - admin only
+	Industry     *string // Optional - admin only
+	CompanySize  *string // Optional - admin only
+	Location     *string // Optional - admin only
+	TargetMarket *string // Optional - admin only
+	FundingStage *string // Optional - admin only
 	OwnerID      *uuid.UUID
 	ContactEmail string // Submitter's email for duplicate detection
 }

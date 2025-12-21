@@ -78,22 +78,15 @@ func (r *PostgresRepository) querier() sqlx.ExtContext {
 	return r.db
 }
 
-// Create inserts a new company record
+// Create inserts a new company record into company_core and creates empty step data records.
+// The step data records are needed so MergeStep*Data functions can UPDATE them during enrichment.
 func (r *PostgresRepository) Create(ctx context.Context, company *Company) error {
-	query := `
-		INSERT INTO companies (
+	// Insert into company_core (the actual table, not the companies view)
+	coreQuery := `
+		INSERT INTO company_core (
 			id, name, cnpj, website,
 			industry, company_size, location, target_market, funding_stage,
 			annual_revenue_min, annual_revenue_max,
-			foundation_year, legal_name, headquarters, sector, target_audience, value_proposition,
-			employees_range, revenue_estimate, business_model, competitors, market_share_status,
-			digital_maturity, strengths, weaknesses,
-			main_products, recent_news, key_executives, opportunities, threats,
-			strategic_challenges, competitor_details, competitive_advantage, market_share,
-			tam_estimate, sam_estimate, som_estimate, company_history,
-			customer_segments, pricing_model, unique_selling_points,
-			industry_growth_rate, industry_trends, regulatory_context, market_concentration, enrichment_sources,
-			linkedin_url, twitter_handle,
 			enrichment_status, enrichment_completed_at, enrichment_error,
 			allowed_users, owner_id,
 			created_at, updated_at
@@ -101,41 +94,43 @@ func (r *PostgresRepository) Create(ctx context.Context, company *Company) error
 			$1, $2, $3, $4,
 			$5, $6, $7, $8, $9,
 			$10, $11,
-			$12, $13, $14, $15, $16, $17,
-			$18, $19, $20, $21, $22,
-			$23, $24, $25,
-			$26, $27, $28, $29, $30,
-			$31, $32, $33, $34,
-			$35, $36, $37, $38,
-			$39, $40, $41,
-			$42, $43, $44, $45, $46,
-			$47, $48,
-			$49, $50, $51,
-			$52, $53,
-			$54, $55
+			$12, $13, $14,
+			$15, $16,
+			$17, $18
 		)
 	`
 
-	_, err := r.querier().ExecContext(ctx, query,
+	_, err := r.querier().ExecContext(ctx, coreQuery,
 		company.ID, company.Name, company.CNPJ, company.Website,
 		company.Industry, company.CompanySize, company.Location, company.TargetMarket, company.FundingStage,
 		company.AnnualRevenueMin, company.AnnualRevenueMax,
-		company.FoundationYear, company.LegalName, company.Headquarters, company.Sector, company.TargetAudience, company.ValueProposition,
-		company.EmployeesRange, company.RevenueEstimate, company.BusinessModel, company.Competitors, company.MarketShareStatus,
-		company.DigitalMaturity, company.Strengths, company.Weaknesses,
-		company.MainProducts, company.RecentNews, company.KeyExecutives, company.Opportunities, company.Threats,
-		company.StrategicChallenges, company.CompetitorDetails, company.CompetitiveAdvantage, company.MarketShare,
-		company.TAMEstimate, company.SAMEstimate, company.SOMEstimate, company.CompanyHistory,
-		company.CustomerSegments, company.PricingModel, company.UniqueSellingPoints,
-		company.IndustryGrowthRate, company.IndustryTrends, company.RegulatoryContext, company.MarketConcentration, company.EnrichmentSources,
-		company.LinkedInURL, company.TwitterHandle,
 		company.EnrichmentStatus, company.EnrichmentCompletedAt, company.EnrichmentError,
 		company.AllowedUsers, company.OwnerID,
 		company.CreatedAt, company.UpdatedAt,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create company: %w", err)
+		return fmt.Errorf("failed to create company_core: %w", err)
 	}
+
+	// Create empty step data records so MergeStep*Data can UPDATE them
+	step1Query := `INSERT INTO company_step1_data (company_id) VALUES ($1)`
+	_, err = r.querier().ExecContext(ctx, step1Query, company.ID)
+	if err != nil {
+		return fmt.Errorf("failed to create company_step1_data: %w", err)
+	}
+
+	step2Query := `INSERT INTO company_step2_data (company_id) VALUES ($1)`
+	_, err = r.querier().ExecContext(ctx, step2Query, company.ID)
+	if err != nil {
+		return fmt.Errorf("failed to create company_step2_data: %w", err)
+	}
+
+	step3Query := `INSERT INTO company_step3_data (company_id) VALUES ($1)`
+	_, err = r.querier().ExecContext(ctx, step3Query, company.ID)
+	if err != nil {
+		return fmt.Errorf("failed to create company_step3_data: %w", err)
+	}
+
 	return nil
 }
 
@@ -211,56 +206,107 @@ func (r *PostgresRepository) GetBySubmissionID(ctx context.Context, submissionID
 	return &company, nil
 }
 
-// Update updates an existing company record
-// This is a FULL REPLACEMENT - used for admin edits where all fields are intentionally set
-// For enrichment updates, use MergeStep1Data/MergeStep2Data/MergeStep3Data instead
+// Update updates an existing company record across all tables (company_core and step data tables).
+// This is a FULL REPLACEMENT - used for admin edits where all fields are intentionally set.
+// For enrichment updates, use MergeStep1Data/MergeStep2Data/MergeStep3Data instead.
 func (r *PostgresRepository) Update(ctx context.Context, company *Company) error {
 	company.UpdatedAt = time.Now()
 
-	query := `
-		UPDATE companies SET
+	// Update company_core (core fields)
+	coreQuery := `
+		UPDATE company_core SET
 			name = $2, cnpj = $3, website = $4,
 			industry = $5, company_size = $6, location = $7, target_market = $8, funding_stage = $9,
 			annual_revenue_min = $10, annual_revenue_max = $11,
-			foundation_year = $12, legal_name = $13, headquarters = $14, sector = $15, target_audience = $16, value_proposition = $17,
-			employees_range = $18, revenue_estimate = $19, business_model = $20, competitors = $21, market_share_status = $22,
-			digital_maturity = $23, strengths = $24, weaknesses = $25,
-			main_products = $26, recent_news = $27, key_executives = $28, opportunities = $29, threats = $30,
-			strategic_challenges = $31, competitor_details = $32, competitive_advantage = $33, market_share = $34,
-			tam_estimate = $35, sam_estimate = $36, som_estimate = $37, company_history = $38,
-			customer_segments = $39, pricing_model = $40, unique_selling_points = $41,
-			geographic_regions = $42, service_areas = $43,
-			industry_growth_rate = $44, industry_trends = $45, regulatory_context = $46, market_concentration = $47, enrichment_sources = $48,
-			trade_name = $49, phone = $50, email = $51, cnae_primary = $52, cnae_codes = $53, capital_social = $54, partners = $55, cnpj_verified = $56,
-			linkedin_url = $57, twitter_handle = $58, instagram_url = $59, facebook_url = $60,
-			enrichment_status = $61, enrichment_completed_at = $62, enrichment_error = $63,
-			allowed_users = $64, owner_id = $65,
-			updated_at = $66
+			enrichment_status = $12, enrichment_completed_at = $13, enrichment_error = $14,
+			allowed_users = $15, owner_id = $16,
+			updated_at = $17
 		WHERE id = $1
 	`
-
-	_, err := r.querier().ExecContext(ctx, query,
+	_, err := r.querier().ExecContext(ctx, coreQuery,
 		company.ID, company.Name, company.CNPJ, company.Website,
 		company.Industry, company.CompanySize, company.Location, company.TargetMarket, company.FundingStage,
 		company.AnnualRevenueMin, company.AnnualRevenueMax,
-		company.FoundationYear, company.LegalName, company.Headquarters, company.Sector, company.TargetAudience, company.ValueProposition,
-		company.EmployeesRange, company.RevenueEstimate, company.BusinessModel, company.Competitors, company.MarketShareStatus,
-		company.DigitalMaturity, company.Strengths, company.Weaknesses,
-		company.MainProducts, company.RecentNews, company.KeyExecutives, company.Opportunities, company.Threats,
-		company.StrategicChallenges, company.CompetitorDetails, company.CompetitiveAdvantage, company.MarketShare,
-		company.TAMEstimate, company.SAMEstimate, company.SOMEstimate, company.CompanyHistory,
-		company.CustomerSegments, company.PricingModel, company.UniqueSellingPoints,
-		company.GeographicRegions, company.ServiceAreas,
-		company.IndustryGrowthRate, company.IndustryTrends, company.RegulatoryContext, company.MarketConcentration, company.EnrichmentSources,
-		company.TradeName, company.Phone, company.Email, company.CNAEPrimary, company.CNAECodes, company.CapitalSocial, company.Partners, company.CNPJVerified,
-		company.LinkedInURL, company.TwitterHandle, company.InstagramURL, company.FacebookURL,
 		company.EnrichmentStatus, company.EnrichmentCompletedAt, company.EnrichmentError,
 		company.AllowedUsers, company.OwnerID,
 		company.UpdatedAt,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to update company: %w", err)
+		return fmt.Errorf("failed to update company_core: %w", err)
 	}
+
+	// Update company_step1_data (step 1 enrichment fields)
+	step1Query := `
+		UPDATE company_step1_data SET
+			legal_name = $2, trade_name = $3, foundation_year = $4, headquarters = $5,
+			employees_range = $6, phone = $7, email = $8, cnae_primary = $9,
+			cnae_codes = $10, capital_social = $11, partners = $12, cnpj_verified = $13,
+			linkedin_url = $14, twitter_handle = $15, instagram_url = $16, facebook_url = $17,
+			key_executives = $18, enrichment_sources = $19,
+			updated_at = $20
+		WHERE company_id = $1
+	`
+	_, err = r.querier().ExecContext(ctx, step1Query,
+		company.ID,
+		company.LegalName, company.TradeName, company.FoundationYear, company.Headquarters,
+		company.EmployeesRange, company.Phone, company.Email, company.CNAEPrimary,
+		company.CNAECodes, company.CapitalSocial, company.Partners, company.CNPJVerified,
+		company.LinkedInURL, company.TwitterHandle, company.InstagramURL, company.FacebookURL,
+		company.KeyExecutives, company.EnrichmentSources,
+		company.UpdatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update company_step1_data: %w", err)
+	}
+
+	// Update company_step2_data (step 2 enrichment fields)
+	step2Query := `
+		UPDATE company_step2_data SET
+			business_model = $2, sector = $3, pricing_model = $4,
+			target_audience = $5, value_proposition = $6,
+			main_products = $7, customer_segments = $8, unique_selling_points = $9,
+			geographic_regions = $10, service_areas = $11,
+			updated_at = $12
+		WHERE company_id = $1
+	`
+	_, err = r.querier().ExecContext(ctx, step2Query,
+		company.ID,
+		company.BusinessModel, company.Sector, company.PricingModel,
+		company.TargetAudience, company.ValueProposition,
+		company.MainProducts, company.CustomerSegments, company.UniqueSellingPoints,
+		company.GeographicRegions, company.ServiceAreas,
+		company.UpdatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update company_step2_data: %w", err)
+	}
+
+	// Update company_step3_data (step 3 enrichment fields)
+	step3Query := `
+		UPDATE company_step3_data SET
+			competitors = $2, competitor_details = $3, competitive_advantage = $4,
+			market_share = $5, market_share_status = $6, market_concentration = $7,
+			industry_growth_rate = $8, industry_trends = $9, regulatory_context = $10,
+			strengths = $11, weaknesses = $12, opportunities = $13, threats = $14,
+			strategic_challenges = $15, recent_news = $16,
+			tam_estimate = $17, sam_estimate = $18, som_estimate = $19,
+			updated_at = $20
+		WHERE company_id = $1
+	`
+	_, err = r.querier().ExecContext(ctx, step3Query,
+		company.ID,
+		company.Competitors, company.CompetitorDetails, company.CompetitiveAdvantage,
+		company.MarketShare, company.MarketShareStatus, company.MarketConcentration,
+		company.IndustryGrowthRate, company.IndustryTrends, company.RegulatoryContext,
+		company.Strengths, company.Weaknesses, company.Opportunities, company.Threats,
+		company.StrategicChallenges, company.RecentNews,
+		company.TAMEstimate, company.SAMEstimate, company.SOMEstimate,
+		company.UpdatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update company_step3_data: %w", err)
+	}
+
 	return nil
 }
 
@@ -478,7 +524,10 @@ func (r *PostgresRepository) SetEnrichmentProcessing(ctx context.Context, id uui
 	return nil
 }
 
-// SetEnrichmentCompleted updates company with enriched data and marks as completed
+// SetEnrichmentCompleted updates company with enriched data and marks as completed.
+// DEPRECATED: This method is legacy and should not be used. It attempts to update the
+// 'companies' view which is now read-only. Use MergeStep1Data, MergeStep2Data, and
+// MergeStep3Data instead for enrichment updates to the individual step tables.
 func (r *PostgresRepository) SetEnrichmentCompleted(ctx context.Context, id uuid.UUID, data *enrichment.EnrichedCompanyData) error {
 	now := time.Now()
 
@@ -1141,9 +1190,9 @@ func (r *PostgresRepository) MergeCompanies(ctx context.Context, targetID, sourc
 			return fmt.Errorf("move challenges: %w", err)
 		}
 
-		// 3. Soft-delete the source company
+		// 3. Soft-delete the source company (update company_core, not the view)
 		deleteSourceQuery := `
-			UPDATE companies SET deleted_at = $1 WHERE id = $2
+			UPDATE company_core SET deleted_at = $1 WHERE id = $2
 		`
 		_, err = txPgRepo.querier().ExecContext(ctx, deleteSourceQuery, now, sourceID)
 		if err != nil {
