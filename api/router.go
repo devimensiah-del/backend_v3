@@ -6,6 +6,7 @@ import (
 	domainchallenge "backend_v3/domain/challenge"
 	domaincompany "backend_v3/domain/company"
 	domainenrichment "backend_v3/domain/enrichment"
+	domainframework "backend_v3/domain/framework"
 	domainsubmission "backend_v3/domain/submission"
 
 	"github.com/gin-gonic/gin"
@@ -32,8 +33,9 @@ func SetupRouter(
 	submissionSvc *domainsubmission.Service, // Pass domain services directly
 	enrichmentSvc *domainenrichment.Service,
 	analysisSvc *domainanalysis.Service,
-	companySvc *domaincompany.Service, // Company service for re-enrich/re-analyze workflows
-	challengeSvc *domainchallenge.Service, // Challenge service for challenge management
+	companySvc *domaincompany.Service,       // Company service for re-enrich/re-analyze workflows
+	challengeSvc *domainchallenge.Service,   // Challenge service for challenge management
+	frameworkSvc *domainframework.Service,   // Framework service for V2 framework management (nil if disabled)
 ) *gin.Engine {
 	if isProd {
 		gin.SetMode(gin.ReleaseMode)
@@ -102,6 +104,12 @@ func SetupRouter(
 		logger,
 	)
 
+	// Framework handlers (V2) - only functional if frameworkSvc is not nil
+	var frameworkHandlers *FrameworkHandlers
+	if frameworkSvc != nil {
+		frameworkHandlers = NewFrameworkHandlers(frameworkSvc, asynqClient, logger)
+	}
+
 	// Create the main API Handler instance
 	// This Handler now composes all specialized handlers
 	mainHandler := NewHandler(
@@ -109,6 +117,7 @@ func SetupRouter(
 		analysisHandlers,
 		authHandlers,
 		companyHandlers,
+		frameworkHandlers,
 		submissionHandlers,
 		userHandlers,
 		submissionResponseBuilder,
@@ -212,6 +221,14 @@ func SetupRouter(
 			})
 		})
 
+		// Framework V2 routes (only available if FRAMEWORKS_V2_ENABLED=true)
+		if mainHandler.FrameworkHandlers != nil {
+			protectedAPI.GET("/companies/:id/framework-results", mainHandler.FrameworkHandlers.GetCompanyFrameworkResults)
+			protectedAPI.POST("/companies/:id/frameworks/:code/run", mainHandler.FrameworkHandlers.RunFrameworkForCompany)
+			protectedAPI.GET("/companies/:id/framework-results/:resultId", mainHandler.FrameworkHandlers.GetFrameworkResultStatus)
+			protectedAPI.PUT("/companies/:id/framework-results/:resultId", mainHandler.FrameworkHandlers.UpdateFrameworkResult)
+		}
+
 		// TODO: IAH-3 - Add analysisbysteps API handlers for human editing
 	}
 
@@ -254,6 +271,14 @@ func SetupRouter(
 		adminAPI.GET("/companies/duplicates", mainHandler.AdminHandlers.ListCNPJDuplicates)
 		adminAPI.POST("/companies/:id/merge", mainHandler.AdminHandlers.MergeCompanies)
 		// NOTE: Multi-user management removed - manage allowed_users in Supabase directly
+
+		// Framework V2 admin routes (only available if FRAMEWORKS_V2_ENABLED=true)
+		if mainHandler.FrameworkHandlers != nil {
+			adminAPI.GET("/frameworks", mainHandler.FrameworkHandlers.ListFrameworks)
+			adminAPI.GET("/frameworks/execution-plan", mainHandler.FrameworkHandlers.GetExecutionPlan)
+			adminAPI.GET("/frameworks/:id", mainHandler.FrameworkHandlers.GetFramework)
+			adminAPI.PUT("/frameworks/:id", mainHandler.FrameworkHandlers.UpdateFramework)
+		}
 	}
 
 	return router
