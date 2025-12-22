@@ -309,6 +309,7 @@ func (s *Service) CreatePendingResult(ctx context.Context, companyID, frameworkI
 		CompanyID:   companyID,
 		FrameworkID: frameworkID,
 		ChallengeID: challengeID,
+		Result:      json.RawMessage(`{}`), // Initialize with empty JSON object for JSONB column
 		Status:      StatusPending,
 		Version:     1, // Will be incremented if there are previous versions
 		IsCurrent:   true,

@@ -443,7 +443,7 @@ func (h *FrameworkHandlers) RunFrameworkForCompany(c *gin.Context) {
 	task := asynq.NewTask(jobtypes.TypeFrameworkExecution, payloadBytes)
 
 	if h.AsynqClient != nil {
-		_, err = h.AsynqClient.Enqueue(task,
+		taskInfo, err := h.AsynqClient.Enqueue(task,
 			asynq.MaxRetry(3),
 			asynq.Queue("default"),
 			asynq.Retention(24*60*60), // 24 hours
@@ -451,7 +451,15 @@ func (h *FrameworkHandlers) RunFrameworkForCompany(c *gin.Context) {
 		if err != nil {
 			h.Logger.Error().Err(err).Msg("Failed to enqueue framework execution job")
 			// Don't fail - result is created, worker can retry
+		} else {
+			h.Logger.Info().
+				Str("task_id", taskInfo.ID).
+				Str("queue", taskInfo.Queue).
+				Str("state", taskInfo.State.String()).
+				Msg("✅ Job successfully enqueued to Redis")
 		}
+	} else {
+		h.Logger.Warn().Msg("⚠️ AsynqClient is nil - job NOT enqueued!")
 	}
 
 	h.Logger.Info().

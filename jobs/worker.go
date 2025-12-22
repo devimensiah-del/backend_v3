@@ -151,11 +151,31 @@ func (w *Worker) Start() error {
 		Bool("has_password", w.redisOpt.Password != "").
 		Msg("🔌 Worker connecting to Redis for job processing")
 
+	// Test Redis connection before starting worker
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := w.redisClient.Ping(ctx).Err(); err != nil {
+		w.logger.Error().Err(err).
+			Str("redis_addr", w.redisOpt.Addr).
+			Msg("❌ Worker cannot connect to Redis - aborting start")
+		return fmt.Errorf("redis connection failed: %w", err)
+	}
+	w.logger.Info().Msg("✅ Worker Redis connection verified")
+
+	// Log registered handlers
+	w.logger.Info().
+		Str("handler_1", "analysis_job").
+		Str("handler_2", "framework_execution").
+		Msg("📋 Registered job handlers")
+
 	err := w.server.Start(w.mux)
 	if err != nil {
 		w.logger.Error().Err(err).Msg("❌ Asynq server failed to start")
+		return err
 	}
-	return err
+
+	w.logger.Info().Msg("✅ Asynq server started - now listening for jobs")
+	return nil
 }
 
 // Stop gracefully shuts down the worker and closes connections
@@ -300,6 +320,9 @@ func (w *Worker) HandleAnalysisJob(ctx context.Context, task *asynq.Task) error 
 
 // HandleFrameworkExecutionJob handles async execution of a single framework (V2)
 func (w *Worker) HandleFrameworkExecutionJob(ctx context.Context, task *asynq.Task) error {
+	// FIRST LINE - absolute minimum logging to confirm handler is called
+	w.logger.Info().Msg("🔥🔥🔥 HANDLER ENTRY - framework_execution job received by worker")
+
 	startTime := time.Now()
 
 	// Check if framework service is available
@@ -421,14 +444,20 @@ func (w *Worker) executeFrameworkWithLLM(ctx context.Context, fw *framework.Fram
 		return json.RawMessage(`{"status": "mock", "note": "LLM client not configured"}`), nil
 	}
 
-	// Build the prompt with dependency context
-	prompt := fw.PromptUser
+	// Get prompts - use database values with fallback to code prompts if placeholder
+	systemPrompt, userPrompt := w.getFrameworkPrompts(fw, logger)
 
-	// If there's a system prompt, we'd use it for the system message
-	// For now, we append context to the user prompt
+	// Build the prompt with dependency context
+	prompt := userPrompt
 	if len(depContext) > 0 {
 		contextJSON, _ := json.MarshalIndent(depContext, "", "  ")
 		prompt = fmt.Sprintf("%s\n\n## Previous Framework Results:\n%s", prompt, string(contextJSON))
+	}
+
+	// If we have a system prompt, prepend it with data priority instruction
+	if systemPrompt != "" {
+		prompt = fmt.Sprintf("=== SYSTEM CONTEXT ===\n%s\n\n%s\n=== END SYSTEM CONTEXT ===\n\n%s",
+			systemPrompt, llm.DataPriorityInstruction, prompt)
 	}
 
 	// Build generation options from framework config
@@ -475,6 +504,72 @@ func (w *Worker) executeFrameworkWithLLM(ctx context.Context, fw *framework.Fram
 		Msg("LLM execution successful")
 
 	return resultJSON, nil
+}
+
+// getFrameworkPrompts returns the system and user prompts for a framework.
+// It uses database values if populated, falling back to code prompts if the DB has placeholder text.
+func (w *Worker) getFrameworkPrompts(fw *framework.Framework, logger zerolog.Logger) (systemPrompt, userPrompt string) {
+	// Check if database prompt is a placeholder (contains "[Full prompt" marker)
+	isPlaceholder := strings.Contains(fw.PromptUser, "[Full prompt in llm/prompts.go")
+
+	if isPlaceholder || fw.PromptUser == "" {
+		// Use fallback prompts from code
+		userPrompt = w.getCodePromptForFramework(fw.Code)
+		logger.Info().
+			Str("framework", fw.Code).
+			Bool("was_placeholder", isPlaceholder).
+			Msg("Using fallback code prompt for framework")
+	} else {
+		// Use database prompt
+		userPrompt = fw.PromptUser
+		logger.Debug().
+			Str("framework", fw.Code).
+			Msg("Using database prompt for framework")
+	}
+
+	// System prompt from database (migrations will populate these)
+	if fw.PromptSystem != nil {
+		systemPrompt = *fw.PromptSystem
+	}
+
+	return systemPrompt, userPrompt
+}
+
+// getCodePromptForFramework returns the hardcoded prompt for a framework code.
+// This is a fallback when the database prompt is empty or has placeholder text.
+func (w *Worker) getCodePromptForFramework(code string) string {
+	// Map framework codes to their prompts in llm/prompts.go
+	switch code {
+	case "pestel":
+		return llm.FrameworkPESTELPrompt
+	case "porter":
+		return llm.FrameworkPorterPrompt
+	case "tam_sam_som":
+		return llm.FrameworkTamSamSomPrompt
+	case "swot":
+		return llm.FrameworkSWOTPrompt
+	case "benchmarking":
+		return llm.FrameworkBenchmarkingPrompt
+	case "blue_ocean":
+		return llm.FrameworkBlueOceanPrompt
+	case "growth_hacking":
+		return llm.FrameworkGrowthHackingPrompt
+	case "scenarios":
+		return llm.FrameworkScenariosPrompt
+	case "decision_matrix":
+		return llm.FrameworkDecisionMatrixPrompt
+	case "okrs":
+		return llm.FrameworkOKRsPrompt
+	case "bsc":
+		return llm.FrameworkBSCPrompt
+	case "synthesis":
+		return llm.SynthesisPrompt
+	case "challenge_refinement":
+		return llm.ChallengeRefinementPrompt
+	default:
+		// Return a generic prompt if framework code unknown
+		return fmt.Sprintf("Analyze the company data and provide insights for %s framework. Return JSON.", code)
+	}
 }
 
 // --- Error Handling ---
