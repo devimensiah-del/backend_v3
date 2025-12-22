@@ -31,17 +31,24 @@ type UpdatePasswordRequest struct {
 	NewPassword     string `json:"newPassword" binding:"required,min=6"`
 }
 
+// SetPasswordRequest - for users who were auto-created without password
+type SetPasswordRequest struct {
+	Password string `json:"password" binding:"required,min=6"`
+}
+
 // ==================== SUBMISSION REQUEST TYPES ====================
 
 // CreateSubmissionRequest - simplified submission form
-// Required: companyName, contactName, contactEmail, contactPhone, website (unless hasNoWebsite)
-// Optional: cnpj
+// Required: companyName, contactName, contactEmail, website (unless hasNoWebsite)
+// Optional: contactPhone, cnpj
 type CreateSubmissionRequest struct {
 	// Required fields
 	CompanyName  string `json:"companyName" binding:"required"`
 	ContactName  string `json:"contactName" binding:"required"`
 	ContactEmail string `json:"contactEmail" binding:"required,email"`
-	ContactPhone string `json:"contactPhone" binding:"required"`
+
+	// Optional contact phone (removed from required for simpler landing page)
+	ContactPhone *string `json:"contactPhone"`
 
 	// Website: required unless hasNoWebsite is true
 	Website      *string `json:"website"`
@@ -102,6 +109,20 @@ type SubmissionResponse struct {
 	CompanyID string     `json:"companyId"` // ID of created/linked company
 	CreatedAt *time.Time `json:"createdAt,omitempty"`
 	UpdatedAt *time.Time `json:"updatedAt,omitempty"`
+}
+
+// TemporaryAuth contains auth data for auto-created users (1-hour session)
+type TemporaryAuth struct {
+	AccessToken string   `json:"access_token"`
+	ExpiresIn   int      `json:"expires_in"` // 3600 seconds (1 hour)
+	User        AuthUser `json:"user"`
+}
+
+// CreateSubmissionWithAuthResponse extends SubmissionResponse with optional auth
+// Auth is provided when a new user is auto-created during submission
+type CreateSubmissionWithAuthResponse struct {
+	Submission SubmissionResponse `json:"submission"`
+	Auth       *TemporaryAuth     `json:"auth,omitempty"` // nil if user was already authenticated
 }
 
 // SubmissionDetailResponse contains the public/admin submission payload used by the UI
@@ -175,13 +196,14 @@ type UserProfileResponse struct {
 
 // UserProfile represents a user's profile from user_profiles table
 type UserProfile struct {
-	ID        string    `json:"id" db:"id"`
-	Email     string    `json:"email" db:"email"`
-	FullName  *string   `json:"fullName" db:"full_name"`
-	Role      string    `json:"role" db:"role"`
-	IsActive  bool      `json:"isActive" db:"is_active"`
-	CreatedAt time.Time `json:"createdAt" db:"created_at"`
-	UpdatedAt time.Time `json:"updatedAt" db:"updated_at"`
+	ID          string    `json:"id" db:"id"`
+	Email       string    `json:"email" db:"email"`
+	FullName    *string   `json:"fullName" db:"full_name"`
+	Role        string    `json:"role" db:"role"`
+	IsActive    bool      `json:"isActive" db:"is_active"`
+	PasswordSet bool      `json:"passwordSet" db:"password_set"` // false for auto-created users who need to set password
+	CreatedAt   time.Time `json:"createdAt" db:"created_at"`
+	UpdatedAt   time.Time `json:"updatedAt" db:"updated_at"`
 }
 
 // ==================== ANALYSIS RESPONSE TYPES ====================

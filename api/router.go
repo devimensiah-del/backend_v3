@@ -86,6 +86,7 @@ func SetupRouter(
 		submissionSvc,
 		logger,
 		submissionResponseBuilder, // Pass the builder
+		authHandlers,              // For auto-creating users on submission
 	)
 	userHandlers := NewUserHandlers(
 		db,
@@ -153,6 +154,7 @@ func SetupRouter(
 		authAPI.GET("/me", mainHandler.AuthHandlers.GetCurrentUser)
 		authAPI.POST("/logout", mainHandler.AuthHandlers.Logout)
 		authAPI.PUT("/update-password", mainHandler.AuthHandlers.UpdatePassword)
+		authAPI.POST("/set-password", mainHandler.AuthHandlers.SetPassword) // For users auto-created without password
 	}
 
 	// User profile alias (frontend expects /user/profile)

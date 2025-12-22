@@ -68,7 +68,7 @@ func (h *AuthHandlers) GetCurrentUser(c *gin.Context) {
 
 	var profile UserProfile
 	query := `
-		SELECT id, email, full_name, role, is_active, created_at, updated_at
+		SELECT id, email, full_name, role, is_active, password_set, created_at, updated_at
 		FROM user_profiles
 		WHERE id = $1
 	`
@@ -128,6 +128,27 @@ func (h *AuthHandlers) Login(c *gin.Context) {
 	resp, err := h.callSupabaseAuth("POST", authURL, payload)
 	if err != nil {
 		h.Logger.Error().Err(err).Msg("Login failed")
+
+		// Check if user exists but needs to set password
+		var profile UserProfile
+		profileErr := h.DB.Get(&profile, `
+			SELECT id, email, full_name, role, is_active, password_set, created_at, updated_at
+			FROM user_profiles WHERE email = $1
+		`, req.Email)
+		if profileErr == nil && !profile.PasswordSet {
+			// User exists but was auto-created without password
+			c.JSON(http.StatusUnprocessableEntity, gin.H{
+				"error":   "PASSWORD_NOT_SET",
+				"code":    "PASSWORD_NOT_SET",
+				"message": "Você precisa definir uma senha para continuar",
+				"user": gin.H{
+					"id":    profile.ID,
+					"email": profile.Email,
+				},
+			})
+			return
+		}
+
 		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Falha no login", Message: err.Error()})
 		return
 	}
@@ -428,6 +449,290 @@ func (h *AuthHandlers) UpdatePassword(c *gin.Context) {
 	json.Unmarshal(body, &result)
 
 	c.JSON(http.StatusOK, result)
+}
+
+// CreateUserWithoutPassword creates a Supabase user without password via Admin API
+// Used for auto-creating users during landing page submission
+// Returns the user ID or error
+func (h *AuthHandlers) CreateUserWithoutPassword(email, fullName string) (string, error) {
+	if h.MockMode {
+		// In mock mode, just create the user profile directly
+		userID, _, err := h.ensureUserExists(email)
+		if err != nil {
+			return "", err
+		}
+		// Mark as password not set
+		h.DB.Exec("UPDATE user_profiles SET password_set = FALSE WHERE id = $1", userID)
+		return userID, nil
+	}
+
+	// Use Supabase Admin API to create user without password
+	adminURL := fmt.Sprintf("%s/auth/v1/admin/users", h.SupabaseURL)
+
+	payload := map[string]interface{}{
+		"email":         email,
+		"email_confirm": true, // Already confirmed, no verification needed
+		"user_metadata": map[string]string{
+			"full_name": fullName,
+		},
+	}
+
+	payloadBytes, _ := json.Marshal(payload)
+
+	req, _ := http.NewRequest("POST", adminURL, bytes.NewBuffer(payloadBytes))
+	req.Header.Set("apikey", h.SupabaseAnonKey)
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", os.Getenv("SUPABASE_SERVICE_ROLE_KEY")))
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		h.Logger.Error().Err(err).Msg("Failed to create user via Supabase Admin API")
+		return "", fmt.Errorf("failed to create user: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode >= 400 {
+		h.Logger.Error().
+			Int("status", resp.StatusCode).
+			Str("body", string(body)).
+			Msg("Supabase Admin API error")
+
+		// Check if user already exists
+		if strings.Contains(string(body), "already been registered") ||
+			strings.Contains(string(body), "user_already_exists") {
+			return "", fmt.Errorf("USER_EXISTS")
+		}
+		return "", fmt.Errorf("failed to create user: %s", string(body))
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	userID, ok := result["id"].(string)
+	if !ok {
+		return "", fmt.Errorf("no user ID in response")
+	}
+
+	// Create user profile with password_set = false
+	if err := h.createUserProfileWithoutPassword(userID, email, fullName); err != nil {
+		h.Logger.Error().Err(err).Str("user_id", userID).Msg("Failed to create user profile")
+		// Don't fail - user was created in Supabase, profile can be created on first login
+	}
+
+	h.Logger.Info().
+		Str("user_id", userID).
+		Str("email", email).
+		Msg("User created without password via Admin API")
+
+	return userID, nil
+}
+
+// IssueTemporaryToken generates a JWT token with 1-hour expiry for auto-created users
+func (h *AuthHandlers) IssueTemporaryToken(userID, role, email string) (string, error) {
+	claims := jwt.MapClaims{
+		"sub":   userID,
+		"email": email,
+		"role":  role,
+		"exp":   time.Now().Add(1 * time.Hour).Unix(), // 1 hour expiry
+		"iat":   time.Now().Unix(),
+		"temp":  true, // Mark as temporary session
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(h.JWTSecret))
+}
+
+// SetPassword handles POST /api/v1/auth/set-password
+// For users who were auto-created without a password
+func (h *AuthHandlers) SetPassword(c *gin.Context) {
+	var req SetPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Requisição inválida",
+			Message: "Senha deve ter pelo menos 6 caracteres",
+		})
+		return
+	}
+
+	// Get user ID from token
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{
+			Error:   "Não autorizado",
+			Message: "Token inválido ou expirado",
+		})
+		return
+	}
+
+	userIDStr, ok := userID.(string)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Erro interno",
+			Message: "ID de usuário inválido",
+		})
+		return
+	}
+
+	// Check if user actually needs to set password
+	var profile UserProfile
+	err := h.DB.Get(&profile, `
+		SELECT id, email, full_name, role, is_active, password_set, created_at, updated_at
+		FROM user_profiles WHERE id = $1
+	`, userIDStr)
+	if err != nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{
+			Error:   "Usuário não encontrado",
+			Message: "Perfil de usuário não existe",
+		})
+		return
+	}
+
+	if profile.PasswordSet {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Senha já definida",
+			Message: "Use a opção 'alterar senha' para modificar sua senha existente",
+		})
+		return
+	}
+
+	if h.MockMode {
+		// In mock mode, just update the flag
+		_, err = h.DB.Exec("UPDATE user_profiles SET password_set = TRUE, updated_at = NOW() WHERE id = $1", userIDStr)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, ErrorResponse{
+				Error:   "Erro ao definir senha",
+				Message: "Falha ao atualizar perfil",
+			})
+			return
+		}
+
+		// Issue new 24-hour token
+		token, _ := h.issueMockToken(userIDStr, profile.Role, profile.Email)
+		c.JSON(http.StatusOK, gin.H{
+			"access_token": token,
+			"token":        token,
+			"message":      "Senha definida com sucesso",
+			"user": gin.H{
+				"id":          profile.ID,
+				"email":       profile.Email,
+				"role":        profile.Role,
+				"passwordSet": true,
+			},
+		})
+		return
+	}
+
+	// Update password in Supabase via Admin API
+	adminURL := fmt.Sprintf("%s/auth/v1/admin/users/%s", h.SupabaseURL, userIDStr)
+
+	payload := map[string]interface{}{
+		"password": req.Password,
+	}
+
+	payloadBytes, _ := json.Marshal(payload)
+
+	httpReq, _ := http.NewRequest("PUT", adminURL, bytes.NewBuffer(payloadBytes))
+	httpReq.Header.Set("apikey", h.SupabaseAnonKey)
+	httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", os.Getenv("SUPABASE_SERVICE_ROLE_KEY")))
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		h.Logger.Error().Err(err).Msg("Failed to set password via Supabase Admin API")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Erro ao definir senha",
+			Message: "Falha na comunicação com serviço de autenticação",
+		})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		h.Logger.Error().
+			Int("status", resp.StatusCode).
+			Str("body", string(body)).
+			Msg("Supabase Admin API error setting password")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Erro ao definir senha",
+			Message: "Falha ao atualizar senha no serviço de autenticação",
+		})
+		return
+	}
+
+	// Update password_set flag in our database
+	_, err = h.DB.Exec("UPDATE user_profiles SET password_set = TRUE, updated_at = NOW() WHERE id = $1", userIDStr)
+	if err != nil {
+		h.Logger.Error().Err(err).Msg("Failed to update password_set flag")
+		// Don't fail - password was set in Supabase
+	}
+
+	// Login the user to get a fresh token
+	loginURL := fmt.Sprintf("%s/auth/v1/token?grant_type=password", h.SupabaseURL)
+	loginPayload := map[string]string{
+		"email":    profile.Email,
+		"password": req.Password,
+	}
+
+	loginResp, err := h.callSupabaseAuth("POST", loginURL, loginPayload)
+	if err != nil {
+		// Password was set but login failed - user can login manually
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Senha definida com sucesso. Faça login para continuar.",
+		})
+		return
+	}
+
+	// Add user info to response
+	loginResp["user"] = gin.H{
+		"id":          profile.ID,
+		"email":       profile.Email,
+		"full_name":   profile.FullName,
+		"role":        profile.Role,
+		"passwordSet": true,
+	}
+	loginResp["message"] = "Senha definida com sucesso"
+
+	if accessToken, ok := loginResp["access_token"].(string); ok {
+		loginResp["token"] = accessToken
+	}
+
+	h.Logger.Info().
+		Str("user_id", userIDStr).
+		Str("email", profile.Email).
+		Msg("Password set successfully for auto-created user")
+
+	c.JSON(http.StatusOK, loginResp)
+}
+
+// GetUserIDByEmail looks up a user's ID by their email address
+func (h *AuthHandlers) GetUserIDByEmail(email string) (string, error) {
+	var userID string
+	err := h.DB.Get(&userID, "SELECT id FROM user_profiles WHERE email = $1", email)
+	if err != nil {
+		return "", fmt.Errorf("user not found: %w", err)
+	}
+	return userID, nil
+}
+
+// createUserProfileWithoutPassword creates a user_profiles record with password_set = false
+func (h *AuthHandlers) createUserProfileWithoutPassword(userID, email, fullName string) error {
+	if fullName == "" {
+		fullName = strings.Split(email, "@")[0]
+	}
+
+	_, err := h.DB.Exec(
+		`INSERT INTO user_profiles (id, email, full_name, role, is_active, password_set, created_at, updated_at)
+		 VALUES ($1, $2, $3, 'user', TRUE, FALSE, NOW(), NOW())
+		 ON CONFLICT (id) DO UPDATE SET password_set = FALSE, updated_at = NOW()`,
+		userID, email, fullName,
+	)
+	return err
 }
 
 // createUserProfile creates a user_profiles record for a newly signed up Supabase user

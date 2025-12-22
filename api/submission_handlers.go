@@ -19,6 +19,7 @@ type SubmissionHandlers struct {
 	SubmissionService         *submission.Service
 	Logger                    zerolog.Logger
 	SubmissionResponseBuilder *SubmissionResponseBuilder
+	AuthHandlers              *AuthHandlers // For auto-creating users on submission
 }
 
 // NewSubmissionHandlers creates a new submission.Handlers instance with all dependencies
@@ -26,11 +27,13 @@ func NewSubmissionHandlers(
 	submissionSvc *submission.Service,
 	logger zerolog.Logger,
 	submissionResponseBuilder *SubmissionResponseBuilder,
+	authHandlers *AuthHandlers,
 ) *SubmissionHandlers {
 	return &SubmissionHandlers{
 		SubmissionService:         submissionSvc,
 		Logger:                    logger,
 		SubmissionResponseBuilder: submissionResponseBuilder,
+		AuthHandlers:              authHandlers,
 	}
 }
 
@@ -59,6 +62,7 @@ func (h *SubmissionHandlers) CreateSubmission(c *gin.Context) {
 
 	// Get authenticated user ID if available
 	var userID *uuid.UUID
+	var tempAuth *TemporaryAuth
 	if rawUserID, exists := c.Get("userID"); exists {
 		if userIDStr, ok := rawUserID.(string); ok {
 			if uid, err := parseUUID(userIDStr); err == nil {
@@ -67,14 +71,86 @@ func (h *SubmissionHandlers) CreateSubmission(c *gin.Context) {
 		}
 	}
 
+	// If user is NOT authenticated, auto-create account or get existing
+	if userID == nil && h.AuthHandlers != nil {
+		newUserID, err := h.AuthHandlers.CreateUserWithoutPassword(req.ContactEmail, req.ContactName)
+		if err != nil {
+			// Check if user already exists - get their ID and issue token
+			if strings.Contains(err.Error(), "USER_EXISTS") || strings.Contains(err.Error(), "email_exists") {
+				// Look up existing user by email
+				existingUserID, lookupErr := h.AuthHandlers.GetUserIDByEmail(req.ContactEmail)
+				if lookupErr != nil {
+					h.Logger.Warn().Err(lookupErr).Str("email", req.ContactEmail).Msg("Failed to lookup existing user")
+				} else {
+					uid, _ := uuid.Parse(existingUserID)
+					userID = &uid
+
+					// Issue temporary token for existing user
+					token, tokenErr := h.AuthHandlers.IssueTemporaryToken(existingUserID, "user", req.ContactEmail)
+					if tokenErr != nil {
+						h.Logger.Error().Err(tokenErr).Msg("Failed to issue temporary token for existing user")
+					} else {
+						tempAuth = &TemporaryAuth{
+							AccessToken: token,
+							ExpiresIn:   3600,
+							User: AuthUser{
+								ID:    existingUserID,
+								Email: req.ContactEmail,
+								Role:  "user",
+							},
+						}
+					}
+					h.Logger.Info().
+						Str("user_id", existingUserID).
+						Str("email", req.ContactEmail).
+						Msg("Issuing token for existing user submission")
+				}
+			} else {
+				// Other error - log and continue without user
+				h.Logger.Warn().Err(err).Str("email", req.ContactEmail).Msg("Failed to auto-create user, continuing with anonymous submission")
+			}
+		} else {
+			// User created successfully
+			uid, _ := uuid.Parse(newUserID)
+			userID = &uid
+
+			// Generate temporary 1-hour token
+			token, tokenErr := h.AuthHandlers.IssueTemporaryToken(newUserID, "user", req.ContactEmail)
+			if tokenErr != nil {
+				h.Logger.Error().Err(tokenErr).Msg("Failed to issue temporary token")
+			} else {
+				tempAuth = &TemporaryAuth{
+					AccessToken: token,
+					ExpiresIn:   3600, // 1 hour
+					User: AuthUser{
+						ID:    newUserID,
+						Email: req.ContactEmail,
+						Role:  "user",
+					},
+				}
+			}
+
+			h.Logger.Info().
+				Str("user_id", newUserID).
+				Str("email", req.ContactEmail).
+				Msg("Auto-created user for landing page submission")
+		}
+	}
+
 	// Transform to domain model - simplified fields only
+	// ContactPhone is now optional (*string)
+	var contactPhone string
+	if req.ContactPhone != nil {
+		contactPhone = *req.ContactPhone
+	}
+
 	submitReq := &submission.SubmitRequest{
 		CompanyName:    req.CompanyName,
 		CNPJ:           req.CNPJ,
 		CompanyWebsite: normalizedWebsite,
 		ContactName:    req.ContactName,
 		ContactEmail:   req.ContactEmail,
-		ContactPhone:   req.ContactPhone,
+		ContactPhone:   contactPhone,
 		UserID:         userID,
 	}
 
@@ -113,16 +189,27 @@ func (h *SubmissionHandlers) CreateSubmission(c *gin.Context) {
 	// 2. Creating Company (triggers async Perplexity enrichment)
 	// Challenge creation is now separate (admin/user creates later)
 
-	// Frontend expects wrapped response: { submission: {...} }
+	// Build response with optional auth
 	now := time.Now()
-	c.JSON(http.StatusCreated, gin.H{
-		"submission": SubmissionResponse{
-			ID:        resp.SubmissionID.String(),
-			CompanyID: resp.CompanyID.String(),
-			CreatedAt: &now,
-			UpdatedAt: &now,
-		},
-	})
+	submissionResp := SubmissionResponse{
+		ID:        resp.SubmissionID.String(),
+		CompanyID: resp.CompanyID.String(),
+		CreatedAt: &now,
+		UpdatedAt: &now,
+	}
+
+	// Return response with auth if user was auto-created
+	if tempAuth != nil {
+		c.JSON(http.StatusCreated, CreateSubmissionWithAuthResponse{
+			Submission: submissionResp,
+			Auth:       tempAuth,
+		})
+	} else {
+		// Legacy response format for already-authenticated users or fallback
+		c.JSON(http.StatusCreated, gin.H{
+			"submission": submissionResp,
+		})
+	}
 }
 
 // GetSubmission checks status and returns details
