@@ -110,6 +110,12 @@ type Config struct {
 	// MacroSchedulerEnabled: Enable/disable macro data cron jobs (SELIC, IPCA, USD/BRL)
 	MacroSchedulerEnabled bool `envconfig:"MACRO_SCHEDULER_ENABLED" default:"true"`
 
+	// ==================== FRAMEWORKS V2 ====================
+	// FrameworksV2Enabled: Enable database-driven framework configuration
+	// When false (default): Uses hardcoded constants.go and workflow.go
+	// When true: Uses frameworks table in database for configuration
+	FrameworksV2Enabled bool `envconfig:"FRAMEWORKS_V2_ENABLED" default:"false"`
+
 	// ==================== SUPABASE INTEGRATION ====================
 	// SupabaseURL: Supabase project URL (REQUIRED)
 	// Format: https://your-project-id.supabase.co

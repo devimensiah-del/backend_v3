@@ -17,6 +17,7 @@ import (
 	"backend_v3/domain/challenge"
 	"backend_v3/domain/company"
 	"backend_v3/domain/enrichment"
+	"backend_v3/domain/framework"
 	"backend_v3/domain/submission"
 	"backend_v3/internal/adapters"
 	"backend_v3/jobs"
@@ -196,6 +197,16 @@ func main() {
 	// Silence unused variable warning - service will be wired in IAH-3
 	_ = analysisByStepsSvc
 
+	// Framework V2 (Database-driven frameworks - conditional on feature flag)
+	var frameworkSvc *framework.Service
+	if cfg.FrameworksV2Enabled {
+		frameworkRepo := framework.NewRepository(db)
+		frameworkSvc = framework.NewService(frameworkRepo, log.Logger)
+		log.Info().Msg("✓ FRAMEWORKS_V2_ENABLED: Using database-driven frameworks")
+	} else {
+		log.Info().Msg("Frameworks V2 disabled (FRAMEWORKS_V2_ENABLED=false) - using hardcoded frameworks")
+	}
+
 	// 7. BACKGROUND WORKER
 	log.Info().Msg("Initializing background job worker...")
 	worker := jobs.NewWorker(
@@ -205,6 +216,12 @@ func main() {
 		analysisSvc,
 		log.Logger,
 	)
+
+	// Inject framework service and LLM client into worker if V2 enabled
+	if frameworkSvc != nil {
+		worker.SetFrameworkService(frameworkSvc)
+		worker.SetLLMClient(llmClient)
+	}
 
 	// Start Worker in a separate goroutine
 	// STABILITY FIX: Graceful degradation - if worker fails, API stays alive
@@ -265,6 +282,7 @@ func main() {
 		analysisSvc,
 		companySvc,   // Company service for re-enrich/re-analyze workflows
 		challengeSvc, // Challenge service for challenge management
+		frameworkSvc, // Framework V2 service (nil if FRAMEWORKS_V2_ENABLED=false)
 	)
 
 	srv := &http.Server{
