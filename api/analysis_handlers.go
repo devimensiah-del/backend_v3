@@ -376,6 +376,96 @@ func (h *AnalysisHandlers) GenerateAccessCode(c *gin.Context) {
 	})
 }
 
+// GenerateAccessCodeUser handles POST /api/v1/analyses/:id/access-code
+// Authenticated user generates an access code for their own company's analysis
+func (h *AnalysisHandlers) GenerateAccessCodeUser(c *gin.Context) {
+	analysisID := c.Param("id")
+
+	// Verify user is authenticated
+	userIDVal, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{
+			Error:   "Unauthorized",
+			Message: "User not authenticated",
+		})
+		return
+	}
+	userID, ok := userIDVal.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{
+			Error:   "Unauthorized",
+			Message: "Invalid user ID",
+		})
+		return
+	}
+
+	// Get analysis by ID
+	analysisObj, err := h.AnalysisService.GetByID(c.Request.Context(), analysisID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{
+			Error:   "Not found",
+			Message: "Analysis not found",
+		})
+		return
+	}
+
+	// Verify ownership via company
+	if analysisObj.CompanyID == nil {
+		c.JSON(http.StatusForbidden, ErrorResponse{
+			Error:   "Forbidden",
+			Message: "Analysis has no associated company",
+		})
+		return
+	}
+	companyUUID, parseErr := uuid.Parse(*analysisObj.CompanyID)
+	if parseErr != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Internal error",
+			Message: "Invalid company ID",
+		})
+		return
+	}
+	companyData, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
+	if err != nil || companyData == nil {
+		c.JSON(http.StatusForbidden, ErrorResponse{
+			Error:   "Forbidden",
+			Message: "Company not found",
+		})
+		return
+	}
+	if !companyData.IsUserAllowed(userID) {
+		c.JSON(http.StatusForbidden, ErrorResponse{
+			Error:   "Forbidden",
+			Message: "You do not have access to this company's analysis",
+		})
+		return
+	}
+
+	// Generate access code via service (reuses same logic as admin)
+	accessCode, err := h.AnalysisService.GenerateAccessCode(c.Request.Context(), analysisID)
+	if err != nil {
+		h.Logger.Error().Err(err).Str("analysis_id", analysisID).Msg("Failed to generate access code for user")
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Generation failed",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	// Build shareable URL
+	baseURL := c.GetHeader("Origin")
+	if baseURL == "" {
+		baseURL = "https://imenseia.com.br"
+	}
+	shareableURL := baseURL + "/report/" + accessCode
+
+	c.JSON(http.StatusOK, gin.H{
+		"access_code":   accessCode,
+		"shareable_url": shareableURL,
+		"message":       "Access code generated successfully",
+	})
+}
+
 // GetPublicReport handles GET /api/v1/public/report/:code
 // Public endpoint - no auth required for public users IF is_public=true
 // Admin users can preview even if visibility is OFF (they need to pass ?preview=admin with valid JWT)
@@ -425,8 +515,25 @@ func (h *AnalysisHandlers) GetPublicReport(c *gin.Context) {
 		isAuthenticated = exists
 	}
 
-	// Check if analysis is visible to users (skip if admin preview)
-	if !analysis.IsVisibleToUser && !isAdminPreview {
+	// Check if authenticated user is the company owner (bypass visibility check)
+	isOwner := false
+	if isAuthenticated && analysis.CompanyID != nil {
+		ownerUserIDVal, ownerExists := c.Get("userID")
+		if ownerExists {
+			if ownerUserID, ownerOk := ownerUserIDVal.(uuid.UUID); ownerOk {
+				companyOwnerUUID, ownerParseErr := uuid.Parse(*analysis.CompanyID)
+				if ownerParseErr == nil {
+					ownerCompany, ownerErr := h.CompanyService.GetByID(c.Request.Context(), companyOwnerUUID)
+					if ownerErr == nil && ownerCompany != nil && ownerCompany.IsUserAllowed(ownerUserID) {
+						isOwner = true
+					}
+				}
+			}
+		}
+	}
+
+	// Check if analysis is visible to users (skip if admin preview or company owner)
+	if !analysis.IsVisibleToUser && !isAdminPreview && !isOwner {
 		c.JSON(http.StatusNotFound, ErrorResponse{
 			Error:   "Not found",
 			Message: "Relatório não encontrado. O código de acesso é inválido ou o relatório não está mais disponível.",

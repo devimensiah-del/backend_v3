@@ -217,6 +217,7 @@ func SetupRouter(
 
 		// Analysis routes (user can view their own analyses)
 		protectedAPI.GET("/analyses/:id", mainHandler.AnalysisHandlers.GetAnalysisUser)
+		protectedAPI.POST("/analyses/:id/access-code", mainHandler.AnalysisHandlers.GenerateAccessCodeUser)
 
 		// Challenge types (public info, but under protected for consistency)
 		protectedAPI.GET("/challenges/types", func(c *gin.Context) {
