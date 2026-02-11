@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"backend_v3/domain/company"
 	"backend_v3/domain/framework"
 	jobtypes "backend_v3/jobs/types"
 
@@ -15,21 +16,30 @@ import (
 
 // FrameworkHandlers holds all service dependencies for framework handlers
 type FrameworkHandlers struct {
-	FrameworkService *framework.Service
-	AsynqClient      *asynq.Client
-	Logger           zerolog.Logger
+	FrameworkService   *framework.Service
+	DependencyService  *framework.DependencyService
+	ExecutionService   *framework.ExecutionService
+	CompanyService     *company.Service
+	AsynqClient        *asynq.Client
+	Logger             zerolog.Logger
 }
 
 // NewFrameworkHandlers creates a new framework handler set with all dependencies
 func NewFrameworkHandlers(
 	frameworkSvc *framework.Service,
+	depService *framework.DependencyService,
+	execService *framework.ExecutionService,
+	companySvc *company.Service,
 	asynqClient *asynq.Client,
 	logger zerolog.Logger,
 ) *FrameworkHandlers {
 	return &FrameworkHandlers{
-		FrameworkService: frameworkSvc,
-		AsynqClient:      asynqClient,
-		Logger:           logger,
+		FrameworkService:  frameworkSvc,
+		DependencyService: depService,
+		ExecutionService:  execService,
+		CompanyService:    companySvc,
+		AsynqClient:       asynqClient,
+		Logger:            logger,
 	}
 }
 
@@ -500,6 +510,453 @@ func (h *FrameworkHandlers) GetExecutionPlan(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"execution_plan": plan})
+}
+
+// =============================================================================
+// Analysis State & Dependency Management (5-Step Flow)
+// =============================================================================
+
+// GetAnalysisState handles GET /api/v1/companies/:id/analysis-state
+// Returns the complete 5-step analysis state for a company
+func (h *FrameworkHandlers) GetAnalysisState(c *gin.Context) {
+	companyIDStr := c.Param("id")
+	ctx := c.Request.Context()
+
+	companyID, err := uuid.Parse(companyIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "ID inválido",
+			Message: "O ID da empresa deve ser um UUID válido",
+		})
+		return
+	}
+
+	// Optional challenge_id filter
+	var challengeID *uuid.UUID
+	if challengeIDStr := c.Query("challenge_id"); challengeIDStr != "" {
+		if id, err := uuid.Parse(challengeIDStr); err == nil {
+			challengeID = &id
+		}
+	}
+
+	if h.DependencyService == nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Serviço não disponível",
+			Message: "DependencyService não configurado",
+		})
+		return
+	}
+
+	state, err := h.DependencyService.GetAnalysisState(ctx, companyID, challengeID)
+	if err != nil {
+		h.Logger.Error().Err(err).Str("company_id", companyIDStr).Msg("Falha ao obter estado da análise")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Falha ao obter estado da análise",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"analysis_state": state,
+	})
+}
+
+// GetStaleFrameworks handles GET /api/v1/companies/:id/stale-frameworks
+// Returns all stale frameworks for a company
+func (h *FrameworkHandlers) GetStaleFrameworks(c *gin.Context) {
+	companyIDStr := c.Param("id")
+	ctx := c.Request.Context()
+
+	companyID, err := uuid.Parse(companyIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "ID inválido",
+			Message: "O ID da empresa deve ser um UUID válido",
+		})
+		return
+	}
+
+	if h.DependencyService == nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Serviço não disponível",
+			Message: "DependencyService não configurado",
+		})
+		return
+	}
+
+	stale, err := h.DependencyService.GetStaleFrameworks(ctx, companyID)
+	if err != nil {
+		h.Logger.Error().Err(err).Str("company_id", companyIDStr).Msg("Falha ao obter frameworks desatualizados")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Falha ao obter frameworks desatualizados",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"stale_frameworks": stale,
+		"total":            len(stale),
+	})
+}
+
+// AcknowledgeStaleRequest represents the request to acknowledge stale status
+type AcknowledgeStaleRequest struct {
+	ResultID string `json:"result_id" binding:"required"`
+}
+
+// AcknowledgeStale handles POST /api/v1/companies/:id/acknowledge-stale
+// Acknowledges a stale warning without re-running the framework
+func (h *FrameworkHandlers) AcknowledgeStale(c *gin.Context) {
+	companyIDStr := c.Param("id")
+	ctx := c.Request.Context()
+
+	companyID, err := uuid.Parse(companyIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "ID inválido",
+			Message: "O ID da empresa deve ser um UUID válido",
+		})
+		return
+	}
+
+	var req AcknowledgeStaleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Requisição inválida",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	resultID, err := uuid.Parse(req.ResultID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "ID do resultado inválido",
+			Message: "O ID do resultado deve ser um UUID válido",
+		})
+		return
+	}
+
+	// Get user ID from context
+	userID := uuid.Nil
+	if userIDStr, exists := c.Get("userID"); exists {
+		if id, ok := userIDStr.(string); ok {
+			userID, _ = uuid.Parse(id)
+		}
+	}
+
+	// Verify the result belongs to this company
+	result, err := h.FrameworkService.GetResultByID(ctx, resultID)
+	if err != nil || result == nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{
+			Error:   "Resultado não encontrado",
+			Message: "Nenhum resultado encontrado com este ID",
+		})
+		return
+	}
+
+	if result.CompanyID != companyID {
+		c.JSON(http.StatusForbidden, ErrorResponse{
+			Error:   "Acesso negado",
+			Message: "O resultado não pertence a esta empresa",
+		})
+		return
+	}
+
+	if h.DependencyService == nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Serviço não disponível",
+			Message: "DependencyService não configurado",
+		})
+		return
+	}
+
+	if err := h.DependencyService.AcknowledgeStale(ctx, resultID, userID); err != nil {
+		h.Logger.Error().Err(err).Str("result_id", req.ResultID).Msg("Falha ao reconhecer status desatualizado")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Falha ao reconhecer aviso",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	h.Logger.Info().
+		Str("result_id", req.ResultID).
+		Str("company_id", companyIDStr).
+		Msg("Status stale reconhecido")
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":   "Aviso de atualização reconhecido",
+		"result_id": resultID.String(),
+	})
+}
+
+// CheckReadinessRequest represents the request to check if a framework can run
+type CheckReadinessRequest struct {
+	ChallengeID *string `json:"challenge_id,omitempty"`
+}
+
+// CheckFrameworkReadiness handles GET /api/v1/companies/:id/frameworks/:code/readiness
+// Checks if all dependencies are met for a framework to run
+func (h *FrameworkHandlers) CheckFrameworkReadiness(c *gin.Context) {
+	companyIDStr := c.Param("id")
+	frameworkCode := c.Param("code")
+	ctx := c.Request.Context()
+
+	companyID, err := uuid.Parse(companyIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "ID inválido",
+			Message: "O ID da empresa deve ser um UUID válido",
+		})
+		return
+	}
+
+	// Optional challenge_id
+	var challengeID *uuid.UUID
+	if challengeIDStr := c.Query("challenge_id"); challengeIDStr != "" {
+		if id, err := uuid.Parse(challengeIDStr); err == nil {
+			challengeID = &id
+		}
+	}
+
+	if h.DependencyService == nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Serviço não disponível",
+			Message: "DependencyService não configurado",
+		})
+		return
+	}
+
+	// First check: Company enrichment must be complete before any AI framework can run
+	// This replaces the old EMPRESA/NEGOCIO/MERCADO "framework" dependencies
+	if h.CompanyService != nil {
+		comp, err := h.CompanyService.GetByID(ctx, companyID)
+		if err != nil {
+			h.Logger.Error().Err(err).
+				Str("company_id", companyIDStr).
+				Msg("Falha ao buscar empresa")
+			c.JSON(http.StatusInternalServerError, ErrorResponse{
+				Error:   "Falha ao verificar empresa",
+				Message: err.Error(),
+			})
+			return
+		}
+
+		// Check if enrichment is complete
+		if comp.EnrichmentStatus != "completed" {
+			c.JSON(http.StatusOK, gin.H{
+				"framework_code":       frameworkCode,
+				"is_ready":             false,
+				"missing_dependencies": []string{"enriquecimento"},
+			})
+			return
+		}
+	}
+
+	// Second check: Framework-specific dependencies
+	readiness, err := h.DependencyService.CheckReadyToRun(ctx, companyID, frameworkCode, challengeID)
+	if err != nil {
+		h.Logger.Error().Err(err).
+			Str("company_id", companyIDStr).
+			Str("framework_code", frameworkCode).
+			Msg("Falha ao verificar prontidão do framework")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Falha ao verificar dependências",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"framework_code":       frameworkCode,
+		"is_ready":             readiness.Ready,
+		"missing_dependencies": readiness.MissingDependencies,
+	})
+}
+
+// ExecuteFrameworkRequest represents the request to execute a framework
+type ExecuteFrameworkRequest struct {
+	ChallengeID *string `json:"challenge_id,omitempty"`
+	CompanyData json.RawMessage `json:"company_data,omitempty"`
+	ChallengeData json.RawMessage `json:"challenge_data,omitempty"`
+	Refinement  *string `json:"refinement,omitempty"` // User feedback for update mode
+	ForceRerun  bool    `json:"force_rerun,omitempty"`
+}
+
+// ExecuteFramework handles POST /api/v1/companies/:id/frameworks/:code/execute
+// Executes a framework with dependency context injection and update mode support
+func (h *FrameworkHandlers) ExecuteFramework(c *gin.Context) {
+	companyIDStr := c.Param("id")
+	frameworkCode := c.Param("code")
+	ctx := c.Request.Context()
+
+	companyID, err := uuid.Parse(companyIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "ID inválido",
+			Message: "O ID da empresa deve ser um UUID válido",
+		})
+		return
+	}
+
+	var req ExecuteFrameworkRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		// Body is optional for some cases
+		h.Logger.Debug().Err(err).Msg("Request body parsing (may be empty)")
+	}
+
+	var challengeID *uuid.UUID
+	if req.ChallengeID != nil {
+		if id, err := uuid.Parse(*req.ChallengeID); err == nil {
+			challengeID = &id
+		}
+	}
+
+	if h.DependencyService == nil || h.ExecutionService == nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Serviço não disponível",
+			Message: "ExecutionService não configurado",
+		})
+		return
+	}
+
+	// Check readiness
+	readiness, err := h.DependencyService.CheckReadyToRun(ctx, companyID, frameworkCode, challengeID)
+	if err != nil {
+		h.Logger.Error().Err(err).Msg("Falha ao verificar dependências")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Falha ao verificar dependências",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	if !readiness.Ready {
+		c.JSON(http.StatusPreconditionFailed, ErrorResponse{
+			Error:   "Dependências não concluídas",
+			Message: "Frameworks necessários: " + joinStrings(readiness.MissingDependencies),
+		})
+		return
+	}
+
+	// Prepare execution (this builds the prompt)
+	execReq := &framework.ExecuteRequest{
+		CompanyID:     companyID,
+		FrameworkCode: frameworkCode,
+		ChallengeID:   challengeID,
+		CompanyData:   req.CompanyData,
+		ChallengeData: req.ChallengeData,
+		Refinement:    req.Refinement,
+		ForceRerun:    req.ForceRerun,
+	}
+
+	promptResult, err := h.ExecutionService.PrepareExecution(ctx, execReq)
+	if err != nil {
+		h.Logger.Error().Err(err).Msg("Falha ao preparar execução")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Falha ao preparar execução",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	// Create pending result and enqueue job
+	fw, _ := h.FrameworkService.GetByCode(ctx, frameworkCode)
+	result, err := h.FrameworkService.CreatePendingResult(ctx, companyID, fw.ID, challengeID)
+	if err != nil {
+		h.Logger.Error().Err(err).Msg("Falha ao criar resultado pendente")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Falha ao criar resultado",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	// Enqueue job for async execution
+	payload := FrameworkExecutionPayload{
+		CompanyID:     companyID.String(),
+		FrameworkCode: frameworkCode,
+		ResultID:      result.ID.String(),
+	}
+	if challengeID != nil {
+		challengeIDStr := challengeID.String()
+		payload.ChallengeID = &challengeIDStr
+	}
+
+	payloadBytes, _ := json.Marshal(payload)
+	task := asynq.NewTask(jobtypes.TypeFrameworkExecution, payloadBytes)
+
+	if h.AsynqClient != nil {
+		taskInfo, err := h.AsynqClient.Enqueue(task,
+			asynq.MaxRetry(3),
+			asynq.Queue("default"),
+			asynq.Retention(24*60*60),
+		)
+		if err != nil {
+			h.Logger.Error().Err(err).Msg("Falha ao enfileirar job de execução")
+		} else {
+			h.Logger.Info().
+				Str("task_id", taskInfo.ID).
+				Str("queue", taskInfo.Queue).
+				Msg("✅ Job enfileirado com sucesso")
+		}
+	}
+
+	h.Logger.Info().
+		Str("company_id", companyIDStr).
+		Str("framework_code", frameworkCode).
+		Str("result_id", result.ID.String()).
+		Str("mode", string(promptResult.Mode)).
+		Msg("Execução de framework iniciada")
+
+	c.JSON(http.StatusAccepted, gin.H{
+		"message":     "Execução iniciada",
+		"result_id":   result.ID.String(),
+		"status":      result.Status,
+		"framework":   frameworkCode,
+		"mode":        promptResult.Mode,
+	})
+}
+
+// GetDependencyChain handles GET /api/v1/frameworks/:code/dependencies
+// Returns the dependency chain for a framework
+func (h *FrameworkHandlers) GetDependencyChain(c *gin.Context) {
+	frameworkCode := c.Param("code")
+	ctx := c.Request.Context()
+
+	if h.DependencyService == nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Serviço não disponível",
+			Message: "DependencyService não configurado",
+		})
+		return
+	}
+
+	// Get direct dependencies
+	deps, err := h.DependencyService.GetDependencyCodes(ctx, frameworkCode)
+	if err != nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{
+			Error:   "Framework não encontrado",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	// Get all transitive dependencies
+	allDeps, _ := h.DependencyService.GetAllTransitiveDependencies(ctx, frameworkCode)
+
+	// Get dependents (frameworks that depend on this one)
+	dependents, _ := h.DependencyService.GetDependentCodes(ctx, frameworkCode)
+
+	c.JSON(http.StatusOK, gin.H{
+		"framework":               frameworkCode,
+		"direct_dependencies":     deps,
+		"all_dependencies":        allDeps,
+		"dependent_frameworks":    dependents,
+	})
 }
 
 // =============================================================================

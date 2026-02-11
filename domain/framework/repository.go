@@ -20,10 +20,12 @@ type Repository interface {
 	GetActive(ctx context.Context) ([]*Framework, error)
 	GetBaseFrameworks(ctx context.Context) ([]*Framework, error)
 	GetByLayer(ctx context.Context, layer int) ([]*Framework, error)
+	GetByStep(ctx context.Context, stepNumber int) ([]*Framework, error)
 	Update(ctx context.Context, f *Framework) error
 
 	// Dependencies
 	GetDependencies(ctx context.Context, frameworkID uuid.UUID) ([]*FrameworkDependency, error)
+	GetDependents(ctx context.Context, frameworkID uuid.UUID) ([]*FrameworkDependency, error)
 	GetAllDependencies(ctx context.Context) ([]*FrameworkDependency, error)
 	AddDependency(ctx context.Context, dep *FrameworkDependency) error
 	RemoveDependency(ctx context.Context, frameworkID, dependsOnID uuid.UUID) error
@@ -38,6 +40,14 @@ type Repository interface {
 	UpdateResultCompleted(ctx context.Context, id uuid.UUID, result []byte, generatedAt time.Time) error
 	UpdateResultData(ctx context.Context, id uuid.UUID, result json.RawMessage) error
 	InvalidateResults(ctx context.Context, companyID uuid.UUID, frameworkID uuid.UUID) error
+
+	// Stale tracking
+	MarkAsStale(ctx context.Context, resultID uuid.UUID, reason string) error
+	ClearStaleStatus(ctx context.Context, resultID uuid.UUID) error
+	AcknowledgeStale(ctx context.Context, resultID uuid.UUID, userID uuid.UUID) error
+	GetStaleResults(ctx context.Context, companyID uuid.UUID) ([]*CompanyFrameworkResult, error)
+	SavePreviousResult(ctx context.Context, resultID uuid.UUID, previousResult json.RawMessage, previousVersion int) error
+	UpdateUpstreamHash(ctx context.Context, resultID uuid.UUID, hash string) error
 
 	// Transaction support
 	WithTx(ctx context.Context, fn func(Repository) error) error
@@ -433,6 +443,132 @@ func (r *PostgresRepository) UpdateResultData(ctx context.Context, id uuid.UUID,
 	rows, _ := res.RowsAffected()
 	if rows == 0 {
 		return ErrResultNotFound
+	}
+	return nil
+}
+
+// =============================================================================
+// Step Organization
+// =============================================================================
+
+// GetByStep retrieves frameworks by step number
+func (r *PostgresRepository) GetByStep(ctx context.Context, stepNumber int) ([]*Framework, error) {
+	query := `SELECT * FROM frameworks WHERE step_number = $1 AND is_active = true ORDER BY execution_order`
+	var frameworks []*Framework
+	if err := sqlx.SelectContext(ctx, r.querier(), &frameworks, query, stepNumber); err != nil {
+		return nil, fmt.Errorf("failed to get frameworks by step: %w", err)
+	}
+	return frameworks, nil
+}
+
+// GetDependents retrieves frameworks that depend on the given framework
+func (r *PostgresRepository) GetDependents(ctx context.Context, frameworkID uuid.UUID) ([]*FrameworkDependency, error) {
+	query := `SELECT * FROM framework_dependencies WHERE depends_on_id = $1`
+	var deps []*FrameworkDependency
+	if err := sqlx.SelectContext(ctx, r.querier(), &deps, query, frameworkID); err != nil {
+		return nil, fmt.Errorf("failed to get dependents: %w", err)
+	}
+	return deps, nil
+}
+
+// =============================================================================
+// Stale Tracking
+// =============================================================================
+
+// MarkAsStale marks a result as stale with a reason
+func (r *PostgresRepository) MarkAsStale(ctx context.Context, resultID uuid.UUID, reason string) error {
+	query := `
+		UPDATE company_framework_results
+		SET is_stale = true,
+			stale_reason = $2,
+			stale_detected_at = $3,
+			stale_acknowledged_at = NULL,
+			stale_acknowledged_by = NULL,
+			updated_at = $3
+		WHERE id = $1 AND is_current = true`
+
+	_, err := r.querier().ExecContext(ctx, query, resultID, reason, time.Now())
+	if err != nil {
+		return fmt.Errorf("failed to mark as stale: %w", err)
+	}
+	return nil
+}
+
+// ClearStaleStatus clears the stale status after re-generation
+func (r *PostgresRepository) ClearStaleStatus(ctx context.Context, resultID uuid.UUID) error {
+	query := `
+		UPDATE company_framework_results
+		SET is_stale = false,
+			stale_reason = NULL,
+			stale_detected_at = NULL,
+			stale_acknowledged_at = NULL,
+			stale_acknowledged_by = NULL,
+			updated_at = $2
+		WHERE id = $1`
+
+	_, err := r.querier().ExecContext(ctx, query, resultID, time.Now())
+	if err != nil {
+		return fmt.Errorf("failed to clear stale status: %w", err)
+	}
+	return nil
+}
+
+// AcknowledgeStale marks a stale result as acknowledged by the user
+func (r *PostgresRepository) AcknowledgeStale(ctx context.Context, resultID uuid.UUID, userID uuid.UUID) error {
+	query := `
+		UPDATE company_framework_results
+		SET stale_acknowledged_at = $2,
+			stale_acknowledged_by = $3,
+			updated_at = $2
+		WHERE id = $1 AND is_stale = true AND is_current = true`
+
+	_, err := r.querier().ExecContext(ctx, query, resultID, time.Now(), userID)
+	if err != nil {
+		return fmt.Errorf("failed to acknowledge stale: %w", err)
+	}
+	return nil
+}
+
+// GetStaleResults retrieves all stale results for a company
+func (r *PostgresRepository) GetStaleResults(ctx context.Context, companyID uuid.UUID) ([]*CompanyFrameworkResult, error) {
+	query := `
+		SELECT * FROM company_framework_results
+		WHERE company_id = $1 AND is_stale = true AND is_current = true
+		ORDER BY stale_detected_at DESC`
+
+	var results []*CompanyFrameworkResult
+	if err := sqlx.SelectContext(ctx, r.querier(), &results, query, companyID); err != nil {
+		return nil, fmt.Errorf("failed to get stale results: %w", err)
+	}
+	return results, nil
+}
+
+// SavePreviousResult saves the previous result before updating
+func (r *PostgresRepository) SavePreviousResult(ctx context.Context, resultID uuid.UUID, previousResult json.RawMessage, previousVersion int) error {
+	query := `
+		UPDATE company_framework_results
+		SET previous_result = $2,
+			previous_version = $3,
+			updated_at = $4
+		WHERE id = $1`
+
+	_, err := r.querier().ExecContext(ctx, query, resultID, previousResult, previousVersion, time.Now())
+	if err != nil {
+		return fmt.Errorf("failed to save previous result: %w", err)
+	}
+	return nil
+}
+
+// UpdateUpstreamHash updates the upstream data hash for a result
+func (r *PostgresRepository) UpdateUpstreamHash(ctx context.Context, resultID uuid.UUID, hash string) error {
+	query := `
+		UPDATE company_framework_results
+		SET upstream_data_hash = $2, updated_at = $3
+		WHERE id = $1`
+
+	_, err := r.querier().ExecContext(ctx, query, resultID, hash, time.Now())
+	if err != nil {
+		return fmt.Errorf("failed to update upstream hash: %w", err)
 	}
 	return nil
 }

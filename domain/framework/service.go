@@ -26,6 +26,16 @@ func NewService(repo Repository, logger zerolog.Logger) *Service {
 	}
 }
 
+// GetRepo returns the repository (for creating dependent services)
+func (s *Service) GetRepo() Repository {
+	return s.repo
+}
+
+// GetLogger returns the logger (for creating dependent services)
+func (s *Service) GetLogger() zerolog.Logger {
+	return s.logger
+}
+
 // =============================================================================
 // Framework Operations
 // =============================================================================

@@ -19,9 +19,16 @@ type Framework struct {
 	IsBase      bool        `json:"is_base" db:"is_base"`
 	IsActive    bool        `json:"is_active" db:"is_active"`
 
+	// Step organization (5-step flow)
+	StepNumber     *int    `json:"step_number,omitempty" db:"step_number"`
+	StepName       *string `json:"step_name,omitempty" db:"step_name"`
+	SubtabOf       *string `json:"subtab_of,omitempty" db:"subtab_of"`
+	ExecutionOrder int     `json:"execution_order" db:"execution_order"`
+
 	// Prompt configuration
 	PromptSystem       *string `json:"prompt_system,omitempty" db:"prompt_system"`
 	PromptUser         string  `json:"prompt_user" db:"prompt_user"`
+	PromptUpdate       *string `json:"prompt_update,omitempty" db:"prompt_update"`
 	PromptJSONTemplate *string `json:"prompt_json_template,omitempty" db:"prompt_json_template"`
 
 	// Model configuration
@@ -87,6 +94,16 @@ type CompanyFrameworkResult struct {
 	GeneratedAt *time.Time      `json:"generated_at,omitempty" db:"generated_at"`
 	CreatedAt   time.Time       `json:"created_at" db:"created_at"`
 	UpdatedAt   time.Time       `json:"updated_at" db:"updated_at"`
+
+	// Stale tracking (for dependency cascade)
+	IsStale              bool            `json:"is_stale" db:"is_stale"`
+	StaleReason          *string         `json:"stale_reason,omitempty" db:"stale_reason"`
+	StaleDetectedAt      *time.Time      `json:"stale_detected_at,omitempty" db:"stale_detected_at"`
+	StaleAcknowledgedAt  *time.Time      `json:"stale_acknowledged_at,omitempty" db:"stale_acknowledged_at"`
+	StaleAcknowledgedBy  *uuid.UUID      `json:"stale_acknowledged_by,omitempty" db:"stale_acknowledged_by"`
+	PreviousResult       *json.RawMessage `json:"previous_result,omitempty" db:"previous_result"`
+	PreviousVersion      *int            `json:"previous_version,omitempty" db:"previous_version"`
+	UpstreamDataHash     *string         `json:"upstream_data_hash,omitempty" db:"upstream_data_hash"`
 }
 
 // Status constants for CompanyFrameworkResult
@@ -175,4 +192,83 @@ func (r *CompanyFrameworkResult) IsPending() bool {
 // IsProcessing returns true if the result is processing
 func (r *CompanyFrameworkResult) IsProcessing() bool {
 	return r.Status == StatusProcessing
+}
+
+// NeedsAttention returns true if the result is stale and not acknowledged
+func (r *CompanyFrameworkResult) NeedsAttention() bool {
+	return r.IsStale && r.StaleAcknowledgedAt == nil
+}
+
+// =============================================================================
+// Step Organization Types
+// =============================================================================
+
+// StepDefinition represents a main step in the 5-step flow
+type StepDefinition struct {
+	Number     int                `json:"number"`
+	Name       string             `json:"name"`
+	Frameworks []*FrameworkStatus `json:"frameworks"`
+}
+
+// FrameworkStatus represents the current status of a framework for a company
+type FrameworkStatus struct {
+	Code                string   `json:"code"`
+	Name                string   `json:"name"`
+	Status              string   `json:"status"`
+	IsStale             bool     `json:"is_stale"`
+	StaleReason         *string  `json:"stale_reason,omitempty"`
+	StaleAcknowledgedAt *string  `json:"stale_acknowledged_at,omitempty"`
+	Version             int      `json:"version"`
+	HasResult           bool     `json:"has_result"`
+	CanExecute          bool     `json:"can_execute"`
+	MissingDependencies []string `json:"missing_dependencies,omitempty"`
+	SubtabOf            *string  `json:"subtab_of,omitempty"`
+	ExecutionOrder      int      `json:"execution_order"`
+}
+
+// AnalysisState represents the complete analysis state for a company
+type AnalysisState struct {
+	CompanyID       uuid.UUID               `json:"company_id"`
+	Steps           []*StepDefinition       `json:"steps"`
+	Frameworks      map[string]*FrameworkStatus `json:"frameworks"`
+	OverallProgress int                     `json:"overall_progress"`
+	StaleCount      int                     `json:"stale_count"`
+}
+
+// =============================================================================
+// Update Suggestion Types
+// =============================================================================
+
+// UpdateSuggestion represents AI-suggested changes after re-running a framework
+type UpdateSuggestion struct {
+	FrameworkCode   string            `json:"framework_code"`
+	CurrentVersion  int               `json:"current_version"`
+	SuggestedResult json.RawMessage   `json:"suggested_result"`
+	ChangesSummary  string            `json:"changes_summary"`
+	FieldChanges    []FieldChange     `json:"field_changes"`
+	UpstreamChanges []string          `json:"upstream_changes"`
+}
+
+// FieldChange represents a specific field that changed
+type FieldChange struct {
+	FieldPath    string `json:"field_path"`
+	OldValue     string `json:"old_value"`
+	NewValue     string `json:"new_value"`
+	ChangeReason string `json:"change_reason"`
+}
+
+// StaleFramework represents a stale framework for API response
+type StaleFramework struct {
+	FrameworkCode       string     `json:"framework_code"`
+	FrameworkName       string     `json:"framework_name"`
+	StaleReason         string     `json:"stale_reason"`
+	StaleDetectedAt     time.Time  `json:"stale_detected_at"`
+	StaleAcknowledgedAt *time.Time `json:"stale_acknowledged_at,omitempty"`
+	ResultID            uuid.UUID  `json:"result_id"`
+}
+
+// ReadinessStatus indicates if a framework is ready to execute
+type ReadinessStatus struct {
+	Ready               bool     `json:"ready"`
+	MissingDependencies []string `json:"missing_dependencies,omitempty"`
 }

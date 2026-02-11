@@ -647,6 +647,84 @@ func toStringSlice(val interface{}) []string {
 	return nil
 }
 
+// UpdateCompanyUser handles PUT /api/v1/companies/:id
+// Updates company fields with ownership check and field whitelist
+func (h *CompanyHandlers) UpdateCompanyUser(c *gin.Context) {
+	companyID := c.Param("id")
+
+	companyUUID, err := uuid.Parse(companyID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ID", Message: "Invalid company ID format"})
+		return
+	}
+
+	var req UpdateCompanyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request", Message: err.Error()})
+		return
+	}
+
+	if len(req.Fields) == 0 {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "No fields", Message: "No fields provided for update"})
+		return
+	}
+
+	comp, err := h.CompanyService.GetByID(c.Request.Context(), companyUUID)
+	if err != nil {
+		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to get company")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Database error", Message: "Failed to retrieve company"})
+		return
+	}
+	if comp == nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Not found", Message: "Company not found"})
+		return
+	}
+
+	if !h.checkCompanyAccess(c, comp) {
+		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Forbidden", Message: "Access denied to this company"})
+		return
+	}
+
+	// Apply field whitelist - remove system/admin-only fields
+	blockedFields := map[string]bool{
+		"enrichment_status": true,
+		"allowed_users":     true,
+		"owner_id":          true,
+		"cnpj_verified":     true,
+	}
+	// Block CNPJ changes if already verified
+	if comp.CNPJVerified {
+		blockedFields["cnpj"] = true
+	}
+
+	filtered := make(map[string]interface{})
+	for key, val := range req.Fields {
+		if !blockedFields[key] {
+			filtered[key] = val
+		}
+	}
+
+	if len(filtered) == 0 {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "No allowed fields", Message: "All provided fields are restricted"})
+		return
+	}
+
+	h.applyCompanyFields(comp, filtered)
+
+	if err := h.CompanyService.Update(c.Request.Context(), comp); err != nil {
+		h.Logger.Error().Err(err).Str("company_id", companyID).Msg("Failed to update company")
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Update failed", Message: err.Error()})
+		return
+	}
+
+	h.Logger.Info().
+		Str("company_id", companyID).
+		Int("fields_updated", len(filtered)).
+		Msg("Company updated by user")
+
+	c.JSON(http.StatusOK, gin.H{"company": comp})
+}
+
 // ========================================================================
 // ADMIN HANDLERS - RE-ANALYSIS WORKFLOW
 // ========================================================================
